@@ -1,0 +1,5 @@
+2026-08-14 | Grocery Market | $12.50
+2026-08-14 | Cafe refund $8.00 from original $10.00
+Purchased 2026-08-14, posted 2026-08-15 | Garage | $20.00
+2026-08-16 | Cafe | charge $7.50; available balance $102.00
+2026-08-17 | Shop | amount pending

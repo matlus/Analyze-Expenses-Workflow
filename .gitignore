@@ -1,0 +1,16 @@
+.venv/
+.uv-cache/
+.pytest_cache/
+.ruff_cache/
+.pyright/
+__pycache__/
+*.py[oc]
+.coverage
+htmlcov/
+dist/
+build/
+wheels/
+*.egg-info/
+.env
+_tmp/
+.workspace_tmp/

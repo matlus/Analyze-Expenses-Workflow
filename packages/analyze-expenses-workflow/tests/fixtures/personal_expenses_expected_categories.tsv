@@ -1,0 +1,199 @@
+line_number	expected_category	source_text
+1	groceries	- June 1  Trader Joe's  $82.18
+2	subscriptions	06-01: iCloud+ 200GB, 2.99
+3	subscriptions	June 1 Amazon Prime $14.99
+4	bills_utilities	6/2: Xfinity Internet, $64.99
+5	transportation	- 6/2  Shell  $24.97
+6	dining_coffee	- 6/2  Local Coffee Co  13.73
+7	dining_coffee	6/3/26 - Local Coffee Co - $11.35
+8	subscriptions	Jun. 3 - Netflix - $15.49
+9	subscriptions	Planet Fitness App (6/3/26) - 9.99
+10	bills_utilities	June 3: Verizon Wireless, $78.14
+11	groceries	Trader Joe's (Jun. 4) - $35.72
+12	health_fitness	6/4 Planet Fitness $67.82
+13	entertainment	June 4: Steam, 47.58
+14	subscriptions	Jun. 4 Spotify Premium 11.99
+15	groceries	- Jun 5  Aldi  $61.21
+16	entertainment	06-05: Spotify Concert, $55.28
+17	shopping	Amazon (June 5) - $182.78
+18	shopping	Best Buy, 2026-06-05 -- $56.99
+19	groceries	Kroger, Jun. 6 -- $114.37
+20	groceries	- 6/8/26  Kroger  $112.18
+21	groceries	Jun. 7: Kroger, $21.78
+22	transportation	Jun. 7 | Chevron | $33.58
+23	entertainment	AMC Theatres - $31.31 (June 6)
+24	transportation	6/9: BP Gas, $30.24
+25	shopping	2026-06-09 | Home Depot | $103.93
+26	transportation	Jun 12: Lyft, $49.78
+27	dining_coffee	Jun. 12: Chipotle, $16.85
+28	dining_coffee	Local Coffee Co - 34.22 (2026-06-12)
+29	dining_coffee	McDonald's, June 10 -- $7.60
+30	dining_coffee	Rustic Tap Brewery - $8.37 (6/13)
+31	dining_coffee	Panera Bread, 06-13 -- $33.59
+32	transportation	June 13 | Chevron | $20.97
+33	shopping	6/13 | Target | $142.47
+34	shopping	REI, 6/13/26 -- $189.97
+35	health_fitness	Riverside Physical Therapy - $15.40 (6/13)
+36	groceries	- 6/14/26  Costco  $29.04
+37	groceries	Costco, Jun 15 -- $71.28
+38	health_fitness	- 6/17  Riverside Physical Therapy  $94.67
+39	entertainment	Barnes & Noble (Jun. 17) - $29.02
+40	shopping	Target - $62.34 (2026-06-18)
+41	transportation	06-19 | Shell | $23.87
+42	shopping	06-19 Old Navy $65.50
+43	transportation	City Parking Authority (6/20/26) - 50.53
+44	uncategorized	6/20/26 - Zelle Payment - $102.66
+45	groceries	Costco (Jun 21) - $43.25
+46	transportation	Uber (June 21) - $71.36
+47	entertainment	Jun 21 | Barnes & Noble | $31.68
+48	uncategorized	6/21/26 - ATM Cash Withdrawal - $100.00
+49	transportation	- Jun 22  City Parking Authority  $44.97
+50	shopping	Jun 22: Home Depot, $45.36
+51	transportation	Jun 24 - City Parking Authority - $21.44
+52	entertainment	6/24/26 Bowl-O-Rama 9.25
+53	dining_coffee	Jun 25 | Starbucks | $26.82
+54	transportation	Jun. 25 - Uber - 62.41
+55	shopping	Jun. 25: Old Navy, $110.73
+56	dining_coffee	Jun. 28: Sushi Kame, $37.51
+57	uncategorized	- 2026-06-25  Venmo - Sam  $68.54
+58	groceries	6/28/26 | Costco | $53.33
+59	health_fitness	June 25: Riverside Physical Therapy, $73.82
+60	health_fitness	Walgreens, 6/28 -- $92.54
+61	dining_coffee	Jun 30: Thai Orchid, $22.70
+62	transportation	6/30/26 | City Parking Authority | 27.29
+63	dining_coffee	Panera Bread (07-01) - $24.42
+64	subscriptions	Jul. 1 | Planet Fitness App | 9.99
+65	bills_utilities	7/1/26 - Xfinity Internet - $64.99
+66	dining_coffee	2026-07-02: Chipotle, $28.36
+67	dining_coffee	07-02 | Panera Bread | $7.22
+68	shopping	7/2/26 IKEA $92.60
+69	subscriptions	07-05 Netflix $15.49
+70	subscriptions	07-02 Spotify Premium $11.99
+71	shopping	- 2026-07-03  IKEA  $16.89
+72	health_fitness	Jul. 2 | Planet Fitness | $73.58
+73	subscriptions	Jul. 5 - iCloud+ 200GB - $2.99
+74	shopping	Jul 6 | IKEA | $180.34
+75	entertainment	July 6: Spotify Concert, 15.09
+76	subscriptions	Amazon Prime, 7/5 -- $14.99
+77	bills_utilities	July 5 | Verizon Wireless | $78.14
+78	groceries	7/7/26 | Costco | $71.74
+79	dining_coffee	7/7/26 - Sushi Kame - $27.08
+80	transportation	2026-07-07: Shell, $26.17
+81	dining_coffee	Jul 7 | Thai Orchid | $31.65
+82	shopping	Jul 7 REI $109.19
+83	health_fitness	- Jul 7  CVS Pharmacy  $26.14
+84	groceries	2026-07-08: Aldi, $33.37
+85	dining_coffee	- 2026-07-08  Rustic Tap Brewery  $7.34
+86	dining_coffee	Jul 8: Local Coffee Co, $24.01
+87	transportation	Chevron (07-08) - $27.99
+88	uncategorized	Venmo - Sam, 7/9 -- $75.00
+89	transportation	Shell, 2026-07-12 -- $51.20
+90	groceries	Trader Joe's (07-13) - $108.54
+91	transportation	Jul. 13 - City Parking Authority - $17.00
+92	shopping	7/13: Target, $88.28
+93	transportation	Jiffy Lube (Jul. 14) - $38.37
+94	transportation	Jul 15 BP Gas $67.32
+95	groceries	2026-07-16 - Kroger - $28.88
+96	groceries	July 16 Trader Joe's $34.31
+97	health_fitness	Riverside Physical Therapy - $66.26 (2026-07-16)
+98	groceries	Costco (Jul. 17) - $38.97
+99	groceries	7/17 | Whole Foods | $73.64
+100	groceries	- Jul 18  Kroger  $142.20
+101	dining_coffee	Rustic Tap Brewery (2026-07-18) - $5.69
+102	transportation	Jul. 18 - BP Gas - $63.54
+103	shopping	Amazon (2026-07-18) - $141.82
+104	health_fitness	Planet Fitness (Jul. 18) - 59.23
+105	shopping	Return processed - REI (7/18/26) - -$68.00
+106	transportation	07-21 - City Parking Authority - $14.30
+107	entertainment	AMC Theatres, July 22 -- $54.22
+108	groceries	Trader Joe's (Jul. 22) - $54.12
+109	groceries	Trader Joe's (Jul. 22) - $54.12
+110	groceries	Costco, 2026-07-23 -- 113.92
+111	shopping	Jul. 26: Best Buy, 195.60
+112	transportation	Jul 28 Lyft $36.08
+113	transportation	City Parking Authority, 07-28 -- $31.70
+114	uncategorized	ATM Cash Withdrawal - $30.79 (Jul. 29)
+115	dining_coffee	Jul. 30 Bagel Corner $9.37
+116	health_fitness	- 7/31  Walgreens  $45.96
+117	groceries	7/31 | Trader Joe's | $129.51
+118	entertainment	- 2026-07-30  Spotify Concert  $45.24
+119	entertainment	Spotify Concert - $20.96 (7/31)
+120	subscriptions	Netflix (8/2/26) - $15.49
+121	bills_utilities	08-01 | Xfinity Internet | $64.99
+122	uncategorized	Aug 2: Zelle Payment, $120.00
+123	shopping	Old Navy (2026-08-01) - $78.91
+124	groceries	Costco (Aug 3) - $144.50
+125	subscriptions	Amazon Prime (08-03) - $14.99
+126	entertainment	August 4 | Ticketmaster | 59.42
+127	dining_coffee	August 4 | McDonald's | $23.51
+128	dining_coffee	- 08-04  Sushi Kame  $8.81
+129	subscriptions	Planet Fitness App, 8/4 -- $9.99
+130	dining_coffee	- Aug 5  Chipotle  $35.98
+131	dining_coffee	Rustic Tap Brewery - $24.22 (August 5)
+132	subscriptions	Aug. 5: Spotify Premium, $11.99
+133	subscriptions	2026-08-05: iCloud+ 200GB, $2.99
+134	bills_utilities	8/5 - Verizon Wireless - $78.14
+135	transportation	BP Gas (2026-08-06) - $26.14
+136	dining_coffee	Starbucks - $34.66 (2026-08-07)
+137	health_fitness	Dr. Hensley Dental Copay, Aug 7 -- $86.46
+138	uncategorized	PayPal Transfer - $69.90 (08-07)
+139	transportation	BP Gas (8/8) - $64.15
+140	groceries	Costco - $45.07 (Aug 9)
+141	dining_coffee	8/9 Luigi's Pizza $26.02
+142	dining_coffee	Sushi Kame - $21.68 (8/9)
+143	shopping	8/9: Amazon, $185.90
+144	shopping	- Aug 9  Target  127.80
+145	groceries	August 10 - Trader Joe's - $103.30
+146	dining_coffee	Aug. 10: Bagel Corner, $10.13
+147	dining_coffee	McDonald's (8/10/26) - $9.21
+148	groceries	Costco - $89.78 (8/11/26)
+149	dining_coffee	Local Coffee Co - $11.95 (Aug. 11)
+150	dining_coffee	Sushi Kame (Aug 11) - $6.45
+151	shopping	August 11 - Best Buy - $156.79
+152	entertainment	August 11 - Ticketmaster - 59.68
+153	groceries	08-12 Kroger $129.67
+154	dining_coffee	Panera Bread, Aug. 12 -- $27.01
+155	groceries	- 8/13  Whole Foods  $48.31
+156	transportation	- 08-13  BP Gas  $53.78
+157	transportation	Aug. 13 Shell $51.26
+158	uncategorized	ATM Cash Withdrawal (8/13/26) - $79.84
+159	dining_coffee	Aug 14 - Starbucks - $8.05
+160	transportation	2026-08-14: BP Gas, $21.80
+161	transportation	Uber - $58.73 (08-14)
+162	shopping	Aug 14: Amazon, $35.25
+163	health_fitness	Walgreens - $13.77 (08-14)
+164	travel	Delta Air Lines - $412.60 (Aug. 14)
+165	travel	Delta Air Lines (8/14) - $450.60
+166	travel	Airport Parking - $68.00 (August 14)
+167	travel	August 15 | Marriott | $486.27
+168	travel	Hertz Rental Car - 214.35 (8/15/26)
+169	transportation	8/16/26 - BP Gas - $13.36
+170	travel	Uber, August 16 -- $24.10
+171	shopping	August 17 REI $132.82
+172	entertainment	8/17/26 - Barnes & Noble - $77.40
+173	dining_coffee	8/18: Luigi's Pizza, $29.46
+174	groceries	8/20/26 - Kroger - $19.18
+175	groceries	Costco - 107.35 (Aug 20)
+176	transportation	BP Gas (08-20) - $35.79
+177	entertainment	- 08-20  Barnes & Noble  $78.98
+178	shopping	IKEA, 2026-08-21 -- $68.71
+179	groceries	Whole Foods (8/23/26) - $43.94
+180	dining_coffee	- 8/23  Chipotle  $36.19
+181	transportation	BP Gas (08-24) - $51.86
+182	health_fitness	08-26: Planet Fitness, $54.19
+183	dining_coffee	2026-08-26 Rustic Tap Brewery $34.67
+184	transportation	Chevron (8/26) - 63.74
+185	groceries	Aug. 25 - Aldi - $58.15
+186	groceries	Aug 27 - Whole Foods - $38.03
+187	groceries	08-27 Costco 18.99
+188	dining_coffee	Luigi's Pizza, Aug 27 -- $23.00
+189	transportation	2026-08-27: Lyft, 32.33
+190	shopping	Old Navy, 08-27 -- $92.34
+191	dining_coffee	Panera Bread - $27.69 (August 28)
+192	groceries	8/29/26 Trader Joe's $136.52
+193	transportation	City Parking Authority, 8/30/26 -- $20.43
+194	transportation	Aug 30: Shell, $21.94
+195	transportation	Chevron - $23.17 (Aug 30)
+196	shopping	2026-08-31 Best Buy 183.41
+197	entertainment	Ticketmaster - $41.78 (August 31)
+198	health_fitness	8/31 | Riverside Physical Therapy | $68.38

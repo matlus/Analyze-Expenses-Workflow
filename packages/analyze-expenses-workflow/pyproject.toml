@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analyze-expenses-workflow"
+version = "0.1.0"
+description = "Analyze Expenses Workflow library."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+authors = [{ name = "Your Name", email = "your.email@example.com" }]
+dependencies = [
+    "github-copilot-sdk>=1.0.14",
+    "openai-codex>=0.156.1",
+    "pydantic>=2.13.5",
+    "python-dotenv>=1.2.3",
+    "typesafe-sdk>=0.7.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["analyze_expenses_workflow*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"analyze_expenses_workflow" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+markers = ["live_jev: calls the real Jev service through OpenRouter"]
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
+pythonpath = ["src"]
