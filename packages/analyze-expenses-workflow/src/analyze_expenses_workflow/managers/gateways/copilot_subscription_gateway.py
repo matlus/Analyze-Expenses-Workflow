@@ -14,8 +14,8 @@ from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import 
 class CopilotSubscriptionGateway:
     _SUPPORTED_EFFORTS: frozenset[str] = frozenset({"low", "medium", "high", "xhigh", "max"})
 
-    def __init__(self, client: CopilotClient | None = None) -> None:
-        self._client: CopilotClient | None = client
+    def __init__(self, copilot_client: CopilotClient | None = None) -> None:
+        self._copilot_client: CopilotClient | None = copilot_client
         self._closed: bool = False
 
     async def complete(self, prompt: str, model: str, reasoning_effort: str | None) -> str:
@@ -23,11 +23,11 @@ class CopilotSubscriptionGateway:
         effort: ReasoningEffort | None = self._resolve_effort(reasoning_effort)
 
         try:
-            response: SessionEvent | None = await self._request(prompt, model, effort)
+            session_event: SessionEvent | None = await self._request(prompt, model, effort)
         except (JsonRpcError, ProcessExitedError, StopError, RuntimeError, OSError, TimeoutError) as exc:
             raise LlmGatewayException("Copilot subscription request failed") from exc
 
-        return self._response_text(response)
+        return self._response_text(session_event)
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -41,30 +41,30 @@ class CopilotSubscriptionGateway:
 
     def _client_for_request(self) -> CopilotClient:
         self._ensure_open()
-        if self._client is None:
-            self._client = CopilotClient()
-        return self._client
+        if self._copilot_client is None:
+            self._copilot_client = CopilotClient()
+        return self._copilot_client
 
     async def _request(self, prompt: str, model: str, effort: ReasoningEffort | None) -> SessionEvent | None:
-        client: CopilotClient = self._client_for_request()
-        async with await client.create_session(
+        copilot_client: CopilotClient = self._client_for_request()
+        async with await copilot_client.create_session(
             model=model,
             reasoning_effort=effort,
             available_tools=[],
-        ) as session:
-            return await session.send_and_wait(prompt)
+        ) as copilot_session:
+            return await copilot_session.send_and_wait(prompt)
 
     @staticmethod
-    def _response_text(response: SessionEvent | None) -> str:
-        if response is None or not isinstance(response.data, AssistantMessageData) or not response.data.content:
+    def _response_text(session_event: SessionEvent | None) -> str:
+        if session_event is None or not isinstance(session_event.data, AssistantMessageData) or not session_event.data.content:
             raise LlmGatewayException("Copilot subscription request returned no message")
-        return response.data.content
+        return session_event.data.content
 
     async def close(self) -> None:
         if not self._closed:
+            if self._copilot_client is not None:
+                await self._copilot_client.stop()
             self._closed = True
-            if self._client is not None:
-                await self._client.stop()
 
     async def __aenter__(self) -> Self:
         return self

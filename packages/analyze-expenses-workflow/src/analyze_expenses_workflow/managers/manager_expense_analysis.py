@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Sequence
-
-import httpx2
+from types import TracebackType
+from typing import Self
 
 from analyze_expenses_workflow.managers.configuration_providers.configuration_provider import ConfigurationProvider
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.budget_settings import BudgetSettings
@@ -22,7 +22,7 @@ from analyze_expenses_workflow.managers.processors.transaction_categorization_pr
 from analyze_expenses_workflow.managers.service_locators.service_locator_protocol import ServiceLocatorProtocol
 from analyze_expenses_workflow.managers.validators.validator_expense_lines import ValidatorExpenseLines
 from analyze_expenses_workflow.models.expense_analysis_result import ExpenseAnalysisResult, ExpenseCategorization
-from analyze_expenses_workflow.models.expense_calculation_result import BudgetTarget, ExpenseCalculationResult
+from analyze_expenses_workflow.models.expense_calculation_result import BudgetTarget, CalculationReconciliation, ExpenseCalculationResult
 from analyze_expenses_workflow.models.expense_category_catalog import ExpenseCategory
 from analyze_expenses_workflow.models.expense_finding import ExpenseFinding
 from analyze_expenses_workflow.models.expense_transaction import ExpenseTransaction
@@ -41,8 +41,8 @@ class ManagerExpenseAnalysis:
             LlmOperation.EXPENSE_LINE_EXTRACTION
         )
         findings_llm_operation_settings: LlmOperationSettings = configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_FINDINGS)
-        self._open_router_jev_gateway: OpenRouterJevGateway = self._create_jev_gateway(
-            jev_settings, service_locator_protocol.create_jev_http_transport()
+        self._open_router_jev_gateway: OpenRouterJevGateway = OpenRouterJevGateway(
+            jev_settings, async_base_transport=service_locator_protocol.create_jev_http_transport()
         )
         self._llm_gateway_protocol: LlmGatewayProtocol = self._create_llm_gateway(coding_assistant_subscription)
         self._expense_line_parsing_processor: ExpenseLineParsingProcessor = ExpenseLineParsingProcessor()
@@ -60,10 +60,6 @@ class ManagerExpenseAnalysis:
         )
         self._expense_reconciliation_processor: ExpenseReconciliationProcessor = ExpenseReconciliationProcessor()
         self._expense_calculation_processor: ExpenseCalculationProcessor = ExpenseCalculationProcessor()
-
-    @staticmethod
-    def _create_jev_gateway(jev_settings: JevSettings, async_base_transport: httpx2.AsyncBaseTransport | None) -> OpenRouterJevGateway:
-        return OpenRouterJevGateway(jev_settings, async_base_transport=async_base_transport)
 
     @staticmethod
     def _create_llm_gateway(coding_assistant_subscription: CodingAssistantSubscription) -> LlmGatewayProtocol:
@@ -101,7 +97,7 @@ class ManagerExpenseAnalysis:
         expense_calculation_result: ExpenseCalculationResult = await self._expense_calculation_processor.calculate(
             expense_transactions, budget_targets
         )
-        self._validate_reconciliation(expense_calculation_result)
+        self._validate_reconciliation(expense_calculation_result.reconciliation)
         return expense_calculation_result
 
     def _budget_targets(self) -> tuple[BudgetTarget, ...]:
@@ -111,8 +107,8 @@ class ManagerExpenseAnalysis:
         )
 
     @staticmethod
-    def _validate_reconciliation(expense_calculation_result: ExpenseCalculationResult) -> None:
-        if not expense_calculation_result.reconciliation.is_balanced:
+    def _validate_reconciliation(calculation_reconciliation: CalculationReconciliation) -> None:
+        if not calculation_reconciliation.is_balanced:
             raise ValueError("Expense totals did not reconcile")
 
     @staticmethod
@@ -125,9 +121,7 @@ class ManagerExpenseAnalysis:
     ) -> ExpenseAnalysisResult:
         return ExpenseAnalysisResult(
             categorizations=tuple(
-                expense_categorization
-                for expense_categorization in expense_categorization_slots
-                if expense_categorization is not None
+                expense_categorization for expense_categorization in expense_categorization_slots if expense_categorization is not None
             ),
             parsed_lines=parsed_expense_lines,
             transactions=expense_transactions,
@@ -141,8 +135,7 @@ class ManagerExpenseAnalysis:
 
         async with asyncio.TaskGroup() as task_group:
             tasks: tuple[asyncio.Task[ExpenseCategorization | None], ...] = tuple(
-                task_group.create_task(self._categorize_one(parsed_expense_line, semaphore))
-                for parsed_expense_line in parsed_expense_lines
+                task_group.create_task(self._categorize_one(parsed_expense_line, semaphore)) for parsed_expense_line in parsed_expense_lines
             )
         return tuple(task.result() for task in tasks)
 
@@ -169,7 +162,35 @@ class ManagerExpenseAnalysis:
         )
 
     async def close(self) -> None:
+        await self._close_gateways()
+
+    async def _close_gateways(self) -> None:
+        llm_gateway_close_failure: BaseException | None = None
+        try:
+            await self._llm_gateway_protocol.close()
+        except BaseException as close_failure:  # noqa: BLE001 - close Jev before propagating cancellation or failure
+            llm_gateway_close_failure = close_failure
+
         try:
             await self._open_router_jev_gateway.close()
-        finally:
-            await self._llm_gateway_protocol.close()
+        except BaseException as jev_gateway_close_failure:
+            if llm_gateway_close_failure is None:
+                raise
+            raise BaseExceptionGroup(
+                "Closing expense analysis gateways failed",
+                [llm_gateway_close_failure, jev_gateway_close_failure],
+            ) from None
+
+        if llm_gateway_close_failure is not None:
+            raise llm_gateway_close_failure
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        await self.close()

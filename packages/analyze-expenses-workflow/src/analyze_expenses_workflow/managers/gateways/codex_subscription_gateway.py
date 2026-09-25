@@ -1,7 +1,7 @@
 from types import TracebackType
 from typing import Self, final
 
-from openai_codex import ApprovalMode, AsyncCodex, CodexError, Sandbox, TurnResult
+from openai_codex import ApprovalMode, AsyncCodex, AsyncThread, CodexError, Sandbox, TurnResult
 from openai_codex.generated.v2_all import ReasoningEffort
 
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmGatewayException
@@ -11,8 +11,8 @@ from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import 
 class CodexSubscriptionGateway:
     _SUPPORTED_EFFORTS: frozenset[str] = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"})
 
-    def __init__(self, client: AsyncCodex | None = None) -> None:
-        self._client: AsyncCodex | None = client
+    def __init__(self, async_codex: AsyncCodex | None = None) -> None:
+        self._async_codex: AsyncCodex | None = async_codex
         self._closed: bool = False
 
     async def complete(self, prompt: str, model: str, reasoning_effort: str | None) -> str:
@@ -20,11 +20,11 @@ class CodexSubscriptionGateway:
         effort: ReasoningEffort | None = self._resolve_effort(reasoning_effort)
 
         try:
-            result: TurnResult = await self._request(prompt, model, effort)
+            turn_result: TurnResult = await self._request(prompt, model, effort)
         except (CodexError, OSError, TimeoutError) as exc:
             raise LlmGatewayException("Codex subscription request failed") from exc
 
-        return self._response_text(result)
+        return self._response_text(turn_result)
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -40,31 +40,31 @@ class CodexSubscriptionGateway:
 
     def _client_for_request(self) -> AsyncCodex:
         self._ensure_open()
-        if self._client is None:
-            self._client = AsyncCodex()
-        return self._client
+        if self._async_codex is None:
+            self._async_codex = AsyncCodex()
+        return self._async_codex
 
     async def _request(self, prompt: str, model: str, effort: ReasoningEffort | None) -> TurnResult:
-        client: AsyncCodex = self._client_for_request()
-        thread = await client.thread_start(
+        async_codex: AsyncCodex = self._client_for_request()
+        async_thread: AsyncThread = await async_codex.thread_start(
             model=model,
             sandbox=Sandbox.read_only,
             approval_mode=ApprovalMode.deny_all,
             ephemeral=True,
         )
-        return await thread.run(prompt, effort=effort)
+        return await async_thread.run(prompt, effort=effort)
 
     @staticmethod
-    def _response_text(result: TurnResult) -> str:
-        if result.status.value != "completed" or not result.final_response:
+    def _response_text(turn_result: TurnResult) -> str:
+        if turn_result.status.value != "completed" or not turn_result.final_response:
             raise LlmGatewayException("Codex subscription request returned no completed response")
-        return result.final_response
+        return turn_result.final_response
 
     async def close(self) -> None:
         if not self._closed:
+            if self._async_codex is not None:
+                await self._async_codex.close()
             self._closed = True
-            if self._client is not None:
-                await self._client.close()
 
     async def __aenter__(self) -> Self:
         return self

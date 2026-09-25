@@ -10,10 +10,10 @@ from acceptance_support.asserter_jev import (
     assert_jev_gateway_failure,
     assert_jev_requests,
 )
-from acceptance_support.mediator_jev import TestMediatorJev
+from acceptance_support.mediator_jev import JevTransportCloseError, TestMediatorJev
 from acceptance_support.service_locator_testing import create_domain_facade
 
-from analyze_expenses_workflow import ExpenseAnalysisResult, ExpenseCategory, SystemOneGatewayException
+from analyze_expenses_workflow import DomainFacade, ExpenseAnalysisResult, ExpenseCategory, SystemOneGatewayException
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionAction, ExpenseLogEvent, Severity
 
 
@@ -70,3 +70,28 @@ async def test_analyze_expenses_WhenJevServiceRejectsRequest_ThenReportsGatewayF
     actual_system_one_gateway_exception: SystemOneGatewayException = cast("SystemOneGatewayException", raised_exception_group.value.exceptions[0])
     assert_jev_gateway_failure(actual_system_one_gateway_exception, expected_jev_gateway_failure)
     assert_jev_requests(test_mediator_jev.captured_jev_requests, expected_jev_request_method, expected_jev_request_path, expected_expense_line)
+
+
+async def test_close_WhenJevTransportCloseFailsOnce_ThenFacadeCanRetryCleanup() -> None:
+    expected_expense_line: str = f"2026-08-14 {secrets.token_hex(8)} -$42.18"
+    expected_close_attempt_count: int = 2
+    expected_close_failure_message_pattern: str = "Jev transport close failed"
+    test_mediator_jev: TestMediatorJev = TestMediatorJev(scripted_status_code=401, close_failures_before_success=1)
+    override_by_environment_variable_name: dict[str, str] = {
+        "CODING_ASSISTANT_SUBSCRIPTION": "GPT_CODEX",
+        "OPEN_ROUTER_BASE_URL": "https://openrouter.ai/api",
+        "OPEN_ROUTER_KEY": secrets.token_hex(16),
+        "JEV_MODEL": "typesafe/jev",
+    }
+    facade: DomainFacade = create_domain_facade(test_mediator_jev, override_by_environment_variable_name)
+
+    with pytest.RaisesGroup(SystemOneGatewayException):
+        await facade.analyze_expenses([expected_expense_line])
+
+    with pytest.raises(JevTransportCloseError, match=expected_close_failure_message_pattern):
+        await facade.close()
+
+    await facade.close()
+    await facade.close()
+
+    assert test_mediator_jev.captured_close_attempt_count == expected_close_attempt_count
