@@ -14,7 +14,7 @@ The flow has three kinds of work:
 | **System 1 / Jev** | Answer a bounded choice question: select a date or amount from candidates found in a source line, or choose one category from the fixed expense catalog. |
 | **Large language model (LLM)** | Propose fields for lines that remain uncertain, or select three IDs from findings already written by code. Code validates both responses. |
 
-Jev's choices and the LLM's proposals are inputs to the coded workflow. Neither service writes the ledger, performs the financial calculations, or edits the final report. The current implementation uses Python and can use either the Codex or GitHub Copilot gateway for its LLM calls; these are implementation details, not separate boxes in the flow.
+Jev's choices and the LLM's proposals are inputs to the coded workflow. Neither service writes the ledger, performs the financial calculations, or edits the final report. The current implementation uses Python and can use either the Codex or GitHub Copilot gateway for its LLM calls. Before analysis, configuration selects that gateway and the model and reasoning effort for LLM extraction and finding selection; Jev uses its separate OpenRouter settings. These are setup details, not separate boxes in the flow.
 
 The controller proceeds from file input to parsing, Jev ambiguity choices, LLM field completion, per-line category tasks, gathering, ledger reconciliation, calculations, balance checks, finding selection, and report delivery. The category tasks are the only scatter/gather part of that sequence.
 
@@ -43,7 +43,7 @@ The running example is a small, invented UTF-8 input file. It is designed to exe
 
 For this example the caller confirms **line 2** as a duplicate of line 1. The illustrative monthly targets are **$100.00 for Dining & Coffee** and **$100.00 for Shopping**. To make the path concrete, suppose Jev abstains on line 3's amount, the LLM extracts `$7.50` from that line, and neither service can establish an amount for line 8. The category choices shown later are also illustrative; their policy overrides and all arithmetic follow the code. Live Jev and LLM responses may differ.
 
-There is no required CSV column order. Dates may be named, numeric, or ISO-style; currency symbols and separators vary. The application numbers retained nonblank lines from 1; for its supplied fixture it also removes a specific two-line preamble. Line numbers in this example are therefore 1 through 8. The explicit years make year inference unnecessary here.
+There is no required CSV column order. Dates may be named, numeric, or ISO-style; currency symbols and separators vary. The application numbers every retained line from 1, including blank lines. For its supplied fixture it removes a specific two-line preamble and one immediately following blank separator. This example has no blank lines, so its line numbers are 1 through 8. The explicit years make year inference unnecessary here.
 
 The repeated Kroger line is not removed when reading the file. Its exclusion happens later, after the caller's confirmation and an exact adjacent-line check. Every input line remains represented in the final ledger.
 
@@ -55,7 +55,7 @@ The repeated Kroger line is not removed when reading the file. Its exclusion hap
 
 **Short description:** Load the ordered source lines.
 
-The console entry point takes an `--input` path, reads the file as UTF-8 with optional byte-order mark, removes blank lines, and removes the fixture preamble only when the first two lines match it exactly. It keeps the remaining text in order. It also rejects an `--output` path that points to the input file.
+The console entry point takes an `--input` path and reads the file as UTF-8 with an optional byte-order mark. It preserves blank and unrecognized lines in order. Only when the first two lines match the fixture preamble exactly does it remove them and one immediately following blank separator. It also rejects an `--output` path that points to the input file.
 
 **Input:** A text file path, optional output path, and confirmed duplicate line numbers. **Output:** Eight strings in their original order, passed to `DomainFacade.analyze_expenses` with `(2,)` as the duplicate confirmation. No line has been categorized or excluded yet.
 
@@ -65,7 +65,7 @@ The console entry point takes an `--input` path, reads the file as UTF-8 with op
 
 **Short description:** Extract dates, descriptions, and signed amounts.
 
-Code first rejects an empty list or a non-string entry. It then scans the lines for year evidence. It may infer one year when only one distinct explicit year appears and the sequence does not appear to cross a year boundary. Otherwise, a date without a year stays unresolved. Every example line already names 2026.
+Code first rejects an empty list or a non-string entry. It then scans the lines for year evidence. It may infer one year when only one distinct explicit year appears and the sequence does not appear to cross a year boundary. Otherwise, a date without a year stays unresolved. Every example line already names 2026. A retained blank line also gets a line number; missing fields are reported for that line rather than ending the batch.
 
 For each line, the parser looks for one date and one transaction amount. It supports named, numeric, and ISO-style dates; signed amounts, dollar signs, comma separators, and parenthesized negatives. It constructs a date and a decimal amount, removes matched date and amount text to form a description, and records issues such as `multiple_dates`, `multiple_amounts`, `missing_amount`, or `year_not_inferable`. A single amount labeled as an account balance is not accepted as the transaction amount. An explicit refund or return label can turn an otherwise positive amount into a negative credit. The original line remains attached to the result.
 
@@ -160,7 +160,8 @@ An illustrative response for those same two lines is:
       "description": null,
       "description_evidence": null,
       "amount": "7.50",
-      "amount_evidence": "$7.50"
+      "amount_evidence": "$7.50",
+      "amount_evidence_index": 0
     },
     {
       "line_number": 8,
@@ -170,13 +171,14 @@ An illustrative response for those same two lines is:
       "description": null,
       "description_evidence": null,
       "amount": null,
-      "amount_evidence": null
+      "amount_evidence": null,
+      "amount_evidence_index": null
     }
   ]
 }
 ```
 
-`null` for an already known field means “leave the existing value alone.” Code checks line numbers and copied source text, preserves known values, parses proposed date and amount evidence again, rejects a balance as amount evidence, and checks that description evidence is present and descriptive. It accepts only values consistent with the source. It may retry pending lines once, including lines still incomplete or failed schema or evidence checks. In this example line 3 becomes `amount: "7.50"` and its amount issue clears. No source substring gives line 8 a price, so after the last attempt its amount stays `null` and it carries `missing_amount` and `llm_extraction_failed`. If no lines have issues, there is no LLM extraction call.
+`null` for an already known field means “leave the existing value alone.” Code checks line numbers and copied source text, preserves known values, parses proposed date and amount evidence again, rejects a balance as amount evidence, and checks that description evidence is present and descriptive. If the same amount text occurs more than once, the response must identify its zero-based source occurrence with `amount_evidence_index`; without that index, code cannot accept either occurrence. It accepts only values consistent with the source. It may retry pending lines once, including lines still incomplete or failed schema or evidence checks. A gateway failure ends extraction attempts and leaves pending lines marked `llm_extraction_failed` for the report. In this example line 3 becomes `amount: "7.50"` and its amount issue clears. No source substring gives line 8 a price, so after the last attempt its amount stays `null` and it carries `missing_amount` and `llm_extraction_failed`. If no lines have issues, there is no LLM extraction call.
 
 **Input:** Pending lines 3 and 8. **Output:** The original ordered eight-line collection, with line 3's verified amount filled and line 8 still incomplete.
 
@@ -351,7 +353,7 @@ An illustrative valid response choosing these candidates is:
 }
 ```
 
-Code checks that the IDs are distinct, supplied, and include every required ID. It then substitutes the exact code-written statements and source lines. It retries a malformed or unsupported selection once, then raises an error if it still cannot obtain three grounded findings. Another valid third ID might be selected on a live run, but the two required IDs must remain.
+Code checks that the IDs are distinct, supplied, and include every required ID. It then substitutes the exact code-written statements and source lines. It retries a malformed or unsupported selection once, then raises an error if it still cannot obtain three grounded findings. A gateway failure also stops finding selection rather than publishing an incomplete report. Another valid third ID might be selected on a live run, but the two required IDs must remain.
 
 **Input:** Calculated evidence items and required IDs. **Output in this example:** Exactly three `ExpenseFinding` objects for the IDs shown, containing code-written text and source-line references.
 
