@@ -24,7 +24,6 @@ from pygments.util import ClassNotFound
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "expense-analysis-control-flow.md"
-SVG_OUTPUT = HERE / "expense-analysis-control-flow.svg"
 HTML_OUTPUT = HERE / "expense-analysis-control-flow.html"
 
 
@@ -327,8 +326,7 @@ def main() -> None:
     markdown, pygments_css = _markdown_renderer()
     details = _details_markup(overview, boxes, source_notes, markdown)
     page = PAGE_TEMPLATE.replace("__SVG__", svg).replace("__DETAILS__", details).replace("__PYGMENTS_CSS__", pygments_css)
-    SVG_OUTPUT.write_text(svg, encoding="utf-8")
-    HTML_OUTPUT.write_text(page, encoding="utf-8")
+    HTML_OUTPUT.write_text(page, encoding="utf-8", newline="\n")
 
 
 PAGE_TEMPLATE = r"""<!doctype html>
