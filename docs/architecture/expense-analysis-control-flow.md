@@ -433,7 +433,7 @@ The console entry point writes the Markdown report to standard output. When `--o
 
 ## Rebuild the diagram and explorer
 
-The box titles, actors, short descriptions, repeated-lane labels, and right-side details come from this document. The [build script](build_expense_analysis_control_flow.py) applies the layout rules above and writes both the SVG and the standalone interactive HTML beside this file. It requires `markdown-it-py` and `Pygments` only while building; the generated HTML needs no server or external packages to open.
+The box titles, actors, short descriptions, repeated-lane labels, and right-side details come from this document. The [build script](build_expense_analysis_control_flow.py) applies the layout rules above and writes the standalone interactive HTML beside this file. The HTML embeds the SVG diagram. The script requires `markdown-it-py` and `Pygments` only while building; the generated HTML needs no server or external packages to open.
 
 ```powershell
 uv run --with markdown-it-py --with pygments python docs/architecture/build_expense_analysis_control_flow.py
