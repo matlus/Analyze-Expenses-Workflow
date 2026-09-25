@@ -1,5 +1,7 @@
 # Analyze Expenses Workflow
 
+Architecture: [Markdown document](docs/architecture/expense-analysis-control-flow.md) · [interactive HTML page](docs/architecture/expense-analysis-control-flow.html) (open locally).
+
 This Python workspace analyzes a list of expense lines through the asynchronous
 `DomainFacade.analyze_expenses(list[str])` entry point. Its frozen result contains
 the transaction ledger, Jev category decisions, monthly totals, budget

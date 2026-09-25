@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expense analysis control flow</title>
+  <style>
+    :root { color-scheme: light; --ink: #172d3d; --muted: #536978; --line: #d9e4ea; --paper: #fff;
+      --canvas: #f7fafc; --accent: #197487; --detail-width: 560px; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+    body { font: 15px/1.55 Inter, "Segoe UI", Arial, sans-serif; color: var(--ink); background: var(--paper); }
+    button { font: inherit; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 12px var(--detail-width); width: 100%; height: 100dvh; }
+    .diagram-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--canvas); }
+    .pane-bar { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 8px 18px; border-bottom: 1px solid var(--line); background: var(--paper); }
+    .pane-title { margin: 0; font-size: 17px; line-height: 1.2; font-weight: 700; }
+    .pane-hint { color: var(--muted); font-size: 12px; }
+    .zoom-controls { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .zoom-controls button, .overview-button { border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+      border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+    .zoom-controls button:hover, .overview-button:hover { border-color: var(--accent); color: var(--accent); }
+    .zoom-controls button:focus-visible, .overview-button:focus-visible, .splitter:focus-visible { outline: 3px solid #66bbca; outline-offset: -2px; }
+    .zoom-value { min-width: 52px; text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+    .diagram-viewport { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+    .diagram-surface { padding: 0; }
+    .diagram-svg { display: block; width: 100%; height: auto; }
+    .splitter { position: relative; background: #e8eff3; cursor: col-resize; touch-action: none; border: 0; padding: 0; }
+    .splitter:hover, .splitter.dragging { background: #c8dce4; }
+    .splitter::after { content: ""; position: absolute; left: 4px; top: calc(50% - 25px); width: 4px; height: 50px;
+      border-radius: 4px; background: #8aa5b3; }
+    .detail-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--paper); }
+    .detail-header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 8px 22px; border-bottom: 1px solid var(--line); }
+    .detail-scroll { overflow: auto; flex: 1; min-height: 0; padding: 22px 26px 52px; }
+    .detail-entry[hidden] { display: none; }
+    .detail-kicker { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+    .detail-entry h2 { margin: 4px 0 8px; line-height: 1.22; font-size: 25px; }
+    .detail-summary { margin: 0 0 21px; color: var(--muted); font-size: 16px; }
+    .detail-body h1 { font-size: 25px; line-height: 1.2; margin: 0 0 16px; }
+    .detail-body h2 { font-size: 20px; margin: 25px 0 8px; }
+    .detail-body h3, .detail-body h4, .detail-body h5 { font-size: 16px; margin: 23px 0 8px; }
+    .detail-body p { margin: 0 0 14px; }
+    .detail-body ul, .detail-body ol { margin: 0 0 16px; padding-left: 23px; }
+    .detail-body li { margin: 5px 0; }
+    .detail-body table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse;
+      margin: 14px 0 20px; font-size: 13px; }
+    .detail-body th, .detail-body td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .detail-body th { background: #edf3f6; font-weight: 700; }
+    .detail-body tr:nth-child(even) td { background: #f8fbfc; }
+    .detail-body code:not(.syntax) { color: #7b376c; background: #f8f0f7; padding: 1px 4px; border-radius: 3px; font-size: .92em; }
+    .detail-body a { color: #126679; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+    .code-block { margin: 14px 0 19px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #f7f9fb; }
+    .code-label { padding: 5px 10px; color: var(--muted); background: #edf3f6; border-bottom: 1px solid var(--line);
+      font: 700 11px/1.3 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: .08em; }
+    .code-block pre { margin: 0; padding: 12px 14px; overflow-x: auto; line-height: 1.5; tab-size: 2; }
+    .code-block code { font: 12px/1.5 Consolas, "Cascadia Code", monospace; white-space: pre; }
+    pre { line-height: 125%; }
+td.linenos .normal { color: #666666; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: #666666; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.detail-entry .syntax .hll { background-color: #ffffcc }
+.detail-entry .syntax { background: #f0f0f0; }
+.detail-entry .syntax .c { color: #60A0B0; font-style: italic } /* Comment */
+.detail-entry .syntax .err { border: 1px solid #F00 } /* Error */
+.detail-entry .syntax .k { color: #007020; font-weight: bold } /* Keyword */
+.detail-entry .syntax .o { color: #666 } /* Operator */
+.detail-entry .syntax .ch { color: #60A0B0; font-style: italic } /* Comment.Hashbang */
+.detail-entry .syntax .cm { color: #60A0B0; font-style: italic } /* Comment.Multiline */
+.detail-entry .syntax .cp { color: #007020 } /* Comment.Preproc */
+.detail-entry .syntax .cpf { color: #60A0B0; font-style: italic } /* Comment.PreprocFile */
+.detail-entry .syntax .c1 { color: #60A0B0; font-style: italic } /* Comment.Single */
+.detail-entry .syntax .cs { color: #60A0B0; background-color: #FFF0F0 } /* Comment.Special */
+.detail-entry .syntax .gd { color: #A00000 } /* Generic.Deleted */
+.detail-entry .syntax .ge { font-style: italic } /* Generic.Emph */
+.detail-entry .syntax .ges { font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.detail-entry .syntax .gr { color: #F00 } /* Generic.Error */
+.detail-entry .syntax .gh { color: #000080; font-weight: bold } /* Generic.Heading */
+.detail-entry .syntax .gi { color: #00A000 } /* Generic.Inserted */
+.detail-entry .syntax .go { color: #888 } /* Generic.Output */
+.detail-entry .syntax .gp { color: #C65D09; font-weight: bold } /* Generic.Prompt */
+.detail-entry .syntax .gs { font-weight: bold } /* Generic.Strong */
+.detail-entry .syntax .gu { color: #800080; font-weight: bold } /* Generic.Subheading */
+.detail-entry .syntax .gt { color: #04D } /* Generic.Traceback */
+.detail-entry .syntax .kc { color: #007020; font-weight: bold } /* Keyword.Constant */
+.detail-entry .syntax .kd { color: #007020; font-weight: bold } /* Keyword.Declaration */
+.detail-entry .syntax .kn { color: #007020; font-weight: bold } /* Keyword.Namespace */
+.detail-entry .syntax .kp { color: #007020 } /* Keyword.Pseudo */
+.detail-entry .syntax .kr { color: #007020; font-weight: bold } /* Keyword.Reserved */
+.detail-entry .syntax .kt { color: #902000 } /* Keyword.Type */
+.detail-entry .syntax .m { color: #40A070 } /* Literal.Number */
+.detail-entry .syntax .s { color: #4070A0 } /* Literal.String */
+.detail-entry .syntax .na { color: #4070A0 } /* Name.Attribute */
+.detail-entry .syntax .nb { color: #007020 } /* Name.Builtin */
+.detail-entry .syntax .nc { color: #0E84B5; font-weight: bold } /* Name.Class */
+.detail-entry .syntax .no { color: #60ADD5 } /* Name.Constant */
+.detail-entry .syntax .nd { color: #555; font-weight: bold } /* Name.Decorator */
+.detail-entry .syntax .ni { color: #D55537; font-weight: bold } /* Name.Entity */
+.detail-entry .syntax .ne { color: #007020 } /* Name.Exception */
+.detail-entry .syntax .nf { color: #06287E } /* Name.Function */
+.detail-entry .syntax .nl { color: #002070; font-weight: bold } /* Name.Label */
+.detail-entry .syntax .nn { color: #0E84B5; font-weight: bold } /* Name.Namespace */
+.detail-entry .syntax .nt { color: #062873; font-weight: bold } /* Name.Tag */
+.detail-entry .syntax .nv { color: #BB60D5 } /* Name.Variable */
+.detail-entry .syntax .ow { color: #007020; font-weight: bold } /* Operator.Word */
+.detail-entry .syntax .w { color: #BBB } /* Text.Whitespace */
+.detail-entry .syntax .mb { color: #40A070 } /* Literal.Number.Bin */
+.detail-entry .syntax .mf { color: #40A070 } /* Literal.Number.Float */
+.detail-entry .syntax .mh { color: #40A070 } /* Literal.Number.Hex */
+.detail-entry .syntax .mi { color: #40A070 } /* Literal.Number.Integer */
+.detail-entry .syntax .mo { color: #40A070 } /* Literal.Number.Oct */
+.detail-entry .syntax .sa { color: #4070A0 } /* Literal.String.Affix */
+.detail-entry .syntax .sb { color: #4070A0 } /* Literal.String.Backtick */
+.detail-entry .syntax .sc { color: #4070A0 } /* Literal.String.Char */
+.detail-entry .syntax .dl { color: #4070A0 } /* Literal.String.Delimiter */
+.detail-entry .syntax .sd { color: #4070A0; font-style: italic } /* Literal.String.Doc */
+.detail-entry .syntax .s2 { color: #4070A0 } /* Literal.String.Double */
+.detail-entry .syntax .se { color: #4070A0; font-weight: bold } /* Literal.String.Escape */
+.detail-entry .syntax .sh { color: #4070A0 } /* Literal.String.Heredoc */
+.detail-entry .syntax .si { color: #70A0D0; font-style: italic } /* Literal.String.Interpol */
+.detail-entry .syntax .sx { color: #C65D09 } /* Literal.String.Other */
+.detail-entry .syntax .sr { color: #235388 } /* Literal.String.Regex */
+.detail-entry .syntax .s1 { color: #4070A0 } /* Literal.String.Single */
+.detail-entry .syntax .ss { color: #517918 } /* Literal.String.Symbol */
+.detail-entry .syntax .bp { color: #007020 } /* Name.Builtin.Pseudo */
+.detail-entry .syntax .fm { color: #06287E } /* Name.Function.Magic */
+.detail-entry .syntax .vc { color: #BB60D5 } /* Name.Variable.Class */
+.detail-entry .syntax .vg { color: #BB60D5 } /* Name.Variable.Global */
+.detail-entry .syntax .vi { color: #BB60D5 } /* Name.Variable.Instance */
+.detail-entry .syntax .vm { color: #BB60D5 } /* Name.Variable.Magic */
+.detail-entry .syntax .il { color: #40A070 } /* Literal.Number.Integer.Long */
+    @media (max-width: 1100px) {
+      .workspace { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 56vh) 12px minmax(0, 1fr); }
+      .splitter { cursor: row-resize; }
+      .splitter::after { left: calc(50% - 25px); top: 4px; width: 50px; height: 4px; }
+      .pane-hint { display: none; }
+      .detail-scroll { padding: 18px 18px 40px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="workspace" id="workspace">
+    <section class="diagram-pane" aria-label="Control-flow diagram">
+      <div class="pane-bar">
+        <div><h1 class="pane-title">Expense analysis control flow</h1>
+          <div class="pane-hint">Hover or focus a box to inspect its data and decisions</div></div>
+        <div class="zoom-controls" aria-label="Diagram zoom">
+          <button type="button" id="zoom-out" aria-label="Zoom out">&minus;</button>
+          <span class="zoom-value" id="zoom-value">100%</span>
+          <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" id="zoom-fit">Fit</button>
+        </div>
+      </div>
+      <div class="diagram-viewport" id="diagram-viewport">
+        <div class="diagram-surface" id="diagram-surface">
+<svg class="diagram-svg" xmlns="http://www.w3.org/2000/svg" width="1600" height="2020" viewBox="0 0 1600 2020" role="group" aria-labelledby="diagram-title diagram-desc">
+<title id="diagram-title">Expense analysis control flow</title>
+<desc id="diagram-desc">A top-down flow from file input through coded parsing, Jev and LLM decisions, parallel line categorization, reconciliation, calculations, findings, and report output.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8.2" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#677b8a"/></marker><filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#1d3550" flood-opacity=".10"/></filter></defs>
+<style>text{font-family:Inter,"Segoe UI",Arial,sans-serif}.title{font-weight:700;fill:#172d3d}.body{fill:#435c6d}.minor{fill:#607486}.edge{fill:none;stroke:#677b8a;stroke-width:2.8;marker-end:url(#arrow)}.flow-node{filter:url(#shadow);cursor:pointer}.flow-node>.card{transition:stroke-width .15s,filter .15s}.flow-node:hover>.card,.flow-node:focus>.card,.flow-node.is-active>.card{stroke-width:4;filter:brightness(.94)}.flow-node:focus{outline:none}.tag{font-size:11px;font-weight:700;letter-spacing:.7px}</style>
+<rect width="1600" height="2020" fill="#f7fafc"/>
+<rect x="44" y="30" width="1512" height="103" rx="21" fill="#ffffff" stroke="#dce7ed"/>
+<text x="76" y="75" class="title" font-size="29">Expense analysis · control flow</text>
+<text x="77" y="107" class="minor" font-size="15">Document-defined steps · hover or focus a box for details</text>
+<rect x="44" y="148" width="1512" height="64" rx="15" fill="#ffffff" stroke="#dce7ed"/>
+<rect x="75" y="169" width="19" height="19" rx="5" fill="#ecf7f8" stroke="#197487" stroke-width="2"/>
+<text x="104" y="185" class="body" font-size="13" font-weight="700">CODE</text>
+<rect x="331" y="169" width="19" height="19" rx="5" fill="#fff6df" stroke="#aa7215" stroke-width="2"/>
+<text x="360" y="185" class="body" font-size="13" font-weight="700">SYSTEM 1 / JEV</text>
+<rect x="637" y="169" width="19" height="19" rx="5" fill="#f3effc" stroke="#7351a5" stroke-width="2"/>
+<text x="666" y="185" class="body" font-size="13" font-weight="700">LLM</text>
+<rect x="803" y="169" width="19" height="19" rx="5" fill="#fff0ef" stroke="#b85454" stroke-width="2"/>
+<text x="832" y="185" class="body" font-size="13" font-weight="700">CHECK</text>
+<rect x="977" y="169" width="19" height="19" rx="5" fill="#edf7ee" stroke="#397356" stroke-width="2"/>
+<text x="1006" y="185" class="body" font-size="13" font-weight="700">SCATTER / GATHER</text>
+<rect x="1332" y="169" width="19" height="19" rx="5" fill="#eef4fc" stroke="#426c9a" stroke-width="2"/>
+<text x="1361" y="185" class="body" font-size="13" font-weight="700">OUTPUT</text>
+<path class="edge" d="M 800 318 L 800 337"/>
+<path class="edge" d="M 800 423 L 800 442"/>
+<path class="edge" d="M 800 528 L 800 547"/>
+<path class="edge" d="M 800 633 L 800 652"/>
+<path class="edge" d="M 800 738 C 800 797.28, 270 792.72, 270 852"/>
+<path class="edge" d="M 800 738 L 800 852"/>
+<path class="edge" d="M 800 738 C 800 797.28, 1330 792.72, 1330 852"/>
+<path class="edge" d="M 270 930 L 270 957"/>
+<path class="edge" d="M 800 930 L 800 957"/>
+<path class="edge" d="M 1330 930 L 1330 957"/>
+<path class="edge" d="M 270 1035 C 270 1090.64, 800 1086.36, 800 1142"/>
+<path class="edge" d="M 800 1035 L 800 1142"/>
+<path class="edge" d="M 1330 1035 C 1330 1090.64, 800 1086.36, 800 1142"/>
+<path class="edge" d="M 800 1228 L 800 1247"/>
+<path class="edge" d="M 800 1333 L 800 1352"/>
+<path class="edge" d="M 800 1438 L 800 1457"/>
+<path class="edge" d="M 800 1543 L 800 1562"/>
+<path class="edge" d="M 800 1648 L 800 1667"/>
+<path class="edge" d="M 800 1753 L 800 1772"/>
+<path class="edge" d="M 800 1858 L 800 1877"/>
+<g class="flow-node" data-key="step-01" tabindex="0" role="button" aria-label="01  Read expense file, Code"><rect class="card" x="465" y="240" width="670" height="78" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="467" y="255" width="6" height="48" rx="3" fill="#197487"/><text x="487" y="271" class="title" font-size="19">01  Read expense file</text><rect x="1047" y="252" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="1082.0" y="267" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="487" y="297" class="body" font-size="14">Load the ordered source lines.</text></g>
+<g class="flow-node" data-key="step-02" tabindex="0" role="button" aria-label="02  Validate and parse lines, Code"><rect class="card" x="465" y="345" width="670" height="78" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="467" y="360" width="6" height="48" rx="3" fill="#197487"/><text x="487" y="376" class="title" font-size="19">02  Validate and parse lines</text><rect x="1047" y="357" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="1082.0" y="372" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="487" y="402" class="body" font-size="14">Extract dates, descriptions, and signed amounts.</text></g>
+<g class="flow-node" data-key="step-03" tabindex="0" role="button" aria-label="03  Resolve ambiguous values, System 1 / Jev"><rect class="card" x="465" y="450" width="670" height="78" rx="16" fill="#fff6df" stroke="#aa7215" stroke-width="2"/><rect x="467" y="465" width="6" height="48" rx="3" fill="#aa7215"/><text x="487" y="481" class="title" font-size="19">03  Resolve ambiguous values</text><rect x="1001" y="462" width="116" height="22" rx="11" fill="#fff" stroke="#aa7215"/><text x="1059.0" y="477" text-anchor="middle" class="tag" fill="#aa7215">SYSTEM 1 · JEV</text><text x="487" y="507" class="body" font-size="14">Choose among dates or amounts found in the source text.</text></g>
+<g class="flow-node" data-key="step-04" tabindex="0" role="button" aria-label="04  Complete uncertain fields, Large language model (LLM)"><rect class="card" x="465" y="555" width="670" height="78" rx="16" fill="#f3effc" stroke="#7351a5" stroke-width="2"/><rect x="467" y="570" width="6" height="48" rx="3" fill="#7351a5"/><text x="487" y="586" class="title" font-size="19">04  Complete uncertain fields</text><rect x="1047" y="567" width="70" height="22" rx="11" fill="#fff" stroke="#7351a5"/><text x="1082.0" y="582" text-anchor="middle" class="tag" fill="#7351a5">LLM</text><text x="487" y="612" class="body" font-size="14">Propose missing fields; code verifies source evidence.</text></g>
+<g class="flow-node" data-key="step-05" tabindex="0" role="button" aria-label="05  Scatter line tasks, Code"><rect class="card" x="465" y="660" width="670" height="78" rx="16" fill="#edf7ee" stroke="#397356" stroke-width="2"/><rect x="467" y="675" width="6" height="48" rx="3" fill="#397356"/><text x="487" y="691" class="title" font-size="19">05  Scatter line tasks</text><rect x="1047" y="672" width="70" height="22" rx="11" fill="#fff" stroke="#397356"/><text x="1082.0" y="687" text-anchor="middle" class="tag" fill="#397356">CODE</text><text x="487" y="717" class="body" font-size="14">Start one task per line; incomplete lines return no category.</text></g>
+<g class="flow-node" data-key="step-06" tabindex="0" role="button" aria-label="06  Gather line results, Code"><rect class="card" x="465" y="1150" width="670" height="78" rx="16" fill="#edf7ee" stroke="#397356" stroke-width="2"/><rect x="467" y="1165" width="6" height="48" rx="3" fill="#397356"/><text x="487" y="1181" class="title" font-size="19">06  Gather line results</text><rect x="1047" y="1162" width="70" height="22" rx="11" fill="#fff" stroke="#397356"/><text x="1082.0" y="1177" text-anchor="middle" class="tag" fill="#397356">CODE</text><text x="487" y="1207" class="body" font-size="14">Converge all tasks and restore source-line order.</text></g>
+<g class="flow-node" data-key="step-07" tabindex="0" role="button" aria-label="07  Reconcile the ledger, Code"><rect class="card" x="465" y="1255" width="670" height="78" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="467" y="1270" width="6" height="48" rx="3" fill="#197487"/><text x="487" y="1286" class="title" font-size="19">07  Reconcile the ledger</text><rect x="1047" y="1267" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="1082.0" y="1282" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="487" y="1312" class="body" font-size="14">Apply confirmed duplicates and transaction treatments.</text></g>
+<g class="flow-node" data-key="step-08" tabindex="0" role="button" aria-label="08  Calculate totals and comparisons, Code"><rect class="card" x="465" y="1360" width="670" height="78" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="467" y="1375" width="6" height="48" rx="3" fill="#197487"/><text x="487" y="1391" class="title" font-size="19">08  Calculate totals and comparisons</text><rect x="1047" y="1372" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="1082.0" y="1387" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="487" y="1417" class="body" font-size="14">Sum monthly amounts, budgets, and changes with decimal arithmetic.</text></g>
+<g class="flow-node" data-key="step-09" tabindex="0" role="button" aria-label="09  Check the totals balance, Code"><rect class="card" x="465" y="1465" width="670" height="78" rx="16" fill="#fff0ef" stroke="#b85454" stroke-width="2"/><rect x="467" y="1480" width="6" height="48" rx="3" fill="#b85454"/><text x="487" y="1496" class="title" font-size="19">09  Check the totals balance</text><rect x="1047" y="1477" width="70" height="22" rx="11" fill="#fff" stroke="#b85454"/><text x="1082.0" y="1492" text-anchor="middle" class="tag" fill="#b85454">CODE</text><text x="487" y="1522" class="body" font-size="14">Require the source lines and monetary totals to reconcile.</text></g>
+<g class="flow-node" data-key="step-10" tabindex="0" role="button" aria-label="10  Select three findings, Large language model (LLM)"><rect class="card" x="465" y="1570" width="670" height="78" rx="16" fill="#f3effc" stroke="#7351a5" stroke-width="2"/><rect x="467" y="1585" width="6" height="48" rx="3" fill="#7351a5"/><text x="487" y="1601" class="title" font-size="19">10  Select three findings</text><rect x="1047" y="1582" width="70" height="22" rx="11" fill="#fff" stroke="#7351a5"/><text x="1082.0" y="1597" text-anchor="middle" class="tag" fill="#7351a5">LLM</text><text x="487" y="1627" class="body" font-size="14">Choose evidence IDs; code supplies the final wording.</text></g>
+<g class="flow-node" data-key="step-11" tabindex="0" role="button" aria-label="11  Assemble the analysis, Code"><rect class="card" x="465" y="1675" width="670" height="78" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="467" y="1690" width="6" height="48" rx="3" fill="#197487"/><text x="487" y="1706" class="title" font-size="19">11  Assemble the analysis</text><rect x="1047" y="1687" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="1082.0" y="1702" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="487" y="1732" class="body" font-size="14">Collect the ledger, calculations, findings, and method.</text></g>
+<g class="flow-node" data-key="step-12" tabindex="0" role="button" aria-label="12  Render the report, Code"><rect class="card" x="465" y="1780" width="670" height="78" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="467" y="1795" width="6" height="48" rx="3" fill="#197487"/><text x="487" y="1811" class="title" font-size="19">12  Render the report</text><rect x="1047" y="1792" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="1082.0" y="1807" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="487" y="1837" class="body" font-size="14">Compose the Markdown tables, method, and findings.</text></g>
+<g class="flow-node" data-key="step-13" tabindex="0" role="button" aria-label="13  Deliver the report, Code"><rect class="card" x="465" y="1885" width="670" height="78" rx="16" fill="#eef4fc" stroke="#426c9a" stroke-width="2"/><rect x="467" y="1900" width="6" height="48" rx="3" fill="#426c9a"/><text x="487" y="1916" class="title" font-size="19">13  Deliver the report</text><rect x="1047" y="1897" width="70" height="22" rx="11" fill="#fff" stroke="#426c9a"/><text x="1082.0" y="1912" text-anchor="middle" class="tag" fill="#426c9a">CODE</text><text x="487" y="1942" class="body" font-size="14">Print to console; optionally write a Markdown file.</text></g>
+<g class="flow-node" data-key="choose-category-1" tabindex="0" role="button" aria-label="Choose category · line A, System 1 / Jev"><rect class="card" x="80" y="860" width="380" height="70" rx="16" fill="#fff6df" stroke="#aa7215" stroke-width="2"/><rect x="82" y="875" width="6" height="40" rx="3" fill="#aa7215"/><text x="102" y="891" class="title" font-size="16">Choose category · line A</text><rect x="326" y="872" width="116" height="22" rx="11" fill="#fff" stroke="#aa7215"/><text x="384.0" y="887" text-anchor="middle" class="tag" fill="#aa7215">SYSTEM 1 · JEV</text><text x="102" y="917" class="body" font-size="13">Jev uses the fixed category choices.</text></g>
+<g class="flow-node" data-key="choose-category-2" tabindex="0" role="button" aria-label="Choose category · line B, System 1 / Jev"><rect class="card" x="610" y="860" width="380" height="70" rx="16" fill="#fff6df" stroke="#aa7215" stroke-width="2"/><rect x="612" y="875" width="6" height="40" rx="3" fill="#aa7215"/><text x="632" y="891" class="title" font-size="16">Choose category · line B</text><rect x="856" y="872" width="116" height="22" rx="11" fill="#fff" stroke="#aa7215"/><text x="914.0" y="887" text-anchor="middle" class="tag" fill="#aa7215">SYSTEM 1 · JEV</text><text x="632" y="917" class="body" font-size="13">An independent per-line decision.</text></g>
+<g class="flow-node" data-key="choose-category-3" tabindex="0" role="button" aria-label="Choose category · line …, System 1 / Jev"><rect class="card" x="1140" y="860" width="380" height="70" rx="16" fill="#fff6df" stroke="#aa7215" stroke-width="2"/><rect x="1142" y="875" width="6" height="40" rx="3" fill="#aa7215"/><text x="1162" y="891" class="title" font-size="16">Choose category · line …</text><rect x="1386" y="872" width="116" height="22" rx="11" fill="#fff" stroke="#aa7215"/><text x="1444.0" y="887" text-anchor="middle" class="tag" fill="#aa7215">SYSTEM 1 · JEV</text><text x="1162" y="917" class="body" font-size="13">More lines share the eight-call limit.</text></g>
+<g class="flow-node" data-key="apply-category-rules-1" tabindex="0" role="button" aria-label="Apply category rules · A, Code"><rect class="card" x="80" y="965" width="380" height="70" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="82" y="980" width="6" height="40" rx="3" fill="#197487"/><text x="102" y="996" class="title" font-size="16">Apply category rules · A</text><rect x="372" y="977" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="407.0" y="992" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="102" y="1022" class="body" font-size="13">Code enforces merchant and cash rules.</text></g>
+<g class="flow-node" data-key="apply-category-rules-2" tabindex="0" role="button" aria-label="Apply category rules · B, Code"><rect class="card" x="610" y="965" width="380" height="70" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="612" y="980" width="6" height="40" rx="3" fill="#197487"/><text x="632" y="996" class="title" font-size="16">Apply category rules · B</text><rect x="902" y="977" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="937.0" y="992" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="632" y="1022" class="body" font-size="13">Code may override Jev&#x27;s proposal.</text></g>
+<g class="flow-node" data-key="apply-category-rules-3" tabindex="0" role="button" aria-label="Apply category rules · …, Code"><rect class="card" x="1140" y="965" width="380" height="70" rx="16" fill="#ecf7f8" stroke="#197487" stroke-width="2"/><rect x="1142" y="980" width="6" height="40" rx="3" fill="#197487"/><text x="1162" y="996" class="title" font-size="16">Apply category rules · …</text><rect x="1432" y="977" width="70" height="22" rx="11" fill="#fff" stroke="#197487"/><text x="1467.0" y="992" text-anchor="middle" class="tag" fill="#197487">CODE</text><text x="1162" y="1022" class="body" font-size="13">Each task returns a category or no result.</text></g>
+<text x="76" y="1994" class="minor" font-size="13">Recovery stages pass through when unneeded. Scatter starts one task per line; up to eight Jev calls run at once. Every task contributes to the gather.</text>
+</svg>
+
+        </div>
+      </div>
+    </section>
+    <div class="splitter" id="splitter" role="separator" aria-label="Resize diagram and details" aria-orientation="vertical"
+      tabindex="0" aria-valuemin="320" aria-valuemax="1100" aria-valuenow="560"></div>
+    <aside class="detail-pane" aria-label="Selected step details">
+      <div class="detail-header"><strong>Step details</strong>
+        <button type="button" class="overview-button" id="overview-button">Overview</button></div>
+      <div class="detail-scroll" id="detail-scroll" aria-live="polite">
+<article class="detail-entry" data-key="overview" id="detail-overview"><div class="detail-kicker">Architecture overview</div><div class="detail-body"><h1>Expense analysis control flow</h1>
+<p>This document is the source for a control-flow diagram of the current application. It defines the box names, actors, short descriptions, connections, and the data passed between steps. A diagram can be drawn from this document without consulting an existing picture. The implementation links at the end let a programmer check or update the description when the code changes.</p>
+<h2>Purpose and boundaries</h2>
+<p>The application reads a loosely written expense log and produces an inspectable Markdown report. The report keeps each source line in a ledger, shows how that line was treated, calculates monthly spending and budget comparisons, and presents three findings tied to calculated evidence. A reader can trace a total or finding back to the input lines that support it.</p>
+<p>The flow has three kinds of work:</p>
+<table>
+<thead>
+<tr>
+<th>Role in the diagram</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Code</strong></td>
+<td>Read and parse text, preserve source evidence, apply category policy, decide ledger treatment, calculate money, validate totals, and render the report. This role could be implemented in another language.</td>
+</tr>
+<tr>
+<td><strong>System 1 / Jev</strong></td>
+<td>Answer a bounded choice question: select a date or amount from candidates found in a source line, or choose one category from the fixed expense catalog.</td>
+</tr>
+<tr>
+<td><strong>Large language model (LLM)</strong></td>
+<td>Propose fields for lines that remain uncertain, or select three IDs from findings already written by code. Code validates both responses.</td>
+</tr>
+</tbody>
+</table>
+<p>Jev's choices and the LLM's proposals are inputs to the coded workflow. Neither service writes the ledger, performs the financial calculations, or edits the final report. The current implementation uses Python and can use either the Codex or GitHub Copilot gateway for its LLM calls; these are implementation details, not separate boxes in the flow.</p>
+<p>The controller proceeds from file input to parsing, Jev ambiguity choices, LLM field completion, per-line category tasks, gathering, ledger reconciliation, calculations, balance checks, finding selection, and report delivery. The category tasks are the only scatter/gather part of that sequence.</p>
+<p>The JSON blocks below make in-memory objects and service exchanges readable. Dates and decimal amounts are shown as strings. Unless a block is identified as a service response, it illustrates data shape rather than claiming that the application stores that object as JSON.</p>
+<h2>How to draw the diagram from this document</h2>
+<p>Use each numbered heading as a box title and its <strong>Short description</strong> as the smaller line inside the box. Show the <strong>Actor</strong> as a visible badge or other consistent marker. Keep inputs, outputs, examples, and explanations outside the boxes. Place boxes 01 through 05 vertically. At 05, fan out into one lane per source line: a Jev category choice above a coded policy check. Draw a few lanes side by side and mark the last lane as repeating for more lines; there are not exactly three workers. Incomplete lines bypass both choice and policy boxes and return an empty category slot. All lanes converge at 06. Place boxes 06 through 13 vertically below the gather.</p>
+<p>Connect successive vertical boxes with straight downward arrows. Use curved arrows with enough vertical space to make the fan-out from 05 and fan-in to 06 legible. The gather waits for every line task before 07 starts. The Jev choice and coded policy check within each lane are sequential; different lanes can run concurrently, with at most eight Jev category calls active at once. Steps 03 and 04 are sequential recovery stages and pass data through when no recovery is needed. Do not add a configuration box. Use rounded cards on a light background. A colored accent on the left side of each card should stop within the straight section of that side, short of both rounded corners. Include a legend. If actors are color-coded, keep the same color for each actor throughout; a separate gate or output tint may indicate 05, 06, 09, or 13 without hiding that those steps are code.</p>
+<h2>Example input</h2>
+<p>The running example is a small, invented UTF-8 input file. It is designed to exercise the branches below. It is not a recorded execution of the live decision services.</p>
+<div class="code-block"><div class="code-label">TEXT</div><pre><code class="syntax">2026-06-01 | Kroger | $82.18
+2026-06-01 | Kroger | $82.18
+2026-06-02 | Cafe | charge $7.50; available balance $102.00
+2026-06-03 | ATM withdrawal | $40.00
+2026-06-04 | Bank transfer | -$15.00
+2026-07-01 | Kroger | $50.00
+2026-07-02 | Target | $20.00
+2026-07-03 | Unknown store | amount missing
+</code></pre></div><p>For this example the caller confirms <strong>line 2</strong> as a duplicate of line 1. The illustrative monthly targets are <strong>$100.00 for Dining &amp; Coffee</strong> and <strong>$100.00 for Shopping</strong>. To make the path concrete, suppose Jev abstains on line 3's amount, the LLM extracts <code>$7.50</code> from that line, and neither service can establish an amount for line 8. The category choices shown later are also illustrative; their policy overrides and all arithmetic follow the code. Live Jev and LLM responses may differ.</p>
+<p>There is no required CSV column order. Dates may be named, numeric, or ISO-style; currency symbols and separators vary. The application numbers retained nonblank lines from 1; for its supplied fixture it also removes a specific two-line preamble. Line numbers in this example are therefore 1 through 8. The explicit years make year inference unnecessary here.</p>
+<p>The repeated Kroger line is not removed when reading the file. Its exclusion happens later, after the caller's confirmation and an exact adjacent-line check. Every input line remains represented in the final ledger.</p>
+<h2>Where to inspect the implementation</h2>
+<table>
+<thead>
+<tr>
+<th>Flow area</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Example input</td>
+<td><a href="../../packages/analyze-expenses-workflow/tests/fixtures/personal_expenses.txt"><code>personal_expenses.txt</code></a></td>
+</tr>
+<tr>
+<td>File input and report delivery</td>
+<td><a href="../../apps/analyze-expenses-workflow-app/src/analyze_expenses_workflow_app/main.py"><code>main.py</code></a></td>
+</tr>
+<tr>
+<td>Overall sequence and scatter/gather</td>
+<td><a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/manager_expense_analysis.py"><code>manager_expense_analysis.py</code></a></td>
+</tr>
+<tr>
+<td>Parsing and source evidence</td>
+<td><a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/expense_line_parsing_processor.py"><code>expense_line_parsing_processor.py</code></a>, <a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/evidence_parsers/expense_line_evidence_parser.py"><code>expense_line_evidence_parser.py</code></a></td>
+</tr>
+<tr>
+<td>Jev candidate and category decisions</td>
+<td><a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/expense_line_jev_extraction_processor.py"><code>expense_line_jev_extraction_processor.py</code></a>, <a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/transaction_categorization_processor.py"><code>transaction_categorization_processor.py</code></a></td>
+</tr>
+<tr>
+<td>LLM extraction and finding selection</td>
+<td><a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/llm_processors/expense_line_extraction_llm_processor.py"><code>expense_line_extraction_llm_processor.py</code></a>, <a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/llm_processors/expense_findings_llm_processor.py"><code>expense_findings_llm_processor.py</code></a></td>
+</tr>
+<tr>
+<td>Ledger, calculations, and report</td>
+<td><a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/expense_reconciliation_processor.py"><code>expense_reconciliation_processor.py</code></a>, <a href="../../packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/expense_calculation_processor.py"><code>expense_calculation_processor.py</code></a>, <a href="../../apps/analyze-expenses-workflow-app/src/analyze_expenses_workflow_app/composers/composer_expense_analysis_report.py"><code>composer_expense_analysis_report.py</code></a></td>
+</tr>
+</tbody>
+</table>
+<h2>Rebuild the diagram and explorer</h2>
+<p>The box titles, actors, short descriptions, repeated-lane labels, and right-side details come from this document. The <a href="build_expense_analysis_control_flow.py">build script</a> applies the layout rules above and writes both the SVG and the standalone interactive HTML beside this file. It requires <code>markdown-it-py</code> and <code>Pygments</code> only while building; the generated HTML needs no server or external packages to open.</p>
+<div class="code-block"><div class="code-label">POWERSHELL</div><pre><code class="syntax"><span class="n">uv</span> <span class="n">run</span> <span class="p">-</span><span class="n">-with</span> <span class="n">markdown-it-py</span> <span class="p">-</span><span class="n">-with</span> <span class="n">pygments</span> <span class="n">python</span> <span class="n">docs</span><span class="p">/</span><span class="n">architecture</span><span class="p">/</span><span class="n">build_expense_analysis_control_flow</span><span class="p">.</span><span class="n">py</span>
+</code></pre></div></div></article>
+<article class="detail-entry" data-key="step-01" hidden><div class="detail-kicker">Code</div><h2>01  Read expense file</h2><p class="detail-summary">Load the ordered source lines.</p><div class="detail-body"><p>The console entry point takes an <code>--input</code> path, reads the file as UTF-8 with optional byte-order mark, removes blank lines, and removes the fixture preamble only when the first two lines match it exactly. It keeps the remaining text in order. It also rejects an <code>--output</code> path that points to the input file.</p>
+<p><strong>Input:</strong> A text file path, optional output path, and confirmed duplicate line numbers. <strong>Output:</strong> Eight strings in their original order, passed to <code>DomainFacade.analyze_expenses</code> with <code>(2,)</code> as the duplicate confirmation. No line has been categorized or excluded yet.</p>
+</div></article>
+<article class="detail-entry" data-key="step-02" hidden><div class="detail-kicker">Code</div><h2>02  Validate and parse lines</h2><p class="detail-summary">Extract dates, descriptions, and signed amounts.</p><div class="detail-body"><p>Code first rejects an empty list or a non-string entry. It then scans the lines for year evidence. It may infer one year when only one distinct explicit year appears and the sequence does not appear to cross a year boundary. Otherwise, a date without a year stays unresolved. Every example line already names 2026.</p>
+<p>For each line, the parser looks for one date and one transaction amount. It supports named, numeric, and ISO-style dates; signed amounts, dollar signs, comma separators, and parenthesized negatives. It constructs a date and a decimal amount, removes matched date and amount text to form a description, and records issues such as <code>multiple_dates</code>, <code>multiple_amounts</code>, <code>missing_amount</code>, or <code>year_not_inferable</code>. A single amount labeled as an account balance is not accepted as the transaction amount. An explicit refund or return label can turn an otherwise positive amount into a negative credit. The original line remains attached to the result.</p>
+<p><strong>Input:</strong> The eight retained strings. <strong>Output:</strong> One <code>ParsedExpenseLine</code> per string, in the same order. The actual parser fields relevant to this example are:</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Date</th>
+<th>Description after removing date and amount tokens</th>
+<th style="text-align:right">Amount</th>
+<th>Issue</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>2026-06-01</td>
+<td>Kroger</td>
+<td style="text-align:right">$82.18</td>
+<td>none</td>
+</tr>
+<tr>
+<td>2</td>
+<td>2026-06-01</td>
+<td>Kroger</td>
+<td style="text-align:right">$82.18</td>
+<td>none</td>
+</tr>
+<tr>
+<td>3</td>
+<td>2026-06-02</td>
+<td>Cafe | charge ; available balance</td>
+<td style="text-align:right">unknown</td>
+<td><code>multiple_amounts</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>2026-06-03</td>
+<td>ATM withdrawal</td>
+<td style="text-align:right">$40.00</td>
+<td>none</td>
+</tr>
+<tr>
+<td>5</td>
+<td>2026-06-04</td>
+<td>Bank transfer</td>
+<td style="text-align:right">-$15.00</td>
+<td>none</td>
+</tr>
+<tr>
+<td>6</td>
+<td>2026-07-01</td>
+<td>Kroger</td>
+<td style="text-align:right">$50.00</td>
+<td>none</td>
+</tr>
+<tr>
+<td>7</td>
+<td>2026-07-02</td>
+<td>Target</td>
+<td style="text-align:right">$20.00</td>
+<td>none</td>
+</tr>
+<tr>
+<td>8</td>
+<td>2026-07-03</td>
+<td>Unknown store | amount missing</td>
+<td style="text-align:right">unknown</td>
+<td><code>missing_amount</code></td>
+</tr>
+</tbody>
+</table>
+<p>For line 3, the parser sees two currency amounts and declines to choose one. A readable object for that line is:</p>
+<div class="code-block"><div class="code-label">JSON</div><pre><code class="syntax"><span class="p">{</span>
+<span class="w">  </span><span class="nt">"line_number"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"source_text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-06-02 | Cafe | charge $7.50; available balance $102.00"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"occurred_on"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-06-02"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Cafe | charge ; available balance"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"amount"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"issues"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"multiple_amounts"</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div><p>An unresolved field is <code>None</code> in the current implementation and appears as <code>null</code> in these JSON illustrations.</p>
+</div></article>
+<article class="detail-entry" data-key="step-03" hidden><div class="detail-kicker">System 1 / Jev</div><h2>03  Resolve ambiguous values</h2><p class="detail-summary">Choose among dates or amounts found in the source text.</p><div class="detail-body"><p>This step runs only for a line marked with multiple date or amount candidates. Code finds the candidate occurrences in the source text and asks Jev to choose a candidate or <code>none</code>. For a date it asks which occurrence is the transaction date rather than a posting or reference date. For an amount it asks which signed amount affects the account rather than a balance or original price. Jev does not extract an unrestricted value; its answer must name one of the supplied choices. The current gateway sends the question through the TypeSafe SDK's System One operation.</p>
+<p>Line 3 presents <code>$7.50</code> and <code>$102.00</code>. The latter is marked as an available balance, not a charge. The choice request is conceptually:</p>
+<div class="code-block"><div class="code-label">JSON</div><pre><code class="syntax"><span class="p">{</span>
+<span class="w">  </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-06-02 | Cafe | charge $7.50; available balance $102.00"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"question"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"instructions"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Which candidate is the signed transaction amount affecting this account, rather than a balance or original price?"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"criteria"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"candidate_0"</span><span class="p">:</span><span class="w"> </span><span class="s2">"The source occurrence 1: $7.50"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"candidate_1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"The source occurrence 2: $102.00"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"none"</span><span class="p">:</span><span class="w"> </span><span class="s2">"None of the candidate values is the transaction field."</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div><p>Jev returns a selected choice, confidence, and a probability for every offered choice. For the running example, assume it abstains:</p>
+<div class="code-block"><div class="code-label">JSON</div><pre><code class="syntax"><span class="p">{</span>
+<span class="w">  </span><span class="nt">"choice"</span><span class="p">:</span><span class="w"> </span><span class="s2">"none"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"probabilities"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"candidate_0"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"candidate_1"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"none"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div><p>Code accepts a date or amount only if the selected choice is recognized and its probability reaches the configured minimum. It parses the selected source occurrence itself, rejects an occurrence identified as a balance, and clears the corresponding issue only when it obtains a valid value. A <code>none</code> choice, low probability, or Jev failure leaves the issue unresolved for the next step. Under the assumed response, line 3 still has <code>amount: null</code> and <code>multiple_amounts</code>. Line 8 has <code>missing_amount</code>, not multiple candidates, so it passes through without a Jev choice.</p>
+<p><strong>Input:</strong> Line 3 and its two source occurrences. <strong>Output in this example:</strong> The eight parsed lines, unchanged, with line 3 still pending. Lines without multiple candidates pass through.</p>
+</div></article>
+<article class="detail-entry" data-key="step-04" hidden><div class="detail-kicker">Large language model (LLM)</div><h2>04  Complete uncertain fields</h2><p class="detail-summary">Propose missing fields; code verifies source evidence.</p><div class="detail-body"><p>The LLM receives only lines that still carry parsing issues after the Jev pass. Code sends the source text, line number, already known fields, issues, an optional inferred year, and a strict response schema. It asks for a JSON object containing one entry per pending line in the same order. For every newly proposed date, description, or amount, the model must provide the exact supporting substring from the source text. It may return <code>null</code> when it cannot establish a field. In this example the pending lines are 3 and 8.</p>
+<p>An illustrative response for those same two lines is:</p>
+<div class="code-block"><div class="code-label">JSON</div><pre><code class="syntax"><span class="p">{</span>
+<span class="w">  </span><span class="nt">"lines"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"line_number"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"source_text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-06-02 | Cafe | charge $7.50; available balance $102.00"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"occurred_on"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"date_evidence"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"description_evidence"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"amount"</span><span class="p">:</span><span class="w"> </span><span class="s2">"7.50"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"amount_evidence"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$7.50"</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"line_number"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"source_text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-07-03 | Unknown store | amount missing"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"occurred_on"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"date_evidence"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"description_evidence"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"amount"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"amount_evidence"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div><p><code>null</code> for an already known field means “leave the existing value alone.” Code checks line numbers and copied source text, preserves known values, parses proposed date and amount evidence again, rejects a balance as amount evidence, and checks that description evidence is present and descriptive. It accepts only values consistent with the source. It may retry pending lines once, including lines still incomplete or failed schema or evidence checks. In this example line 3 becomes <code>amount: &quot;7.50&quot;</code> and its amount issue clears. No source substring gives line 8 a price, so after the last attempt its amount stays <code>null</code> and it carries <code>missing_amount</code> and <code>llm_extraction_failed</code>. If no lines have issues, there is no LLM extraction call.</p>
+<p><strong>Input:</strong> Pending lines 3 and 8. <strong>Output:</strong> The original ordered eight-line collection, with line 3's verified amount filled and line 8 still incomplete.</p>
+</div></article>
+<article class="detail-entry" data-key="step-05" hidden><div class="detail-kicker">Code</div><h2>05  Scatter line tasks</h2><p class="detail-summary">Start one task per line; incomplete lines return no category.</p><div class="detail-body"><p>The manager starts one asynchronous task for every parsed line. Within each task, code checks for a date, amount, and description. An incomplete line returns an empty categorization slot (<code>None</code>) without calling Jev. A complete line enters the category decision shown in the repeated boxes below. A semaphore allows at most eight category calls to Jev at one time. The Jev ambiguity pass and LLM extraction before this point are sequential stages; this category work is the flow's explicit concurrent section. Lines 1 through 7 can be categorized; line 8 immediately contributes <code>None</code> because its amount is unknown.</p>
+<p><strong>Input:</strong> Eight ordered <code>ParsedExpenseLine</code> objects. <strong>Output:</strong> Eight running or completed line tasks, one result slot per line.</p>
+</div></article>
+<article class="detail-entry" data-key="step-06" hidden><div class="detail-kicker">Code</div><h2>06  Gather line results</h2><p class="detail-summary">Converge all tasks and restore source-line order.</p><div class="detail-body"><p>The task group waits for every line task to finish. The manager reads their results in the same order as the input lines, producing one categorization slot per parsed line. The gather makes the next step's line-by-line reconciliation possible. A category request that fails here propagates through the task group; it is not treated as a successful <code>None</code> result.</p>
+<p><strong>Input:</strong> All eight per-line task results. <strong>Output:</strong> The ordered categories <code>[groceries, groceries, dining_coffee, uncategorized, uncategorized, groceries, other, null]</code>. The final <code>null</code> represents line 8's missing categorization, not an omitted source line.</p>
+</div></article>
+<article class="detail-entry" data-key="step-07" hidden><div class="detail-kicker">Code</div><h2>07  Reconcile the ledger</h2><p class="detail-summary">Apply confirmed duplicates and transaction treatments.</p><div class="detail-body"><p>Code verifies that each nonempty category result belongs to the corresponding source line. It then creates one <code>ExpenseTransaction</code> for every parsed line and assigns one treatment. The names below are internal result values. Here, <strong>outflow</strong> means an amount leaving the account, while <strong>credit</strong> means a negative amount in this ledger's signed-amount convention. Neither label proves what the money was used for.</p>
+<table>
+<thead>
+<tr>
+<th>Treatment</th>
+<th>Example line</th>
+<th>Meaning in this example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>included_spending</code></td>
+<td>1, 3, 6, 7</td>
+<td>Complete, categorized charges. A categorized refund would stay here with a negative amount.</td>
+</tr>
+<tr>
+<td><code>excluded_duplicate</code></td>
+<td>2</td>
+<td>The caller confirmed this exact copy of adjacent line 1. It stays in the ledger but contributes no second $82.18 charge.</td>
+</tr>
+<tr>
+<td><code>uncategorized_outflow</code></td>
+<td>4</td>
+<td>The $40 ATM withdrawal leaves the account, but the record does not say what was purchased. It is reported separately from classified spending.</td>
+</tr>
+<tr>
+<td><code>uncategorized_credit</code></td>
+<td>5</td>
+<td>The -$15 bank transfer has no established spending category. It stays visible but is not subtracted from spending or added to the reported outflow.</td>
+</tr>
+<tr>
+<td><code>unparsed</code></td>
+<td>8</td>
+<td>The amount remains unknown. The source text stays visible; no amount from this line enters a total.</td>
+</tr>
+</tbody>
+</table>
+<p>An invalid duplicate confirmation raises an error instead of removing the line. The application never guesses which repeated entries were accidental.</p>
+<p><strong>Input:</strong> Eight parsed lines, eight aligned category slots, and confirmed duplicate line 2. <strong>Output:</strong> Eight ordered <code>ExpenseTransaction</code> records. Line 2 has <code>duplicate_of_line_number: 1</code>; each other record has its treatment and retains its source line.</p>
+</div></article>
+<article class="detail-entry" data-key="step-08" hidden><div class="detail-kicker">Code</div><h2>08  Calculate totals and comparisons</h2><p class="detail-summary">Sum monthly amounts, budgets, and changes with decimal arithmetic.</p><div class="detail-body"><p>Code groups included spending by month and category and sums signed decimal amounts. Uncategorized outflows are totaled separately, then added to classified spending to show <strong>observed outflow</strong>, the amount of known charges plus cash leaving the account whose purpose is unknown. It is not a claim that every dollar was spent on a known purchase. The -$15 transfer on line 5 is excluded from that measure because the application does not know what the credit represents. Code compares Dining &amp; Coffee and Shopping with their monthly targets, using <code>actual - target</code> for variance. For each adjacent pair of reported months, it calculates category change as <code>current - previous</code>. Each total and comparison carries its contributing source line numbers.</p>
+<div class="code-block"><div class="code-label">TEXT</div><pre><code class="syntax">classified spending = sum of signed included amounts by month and category
+observed outflow    = classified spending + unresolved outflow
+budget variance     = actual category spending - monthly target
+monthly change      = current category amount - previous category amount
+</code></pre></div><p>The running example yields:</p>
+<table>
+<thead>
+<tr>
+<th>Month</th>
+<th>Category</th>
+<th style="text-align:right">Classified amount</th>
+<th>Source lines</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>June 2026</td>
+<td>Dining &amp; Coffee</td>
+<td style="text-align:right">$7.50</td>
+<td>3</td>
+</tr>
+<tr>
+<td>June 2026</td>
+<td>Groceries</td>
+<td style="text-align:right">$82.18</td>
+<td>1</td>
+</tr>
+<tr>
+<td>July 2026</td>
+<td>Groceries</td>
+<td style="text-align:right">$50.00</td>
+<td>6</td>
+</tr>
+<tr>
+<td>July 2026</td>
+<td>Other</td>
+<td style="text-align:right">$20.00</td>
+<td>7</td>
+</tr>
+</tbody>
+</table>
+<p>Thus June has $89.68 of classified spending plus line 4's $40.00 unresolved cash withdrawal, or $129.68 observed outflow. July has $70.00 of classified spending and no unresolved outflow. Across both months, classified spending is $159.68 and observed outflow is $199.68. Line 2's duplicate $82.18, line 5's -$15.00 credit, and line 8's unknown amount do not enter these sums.</p>
+<p>With the example's $100.00 targets, June Dining &amp; Coffee is $7.50 against $100.00, a variance of -$92.50; July is $0.00 against $100.00, a variance of -$100.00. Shopping is $0.00 against $100.00 in both months because line 7's merchant-only Target charge is in Other. <strong>Shopping coverage</strong> is a note about which purchases the Shopping total includes. The July comparison flags line 7 because that $20.00 charge could have been for a shopping item, but the item is unknown. It is not a software test-coverage measure. From June to July, Groceries falls from $82.18 to $50.00, a change of -$32.18 using lines 1 and 6.</p>
+<p><strong>Input:</strong> The reconciled ledger and the two example targets. <strong>Output:</strong> Monthly category totals, monthly totals, budget comparisons, month-to-month changes, and reconciliation data in <code>ExpenseCalculationResult</code>. Neither Jev nor the LLM performs this arithmetic.</p>
+</div></article>
+<article class="detail-entry" data-key="step-09" hidden><div class="detail-kicker">Code</div><h2>09  Check the totals balance</h2><p class="detail-summary">Require the source lines and monetary totals to reconcile.</p><div class="detail-body"><p>Code checks that source line numbers are unique, that the transaction treatments account for every line, that category totals equal monthly classified spending, and that classified spending plus unresolved outflow equals observed outflow. It also records duplicate, unparsed, credit, refund, included, and unresolved line numbers for the report. A failed balance check stops the analysis rather than publishing totals that disagree.</p>
+<p>For the eight example lines, the reconciliation is:</p>
+<div class="code-block"><div class="code-label">JSON</div><pre><code class="syntax"><span class="p">{</span>
+<span class="w">  </span><span class="nt">"source_line_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"included_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span><span class="w"> </span><span class="mi">7</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"duplicate_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"unresolved_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">4</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"unresolved_credit_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">5</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"unparsed_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">8</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"refund_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">  </span><span class="nt">"classified_spending"</span><span class="p">:</span><span class="w"> </span><span class="s2">"159.68"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"unresolved_outflow"</span><span class="p">:</span><span class="w"> </span><span class="s2">"40.00"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"observed_outflow"</span><span class="p">:</span><span class="w"> </span><span class="s2">"199.68"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"is_balanced"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div><p>The five line-number groups contain each of 1 through 8 exactly once. The four included charges sum to $159.68; $159.68 + $40.00 = $199.68.</p>
+<p><strong>Input:</strong> <code>ExpenseCalculationResult.reconciliation</code>. <strong>Output:</strong> The balanced calculation result shown above, or an error.</p>
+</div></article>
+<article class="detail-entry" data-key="step-10" hidden><div class="detail-kicker">Large language model (LLM)</div><h2>10  Select three findings</h2><p class="detail-summary">Choose evidence IDs; code supplies the final wording.</p><div class="detail-body"><p>Code turns calculated budget breaches, month-to-month changes, Shopping category limits, and reconciliation facts into candidate findings. Each candidate already has an ID, a complete statement with numbers, and supporting source line numbers. It also marks certain IDs as required when the calculations call for them. In this example the largest category change and the Shopping category limitation are required; there is no Dining &amp; Coffee budget breach.</p>
+<p>The LLM receives the candidates and required IDs and is asked to return exactly three distinct IDs. It is explicitly told not to write findings or calculate numbers. Three of the example's code-written candidates are:</p>
+<table>
+<thead>
+<tr>
+<th>Evidence ID</th>
+<th>Statement already written by code</th>
+<th>Source lines</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>change-2026-06-01-2026-07-01-groceries</code></td>
+<td>From June 2026 to July 2026, Groceries fell by $32.18, from $82.18 to $50.00.</td>
+<td>1, 6</td>
+</tr>
+<tr>
+<td><code>shopping-coverage</code></td>
+<td>Shopping was below its stated monthly target in 2 of 2 reported months. These Shopping totals exclude merchant-only mixed-retailer charges assigned to Other, so the comparison does not cover all shopping-like purchases.</td>
+<td>7</td>
+</tr>
+<tr>
+<td><code>reconciliation-unresolved</code></td>
+<td>Unresolved outflows totaled $40.00 and were kept separate from classified spending.</td>
+<td>4</td>
+</tr>
+</tbody>
+</table>
+<p>An illustrative valid response choosing these candidates is:</p>
+<div class="code-block"><div class="code-label">JSON</div><pre><code class="syntax"><span class="p">{</span>
+<span class="w">  </span><span class="nt">"findings"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"evidence_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"change-2026-06-01-2026-07-01-groceries"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"evidence_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"shopping-coverage"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"evidence_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reconciliation-unresolved"</span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div><p>Code checks that the IDs are distinct, supplied, and include every required ID. It then substitutes the exact code-written statements and source lines. It retries a malformed or unsupported selection once, then raises an error if it still cannot obtain three grounded findings. Another valid third ID might be selected on a live run, but the two required IDs must remain.</p>
+<p><strong>Input:</strong> Calculated evidence items and required IDs. <strong>Output in this example:</strong> Exactly three <code>ExpenseFinding</code> objects for the IDs shown, containing code-written text and source-line references.</p>
+</div></article>
+<article class="detail-entry" data-key="step-11" hidden><div class="detail-kicker">Code</div><h2>11  Assemble the analysis</h2><p class="detail-summary">Collect the ledger, calculations, findings, and method.</p><div class="detail-body"><p>The manager packages the parsed lines, nonempty categorizations, full transaction ledger, calculations, three findings, method description, and calculation formulas into <code>ExpenseAnalysisResult</code>. This is the domain result returned through <code>DomainFacade</code>. It keeps the intermediate evidence available to the report composer rather than reducing the analysis to a final number. In the running example it contains eight parsed lines and transactions, seven categorizations, two monthly totals, the balanced reconciliation above, and three findings.</p>
+<p>A compact view of the assembled result is:</p>
+<div class="code-block"><div class="code-label">JSON</div><pre><code class="syntax"><span class="p">{</span>
+<span class="w">  </span><span class="nt">"parsed_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span><span class="w"> </span><span class="mi">7</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"categorization_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span><span class="w"> </span><span class="mi">7</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"transaction_line_numbers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span><span class="w"> </span><span class="mi">7</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"monthly_observed_outflow"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"2026-06"</span><span class="p">:</span><span class="w"> </span><span class="s2">"129.68"</span><span class="p">,</span><span class="w"> </span><span class="nt">"2026-07"</span><span class="p">:</span><span class="w"> </span><span class="s2">"70.00"</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"reconciled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"finding_ids"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"change-2026-06-01-2026-07-01-groceries"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"shopping-coverage"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"reconciliation-unresolved"</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div><p>These keys are a readable projection of the domain object, not a claim that the application serializes it in this form. The complete object retains the amounts and source references shown in steps 07 through 10.</p>
+<p><strong>Input:</strong> The validated products of steps 02 through 10. <strong>Output:</strong> One <code>ExpenseAnalysisResult</code>.</p>
+</div></article>
+<article class="detail-entry" data-key="step-12" hidden><div class="detail-kicker">Code</div><h2>12  Render the report</h2><p class="detail-summary">Compose the Markdown tables, method, and findings.</p><div class="detail-body"><p>The report composer turns <code>ExpenseAnalysisResult</code> into Markdown. It renders a transaction ledger, monthly spending by category, monthly totals, budget comparisons, month-to-month changes, quality and reconciliation checks, method and calculation formulas, and the three findings. The ledger retains source text, parsing issues or policy notes, and treatment. Totals and findings cite source line numbers.</p>
+<p>The monthly-total table for the running example appears as a table in this document and in the report:</p>
+<table>
+<thead>
+<tr>
+<th>Month</th>
+<th>Classified spending</th>
+<th>Unresolved outflow</th>
+<th>Observed outflow</th>
+<th>Source lines</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>June 2026</td>
+<td>$89.68</td>
+<td>$40.00</td>
+<td>$129.68</td>
+<td>1, 3, 4</td>
+</tr>
+<tr>
+<td>July 2026</td>
+<td>$70.00</td>
+<td>$0.00</td>
+<td>$70.00</td>
+<td>6, 7</td>
+</tr>
+</tbody>
+</table>
+<p>The report's quality section also shows <code>Source lines: 8</code>, <code>Confirmed duplicate lines: 2</code>, <code>Unresolved outflow lines: 4</code>, <code>Unresolved credit lines: 5</code>, <code>Unparsed lines: 8</code>, and <code>Reconciled: Yes</code>. Its three findings use the code-written statements and source lines selected in step 10. The full ledger still contains all eight lines, including those excluded from totals.</p>
+<p>With the illustrative ID selection in step 10, the report ends with these findings:</p>
+<ol>
+<li>From June 2026 to July 2026, Groceries fell by $32.18, from $82.18 to $50.00. (Source lines: 1, 6.)</li>
+<li>Shopping was below its stated monthly target in 2 of 2 reported months. These Shopping totals exclude merchant-only mixed-retailer charges assigned to Other, so the comparison does not cover all shopping-like purchases. (Source lines: 7.)</li>
+<li>Unresolved outflows totaled $40.00 and were kept separate from classified spending. (Source lines: 4.)</li>
+</ol>
+<p><strong>Input:</strong> <code>ExpenseAnalysisResult</code>. <strong>Output:</strong> A Markdown string. The composer formats existing values; it does not ask either decision service to recalculate or rewrite them.</p>
+</div></article>
+<article class="detail-entry" data-key="step-13" hidden><div class="detail-kicker">Code</div><h2>13  Deliver the report</h2><p class="detail-summary">Print to console; optionally write a Markdown file.</p><div class="detail-body"><p>The console entry point writes the Markdown report to standard output. When <code>--output</code> was provided, it also writes the same text to that UTF-8 file. The output path must differ from the input file.</p>
+<p><strong>Input:</strong> The Markdown string containing the example's eight-line ledger, totals, checks, and findings, plus an optional output path. <strong>Output:</strong> The same report on the console and, when requested, in a Markdown file.</p>
+</div></article>
+<article class="detail-entry" data-key="choose-category-1" hidden><div class="detail-kicker">System 1 / Jev</div><h2>Choose category · line A</h2><p class="detail-summary">Jev uses the fixed category choices.</p><div class="detail-body"><h4>Choose category · line A / line B / line …</h4>
+<h5>Actor: System 1 / Jev</h5>
+<p>The three diagram cards show the same operation for different lines. A, B, and the ellipsis are visual placeholders, not three fixed workers.</p>
+<table>
+<thead>
+<tr>
+<th>Diagram box</th>
+<th>Short description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Choose category · line A</td>
+<td>Jev uses the fixed category choices.</td>
+</tr>
+<tr>
+<td>Choose category · line B</td>
+<td>An independent per-line decision.</td>
+</tr>
+<tr>
+<td>Choose category · line …</td>
+<td>More lines share the eight-call limit.</td>
+</tr>
+</tbody>
+</table>
+<p>For a complete line, code gives Jev the original source text and a choice question containing every category in the fixed catalog. The instructions say to use only the transaction's evidence, put a merchant-only mixed-retailer charge in <code>other</code> when the item is unknown, and put a purpose-free transfer or cash withdrawal in <code>uncategorized</code>. Jev returns a category choice, confidence, and probabilities for the offered categories. This is another bounded System One decision, separate from the earlier date or amount question.</p>
+<p>For the running example, assume Jev proposes the following choices. They illustrate the exchange; a live service need not choose the same categories:</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Source clue</th>
+<th>Illustrative Jev proposal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1, 2, 6</td>
+<td>Kroger</td>
+<td><code>groceries</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Cafe and $7.50 charge</td>
+<td><code>dining_coffee</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>ATM withdrawal</td>
+<td><code>other</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Bank transfer</td>
+<td><code>other</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Target, item unknown</td>
+<td><code>shopping</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>No amount</td>
+<td>No Jev call</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Input:</strong> Each complete line's source text and fixed category definitions. <strong>Output:</strong> One proposed category, confidence, and per-category probabilities for each of lines 1 through 7.</p>
+</div></article>
+<article class="detail-entry" data-key="choose-category-2" hidden><div class="detail-kicker">System 1 / Jev</div><h2>Choose category · line B</h2><p class="detail-summary">An independent per-line decision.</p><div class="detail-body"><h4>Choose category · line A / line B / line …</h4>
+<h5>Actor: System 1 / Jev</h5>
+<p>The three diagram cards show the same operation for different lines. A, B, and the ellipsis are visual placeholders, not three fixed workers.</p>
+<table>
+<thead>
+<tr>
+<th>Diagram box</th>
+<th>Short description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Choose category · line A</td>
+<td>Jev uses the fixed category choices.</td>
+</tr>
+<tr>
+<td>Choose category · line B</td>
+<td>An independent per-line decision.</td>
+</tr>
+<tr>
+<td>Choose category · line …</td>
+<td>More lines share the eight-call limit.</td>
+</tr>
+</tbody>
+</table>
+<p>For a complete line, code gives Jev the original source text and a choice question containing every category in the fixed catalog. The instructions say to use only the transaction's evidence, put a merchant-only mixed-retailer charge in <code>other</code> when the item is unknown, and put a purpose-free transfer or cash withdrawal in <code>uncategorized</code>. Jev returns a category choice, confidence, and probabilities for the offered categories. This is another bounded System One decision, separate from the earlier date or amount question.</p>
+<p>For the running example, assume Jev proposes the following choices. They illustrate the exchange; a live service need not choose the same categories:</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Source clue</th>
+<th>Illustrative Jev proposal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1, 2, 6</td>
+<td>Kroger</td>
+<td><code>groceries</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Cafe and $7.50 charge</td>
+<td><code>dining_coffee</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>ATM withdrawal</td>
+<td><code>other</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Bank transfer</td>
+<td><code>other</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Target, item unknown</td>
+<td><code>shopping</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>No amount</td>
+<td>No Jev call</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Input:</strong> Each complete line's source text and fixed category definitions. <strong>Output:</strong> One proposed category, confidence, and per-category probabilities for each of lines 1 through 7.</p>
+</div></article>
+<article class="detail-entry" data-key="choose-category-3" hidden><div class="detail-kicker">System 1 / Jev</div><h2>Choose category · line …</h2><p class="detail-summary">More lines share the eight-call limit.</p><div class="detail-body"><h4>Choose category · line A / line B / line …</h4>
+<h5>Actor: System 1 / Jev</h5>
+<p>The three diagram cards show the same operation for different lines. A, B, and the ellipsis are visual placeholders, not three fixed workers.</p>
+<table>
+<thead>
+<tr>
+<th>Diagram box</th>
+<th>Short description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Choose category · line A</td>
+<td>Jev uses the fixed category choices.</td>
+</tr>
+<tr>
+<td>Choose category · line B</td>
+<td>An independent per-line decision.</td>
+</tr>
+<tr>
+<td>Choose category · line …</td>
+<td>More lines share the eight-call limit.</td>
+</tr>
+</tbody>
+</table>
+<p>For a complete line, code gives Jev the original source text and a choice question containing every category in the fixed catalog. The instructions say to use only the transaction's evidence, put a merchant-only mixed-retailer charge in <code>other</code> when the item is unknown, and put a purpose-free transfer or cash withdrawal in <code>uncategorized</code>. Jev returns a category choice, confidence, and probabilities for the offered categories. This is another bounded System One decision, separate from the earlier date or amount question.</p>
+<p>For the running example, assume Jev proposes the following choices. They illustrate the exchange; a live service need not choose the same categories:</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Source clue</th>
+<th>Illustrative Jev proposal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1, 2, 6</td>
+<td>Kroger</td>
+<td><code>groceries</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Cafe and $7.50 charge</td>
+<td><code>dining_coffee</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>ATM withdrawal</td>
+<td><code>other</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Bank transfer</td>
+<td><code>other</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Target, item unknown</td>
+<td><code>shopping</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>No amount</td>
+<td>No Jev call</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Input:</strong> Each complete line's source text and fixed category definitions. <strong>Output:</strong> One proposed category, confidence, and per-category probabilities for each of lines 1 through 7.</p>
+</div></article>
+<article class="detail-entry" data-key="apply-category-rules-1" hidden><div class="detail-kicker">Code</div><h2>Apply category rules · A</h2><p class="detail-summary">Code enforces merchant and cash rules.</p><div class="detail-body"><h4>Apply category rules · A / B / …</h4>
+<h5>Actor: Code</h5>
+<p>Code then applies explicit policy to each Jev proposal. The final category may differ from <code>model_category</code>: a merchant-only Target, Amazon, or Costco line becomes <code>other</code>; named merchants in the catalog receive their known category; and a cash movement without a stated spending purpose becomes <code>uncategorized</code>. The decision retains Jev's original category, confidence, probabilities, and a policy note when a rule changes or explains the category.</p>
+<table>
+<thead>
+<tr>
+<th>Diagram box</th>
+<th>Short description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apply category rules · A</td>
+<td>Code enforces merchant and cash rules.</td>
+</tr>
+<tr>
+<td>Apply category rules · B</td>
+<td>Code may override Jev's proposal.</td>
+</tr>
+<tr>
+<td>Apply category rules · …</td>
+<td>Each task returns a category or no result.</td>
+</tr>
+</tbody>
+</table>
+<p>The outcomes for the same lines are <code>groceries</code> for 1, 2, and 6; <code>dining_coffee</code> for 3; <code>uncategorized</code> for 4 and 5 despite the illustrative <code>other</code> proposals; and <code>other</code> for 7 despite the illustrative <code>shopping</code> proposal. Line 7 is a merchant-only Target charge: without an item description, the code cannot claim it was Shopping. Line 8 bypasses both repeated boxes.</p>
+<p><strong>Input:</strong> Jev's proposed category, its scores, and the parsed description. <strong>Output:</strong> <code>ExpenseCategorization</code> for each complete line, retaining both the proposal and final category; <code>None</code> for line 8.</p>
+</div></article>
+<article class="detail-entry" data-key="apply-category-rules-2" hidden><div class="detail-kicker">Code</div><h2>Apply category rules · B</h2><p class="detail-summary">Code may override Jev&#x27;s proposal.</p><div class="detail-body"><h4>Apply category rules · A / B / …</h4>
+<h5>Actor: Code</h5>
+<p>Code then applies explicit policy to each Jev proposal. The final category may differ from <code>model_category</code>: a merchant-only Target, Amazon, or Costco line becomes <code>other</code>; named merchants in the catalog receive their known category; and a cash movement without a stated spending purpose becomes <code>uncategorized</code>. The decision retains Jev's original category, confidence, probabilities, and a policy note when a rule changes or explains the category.</p>
+<table>
+<thead>
+<tr>
+<th>Diagram box</th>
+<th>Short description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apply category rules · A</td>
+<td>Code enforces merchant and cash rules.</td>
+</tr>
+<tr>
+<td>Apply category rules · B</td>
+<td>Code may override Jev's proposal.</td>
+</tr>
+<tr>
+<td>Apply category rules · …</td>
+<td>Each task returns a category or no result.</td>
+</tr>
+</tbody>
+</table>
+<p>The outcomes for the same lines are <code>groceries</code> for 1, 2, and 6; <code>dining_coffee</code> for 3; <code>uncategorized</code> for 4 and 5 despite the illustrative <code>other</code> proposals; and <code>other</code> for 7 despite the illustrative <code>shopping</code> proposal. Line 7 is a merchant-only Target charge: without an item description, the code cannot claim it was Shopping. Line 8 bypasses both repeated boxes.</p>
+<p><strong>Input:</strong> Jev's proposed category, its scores, and the parsed description. <strong>Output:</strong> <code>ExpenseCategorization</code> for each complete line, retaining both the proposal and final category; <code>None</code> for line 8.</p>
+</div></article>
+<article class="detail-entry" data-key="apply-category-rules-3" hidden><div class="detail-kicker">Code</div><h2>Apply category rules · …</h2><p class="detail-summary">Each task returns a category or no result.</p><div class="detail-body"><h4>Apply category rules · A / B / …</h4>
+<h5>Actor: Code</h5>
+<p>Code then applies explicit policy to each Jev proposal. The final category may differ from <code>model_category</code>: a merchant-only Target, Amazon, or Costco line becomes <code>other</code>; named merchants in the catalog receive their known category; and a cash movement without a stated spending purpose becomes <code>uncategorized</code>. The decision retains Jev's original category, confidence, probabilities, and a policy note when a rule changes or explains the category.</p>
+<table>
+<thead>
+<tr>
+<th>Diagram box</th>
+<th>Short description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apply category rules · A</td>
+<td>Code enforces merchant and cash rules.</td>
+</tr>
+<tr>
+<td>Apply category rules · B</td>
+<td>Code may override Jev's proposal.</td>
+</tr>
+<tr>
+<td>Apply category rules · …</td>
+<td>Each task returns a category or no result.</td>
+</tr>
+</tbody>
+</table>
+<p>The outcomes for the same lines are <code>groceries</code> for 1, 2, and 6; <code>dining_coffee</code> for 3; <code>uncategorized</code> for 4 and 5 despite the illustrative <code>other</code> proposals; and <code>other</code> for 7 despite the illustrative <code>shopping</code> proposal. Line 7 is a merchant-only Target charge: without an item description, the code cannot claim it was Shopping. Line 8 bypasses both repeated boxes.</p>
+<p><strong>Input:</strong> Jev's proposed category, its scores, and the parsed description. <strong>Output:</strong> <code>ExpenseCategorization</code> for each complete line, retaining both the proposal and final category; <code>None</code> for line 8.</p>
+</div></article>
+      </div>
+    </aside>
+  </main>
+  <script>
+    (() => {
+      const workspace = document.getElementById('workspace');
+      const splitter = document.getElementById('splitter');
+      const viewport = document.getElementById('diagram-viewport');
+      const surface = document.getElementById('diagram-surface');
+      const detailScroll = document.getElementById('detail-scroll');
+      const entries = [...document.querySelectorAll('.detail-entry')];
+      const nodes = [...document.querySelectorAll('.flow-node')];
+      const zoomValue = document.getElementById('zoom-value');
+      let currentKey = 'overview';
+      let zoomFactor = 1;
+      let mobileHeight = null;
+
+      function showDetail(key) {
+        if (key === currentKey) return;
+        currentKey = key;
+        for (const entry of entries) entry.hidden = entry.dataset.key !== key;
+        for (const node of nodes) node.classList.toggle('is-active', node.dataset.key === key);
+        detailScroll.scrollTop = 0;
+      }
+      for (const node of nodes) {
+        node.addEventListener('pointerenter', () => showDetail(node.dataset.key));
+        node.addEventListener('focus', () => showDetail(node.dataset.key));
+        node.addEventListener('click', () => showDetail(node.dataset.key));
+        node.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            showDetail(node.dataset.key);
+          }
+        });
+      }
+      document.getElementById('overview-button').addEventListener('click', () => showDetail('overview'));
+
+      function baseWidth() { return Math.max(viewport.clientWidth, 1152); }
+      function updateZoom() {
+        const actualWidth = baseWidth() * zoomFactor;
+        surface.style.width = `${actualWidth}px`;
+        zoomValue.textContent = `${Math.round(actualWidth / 1600 * 100)}%`;
+      }
+      function setZoom(next) {
+        zoomFactor = Math.max(.35, Math.min(3.5, next));
+        updateZoom();
+      }
+      document.getElementById('zoom-in').addEventListener('click', () => setZoom(zoomFactor * 1.2));
+      document.getElementById('zoom-out').addEventListener('click', () => setZoom(zoomFactor / 1.2));
+      document.getElementById('zoom-fit').addEventListener('click', () => setZoom(viewport.clientWidth / baseWidth()));
+      viewport.addEventListener('wheel', event => {
+        if (!event.ctrlKey) return;
+        event.preventDefault();
+        setZoom(zoomFactor * (event.deltaY < 0 ? 1.12 : 1 / 1.12));
+      }, { passive: false });
+      new ResizeObserver(updateZoom).observe(viewport);
+
+      function mobile() { return window.matchMedia('(max-width: 1100px)').matches; }
+      function setDivider(clientX, clientY) {
+        const bounds = workspace.getBoundingClientRect();
+        if (mobile()) {
+          const height = Math.max(260, Math.min(bounds.height - 190, clientY - bounds.top));
+          workspace.style.gridTemplateRows = `${height}px 12px minmax(0, 1fr)`;
+          mobileHeight = height;
+          splitter.setAttribute('aria-orientation', 'horizontal');
+          splitter.setAttribute('aria-valuenow', String(Math.round(height)));
+        } else {
+          const width = Math.max(320, Math.min(1100, bounds.width - 360, bounds.right - clientX));
+          workspace.style.setProperty('--detail-width', `${width}px`);
+          splitter.setAttribute('aria-orientation', 'vertical');
+          splitter.setAttribute('aria-valuenow', String(Math.round(width)));
+        }
+      }
+      splitter.addEventListener('pointerdown', event => {
+        splitter.setPointerCapture(event.pointerId);
+        splitter.classList.add('dragging');
+        setDivider(event.clientX, event.clientY);
+      });
+      splitter.addEventListener('pointermove', event => {
+        if (splitter.hasPointerCapture(event.pointerId)) setDivider(event.clientX, event.clientY);
+      });
+      function endDrag(event) {
+        if (splitter.hasPointerCapture(event.pointerId)) splitter.releasePointerCapture(event.pointerId);
+        splitter.classList.remove('dragging');
+      }
+      splitter.addEventListener('pointerup', endDrag);
+      splitter.addEventListener('pointercancel', endDrag);
+      splitter.addEventListener('keydown', event => {
+        const delta = event.shiftKey ? 60 : 20;
+        const size = Number(splitter.getAttribute('aria-valuenow'));
+        if (mobile() && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+          event.preventDefault();
+          const bounds = workspace.getBoundingClientRect();
+          setDivider(bounds.left, bounds.top + size + (event.key === 'ArrowDown' ? delta : -delta));
+        } else if (!mobile() && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+          event.preventDefault();
+          const bounds = workspace.getBoundingClientRect();
+          setDivider(bounds.right - size + (event.key === 'ArrowLeft' ? delta : -delta), bounds.top);
+        }
+      });
+      window.addEventListener('resize', () => {
+        if (mobile()) {
+          splitter.setAttribute('aria-orientation', 'horizontal');
+          if (mobileHeight !== null) workspace.style.gridTemplateRows = `${mobileHeight}px 12px minmax(0, 1fr)`;
+        } else {
+          splitter.setAttribute('aria-orientation', 'vertical');
+          workspace.style.removeProperty('grid-template-rows');
+        }
+      });
+      updateZoom();
+    })();
+  </script>
+</body>
+</html>
