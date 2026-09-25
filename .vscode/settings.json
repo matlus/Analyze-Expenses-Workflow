@@ -1,0 +1,26 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.envFile": "${workspaceFolder}/.env",
+  "python.analysis.importFormat": "absolute",
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/packages/analyze-expenses-workflow/src",
+    "${workspaceFolder}/apps/analyze-expenses-workflow-app/src"
+  ],
+  "python.terminal.activateEnvironment": true,
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.testing.pytestArgs": ["packages", "apps"],
+  "terminal.integrated.env.windows": {
+    "UV_CACHE_DIR": "${workspaceFolder}\\.uv-cache"
+  },
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  }
+}

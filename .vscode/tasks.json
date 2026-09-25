@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Tooling: Sync Workspace Dev",
+      "type": "shell",
+      "command": "uv",
+      "args": ["sync", "--all-packages", "--all-groups", "--cache-dir", "${workspaceFolder}\\.uv-cache"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Tooling: Ruff Workspace",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "--all-packages", "--all-groups", "--cache-dir", "${workspaceFolder}\\.uv-cache", "ruff", "check", "--no-cache", "packages", "apps"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Tooling: Pyright Workspace",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "--all-packages", "--all-groups", "--cache-dir", "${workspaceFolder}\\.uv-cache", "pyright"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Tooling: Pytest Workspace",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "--all-packages", "--all-groups", "--cache-dir", "${workspaceFolder}\\.uv-cache", "pytest", "-q"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Analyze Expenses Workflow: Pytest Unit",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "--all-packages", "--all-groups", "--cache-dir", "${workspaceFolder}\\.uv-cache", "pytest", "packages\\analyze-expenses-workflow\\tests\\unit", "-q"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Analyze Expenses Workflow App: Pytest Unit",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "--all-packages", "--all-groups", "--cache-dir", "${workspaceFolder}\\.uv-cache", "pytest", "apps\\analyze-expenses-workflow-app\\tests\\unit", "-q"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    }
+  ]
+}

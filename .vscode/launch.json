@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Analyze Expenses Workflow App",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/analyze-expenses-workflow-app/src/analyze_expenses_workflow_app/entry_point.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analyze-expenses-workflow-app"
+version = "0.1.0"
+description = "Analyze Expenses Workflow App application."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+authors = [{ name = "Your Name", email = "your.email@example.com" }]
+dependencies = [
+    "analyze-expenses-workflow",
+]
+
+[tool.uv.sources]
+analyze-expenses-workflow = { workspace = true }
+
+[project.scripts]
+analyze_expenses_workflow_app = "analyze_expenses_workflow_app.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["analyze_expenses_workflow_app*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"analyze_expenses_workflow_app" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
+pythonpath = ["src", "../../packages/analyze-expenses-workflow/src"]

@@ -1,0 +1,6 @@
+# LF is the canonical line ending for all ordinary text files on every platform.
+* text=auto eol=lf
+
+# Windows batch scripts are the only permitted CRLF exception.
+*.bat text eol=crlf
+*.cmd text eol=crlf
