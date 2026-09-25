@@ -1,4 +1,7 @@
 import asyncio
+from collections.abc import Sequence
+
+import httpx2
 
 from analyze_expenses_workflow.managers.configuration_providers.configuration_provider import ConfigurationProvider
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.budget_settings import BudgetSettings
@@ -27,101 +30,129 @@ from analyze_expenses_workflow.models.parsed_expense_line import ParsedExpenseLi
 
 
 class ManagerExpenseAnalysis:
-    def __init__(self, service_locator: ServiceLocatorProtocol) -> None:
-        configuration_provider: ConfigurationProvider = service_locator.get_configuration_provider()
-        subscription: CodingAssistantSubscription = configuration_provider.get_coding_assistant_settings().coding_assistant_subscription
+    def __init__(self, service_locator_protocol: ServiceLocatorProtocol) -> None:
+        configuration_provider: ConfigurationProvider = service_locator_protocol.get_configuration_provider()
+        coding_assistant_subscription: CodingAssistantSubscription = (
+            configuration_provider.get_coding_assistant_settings().coding_assistant_subscription
+        )
         jev_settings: JevSettings = configuration_provider.get_jev_settings()
         self._budget_settings: BudgetSettings = configuration_provider.get_budget_settings()
-        extraction_settings: LlmOperationSettings = configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_LINE_EXTRACTION)
-        findings_settings: LlmOperationSettings = configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_FINDINGS)
-        self._jev_gateway: OpenRouterJevGateway = self._make_jev_gateway(jev_settings)
-        self._llm_gateway: LlmGatewayProtocol = self._make_llm_gateway(subscription)
-        self._parsing_processor: ExpenseLineParsingProcessor = ExpenseLineParsingProcessor()
-        self._jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(
-            self._jev_gateway, jev_settings.parsing_minimum_choice_probability
+        extraction_llm_operation_settings: LlmOperationSettings = configuration_provider.get_llm_operation_settings(
+            LlmOperation.EXPENSE_LINE_EXTRACTION
         )
-        self._extraction_processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
-            self._llm_gateway, extraction_settings
+        findings_llm_operation_settings: LlmOperationSettings = configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_FINDINGS)
+        self._open_router_jev_gateway: OpenRouterJevGateway = self._create_jev_gateway(
+            jev_settings, service_locator_protocol.create_jev_http_transport()
         )
-        self._findings_processor: ExpenseFindingsLlmProcessor = ExpenseFindingsLlmProcessor(
-            self._llm_gateway, findings_settings
+        self._llm_gateway_protocol: LlmGatewayProtocol = self._create_llm_gateway(coding_assistant_subscription)
+        self._expense_line_parsing_processor: ExpenseLineParsingProcessor = ExpenseLineParsingProcessor()
+        self._expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(
+            self._open_router_jev_gateway, jev_settings.parsing_minimum_choice_probability
         )
-        self._categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(self._jev_gateway)
-        self._reconciliation_processor: ExpenseReconciliationProcessor = ExpenseReconciliationProcessor()
-        self._calculation_processor: ExpenseCalculationProcessor = ExpenseCalculationProcessor()
+        self._expense_line_extraction_llm_processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
+            self._llm_gateway_protocol, extraction_llm_operation_settings
+        )
+        self._expense_findings_llm_processor: ExpenseFindingsLlmProcessor = ExpenseFindingsLlmProcessor(
+            self._llm_gateway_protocol, findings_llm_operation_settings
+        )
+        self._transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+            self._open_router_jev_gateway
+        )
+        self._expense_reconciliation_processor: ExpenseReconciliationProcessor = ExpenseReconciliationProcessor()
+        self._expense_calculation_processor: ExpenseCalculationProcessor = ExpenseCalculationProcessor()
 
     @staticmethod
-    def _make_jev_gateway(settings: JevSettings) -> OpenRouterJevGateway:
-        return OpenRouterJevGateway(settings)
+    def _create_jev_gateway(jev_settings: JevSettings, async_base_transport: httpx2.AsyncBaseTransport | None) -> OpenRouterJevGateway:
+        return OpenRouterJevGateway(jev_settings, async_base_transport=async_base_transport)
 
     @staticmethod
-    def _make_llm_gateway(subscription: CodingAssistantSubscription) -> LlmGatewayProtocol:
-        if subscription == CodingAssistantSubscription.GPT_CODEX:
+    def _create_llm_gateway(coding_assistant_subscription: CodingAssistantSubscription) -> LlmGatewayProtocol:
+        if coding_assistant_subscription == CodingAssistantSubscription.GPT_CODEX:
             return CodexSubscriptionGateway()
-        if subscription == CodingAssistantSubscription.GITHUB_COPILOT:
+        if coding_assistant_subscription == CodingAssistantSubscription.GITHUB_COPILOT:
             return CopilotSubscriptionGateway()
-        raise ValueError(f"Unsupported coding assistant subscription: {subscription}")
+        raise ValueError(f"Unsupported coding assistant subscription: {coding_assistant_subscription}")
 
-    async def analyze_expenses(
-        self, expense_lines: list[str], confirmed_duplicate_line_numbers: tuple[int, ...] = ()
-    ) -> ExpenseAnalysisResult:
+    async def analyze_expenses(self, expense_lines: Sequence[str], confirmed_duplicate_line_numbers: tuple[int, ...] = ()) -> ExpenseAnalysisResult:
         ValidatorExpenseLines.validate(expense_lines)
-        parsed_lines: tuple[ParsedExpenseLine, ...] = await self._parse_and_extract(expense_lines)
-        categorization_slots: tuple[ExpenseCategorization | None, ...] = await self._categorize_lines(parsed_lines)
-        transactions: tuple[ExpenseTransaction, ...] = await self._reconciliation_processor.reconcile(
-            parsed_lines, categorization_slots, confirmed_duplicate_line_numbers
+        parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await self._parse_and_extract(expense_lines)
+        expense_categorization_slots: tuple[ExpenseCategorization | None, ...] = await self._categorize_lines(parsed_expense_lines)
+        expense_transactions: tuple[ExpenseTransaction, ...] = await self._expense_reconciliation_processor.reconcile(
+            parsed_expense_lines, expense_categorization_slots, confirmed_duplicate_line_numbers
         )
-        calculations: ExpenseCalculationResult = await self._calculate_and_validate(transactions)
-        findings: tuple[ExpenseFinding, ExpenseFinding, ExpenseFinding] = await self._findings_processor.findings(calculations)
-        return self._build_result(parsed_lines, categorization_slots, transactions, calculations, findings)
+        expense_calculation_result: ExpenseCalculationResult = await self._calculate_and_validate(expense_transactions)
+        expense_findings: tuple[ExpenseFinding, ExpenseFinding, ExpenseFinding] = await self._expense_findings_llm_processor.findings(
+            expense_calculation_result
+        )
+        return self._build_result(
+            parsed_expense_lines, expense_categorization_slots, expense_transactions, expense_calculation_result, expense_findings
+        )
 
-    async def _parse_and_extract(self, expense_lines: list[str]) -> tuple[ParsedExpenseLine, ...]:
-        parsed_lines: tuple[ParsedExpenseLine, ...] = await self._parsing_processor.parse(expense_lines)
-        inferred_year: int | None = self._parsing_processor.infer_year(expense_lines)
-        jev_lines: tuple[ParsedExpenseLine, ...] = await self._jev_extraction_processor.extract_uncertain_lines(parsed_lines, inferred_year)
-        return await self._extraction_processor.extract_uncertain_lines(jev_lines, inferred_year)
+    async def _parse_and_extract(self, expense_lines: Sequence[str]) -> tuple[ParsedExpenseLine, ...]:
+        parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await self._expense_line_parsing_processor.parse(expense_lines)
+        inferred_year: int | None = self._expense_line_parsing_processor.infer_year(expense_lines)
+        jev_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await self._expense_line_jev_extraction_processor.extract_uncertain_lines(
+            parsed_expense_lines, inferred_year
+        )
+        return await self._expense_line_extraction_llm_processor.extract_uncertain_lines(jev_parsed_expense_lines, inferred_year)
 
-    async def _calculate_and_validate(self, transactions: tuple[ExpenseTransaction, ...]) -> ExpenseCalculationResult:
-        targets: tuple[BudgetTarget, ...] = (
+    async def _calculate_and_validate(self, expense_transactions: tuple[ExpenseTransaction, ...]) -> ExpenseCalculationResult:
+        budget_targets: tuple[BudgetTarget, ...] = self._budget_targets()
+        expense_calculation_result: ExpenseCalculationResult = await self._expense_calculation_processor.calculate(
+            expense_transactions, budget_targets
+        )
+        self._validate_reconciliation(expense_calculation_result)
+        return expense_calculation_result
+
+    def _budget_targets(self) -> tuple[BudgetTarget, ...]:
+        return (
             BudgetTarget(ExpenseCategory.DINING_COFFEE, self._budget_settings.dining_coffee_monthly_budget),
             BudgetTarget(ExpenseCategory.SHOPPING, self._budget_settings.shopping_monthly_budget),
         )
-        calculations: ExpenseCalculationResult = await self._calculation_processor.calculate(transactions, targets)
-        if not calculations.reconciliation.is_balanced:
+
+    @staticmethod
+    def _validate_reconciliation(expense_calculation_result: ExpenseCalculationResult) -> None:
+        if not expense_calculation_result.reconciliation.is_balanced:
             raise ValueError("Expense totals did not reconcile")
-        return calculations
 
     @staticmethod
     def _build_result(
-        parsed_lines: tuple[ParsedExpenseLine, ...],
-        categorization_slots: tuple[ExpenseCategorization | None, ...],
-        transactions: tuple[ExpenseTransaction, ...],
-        calculations: ExpenseCalculationResult,
-        findings: tuple[ExpenseFinding, ExpenseFinding, ExpenseFinding],
+        parsed_expense_lines: tuple[ParsedExpenseLine, ...],
+        expense_categorization_slots: tuple[ExpenseCategorization | None, ...],
+        expense_transactions: tuple[ExpenseTransaction, ...],
+        expense_calculation_result: ExpenseCalculationResult,
+        expense_findings: tuple[ExpenseFinding, ExpenseFinding, ExpenseFinding],
     ) -> ExpenseAnalysisResult:
         return ExpenseAnalysisResult(
-            categorizations=tuple(slot for slot in categorization_slots if slot is not None),
-            parsed_lines=parsed_lines,
-            transactions=transactions,
-            calculations=calculations,
-            findings=findings,
+            categorizations=tuple(
+                expense_categorization
+                for expense_categorization in expense_categorization_slots
+                if expense_categorization is not None
+            ),
+            parsed_lines=parsed_expense_lines,
+            transactions=expense_transactions,
+            calculations=expense_calculation_result,
+            findings=expense_findings,
             method=ManagerExpenseAnalysis._method_description(),
         )
 
-    async def _categorize_lines(self, lines: tuple[ParsedExpenseLine, ...]) -> tuple[ExpenseCategorization | None, ...]:
+    async def _categorize_lines(self, parsed_expense_lines: tuple[ParsedExpenseLine, ...]) -> tuple[ExpenseCategorization | None, ...]:
         semaphore: asyncio.Semaphore = asyncio.Semaphore(8)
 
         async with asyncio.TaskGroup() as task_group:
             tasks: tuple[asyncio.Task[ExpenseCategorization | None], ...] = tuple(
-                task_group.create_task(self._categorize_one(line, semaphore)) for line in lines
+                task_group.create_task(self._categorize_one(parsed_expense_line, semaphore))
+                for parsed_expense_line in parsed_expense_lines
             )
         return tuple(task.result() for task in tasks)
 
-    async def _categorize_one(self, line: ParsedExpenseLine, semaphore: asyncio.Semaphore) -> ExpenseCategorization | None:
-        if line.occurred_on is None or line.amount is None or line.description is None:
+    async def _categorize_one(self, parsed_expense_line: ParsedExpenseLine, semaphore: asyncio.Semaphore) -> ExpenseCategorization | None:
+        if parsed_expense_line.occurred_on is None or parsed_expense_line.amount is None or parsed_expense_line.description is None:
             return None
         async with semaphore:
-            return await self._categorization_processor.categorize(line.line_number, line.source_text, line.description)
+            return await self._transaction_categorization_processor.categorize(
+                parsed_expense_line.line_number, parsed_expense_line.source_text, parsed_expense_line.description
+            )
 
     @staticmethod
     def _method_description() -> str:
@@ -139,6 +170,6 @@ class ManagerExpenseAnalysis:
 
     async def close(self) -> None:
         try:
-            await self._jev_gateway.close()
+            await self._open_router_jev_gateway.close()
         finally:
-            await self._llm_gateway.close()
+            await self._llm_gateway_protocol.close()

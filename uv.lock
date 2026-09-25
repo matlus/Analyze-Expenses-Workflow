@@ -15,6 +15,7 @@ version = "0.1.0"
 source = { editable = "packages/analyze-expenses-workflow" }
 dependencies = [
     { name = "github-copilot-sdk" },
+    { name = "httpx2" },
     { name = "openai-codex" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -24,6 +25,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "github-copilot-sdk", specifier = ">=1.0.14" },
+    { name = "httpx2", specifier = ">=2.13.1" },
     { name = "openai-codex", specifier = ">=0.156.1" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
@@ -60,7 +62,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pyright", specifier = ">=1.1.0" },
-    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest", specifier = ">=8.4.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=4.0.0" },
     { name = "ruff", specifier = ">=0.4.0" },

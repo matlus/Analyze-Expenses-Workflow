@@ -14,7 +14,7 @@ dependencies = []
 dev = [
     "pyright>=1.1.0",
     "ruff>=0.4.0",
-    "pytest>=8.0.0",
+    "pytest>=8.4.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=4.0.0",
 ]
@@ -243,6 +243,7 @@ norecursedirs = [
 ]
 pythonpath = [
     "packages/analyze-expenses-workflow/src",
+    "packages/analyze-expenses-workflow/tests",
     "apps/analyze-expenses-workflow-app/src",
 ]
 

@@ -1,5 +1,6 @@
 from typing import final
 
+import httpx2
 from pydantic import ValidationError
 from typesafe_sdk import AsyncTypeSafeClient, Choice, ChoiceAnswer, SystemOneResponse, TypeSafeError
 
@@ -10,52 +11,84 @@ from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol imp
 
 @final
 class OpenRouterJevGateway:
-    def __init__(self, settings: JevSettings, client: AsyncTypeSafeClient | None = None) -> None:
-        self._settings: JevSettings = settings
-        self._client: AsyncTypeSafeClient | None = client
+    def __init__(
+        self,
+        jev_settings: JevSettings,
+        async_type_safe_client: AsyncTypeSafeClient | None = None,
+        *,
+        async_base_transport: httpx2.AsyncBaseTransport | None = None,
+    ) -> None:
+        if async_type_safe_client is not None and async_base_transport is not None:
+            raise ValueError("Provide either a Jev client or an HTTP transport")
+        self._jev_settings: JevSettings = jev_settings
+        self._jev_model: str = jev_settings.jev_model
+        self._async_type_safe_client: AsyncTypeSafeClient | None = async_type_safe_client
+        self._async_base_transport: httpx2.AsyncBaseTransport | None = async_base_transport
         self._closed: bool = False
 
     async def choose(self, state: str, question: ChoiceQuestion) -> ChoiceDecision:
         self._ensure_open()
         try:
-            response: SystemOneResponse = await self._request(state, question)
-            return self._decision_from_response(response, question)
-        except (KeyError, TypeError, ValidationError) as exc:
-            raise SystemOneGatewayException("Jev returned an invalid choice response") from exc
-        except TypeSafeError as exc:
-            raise SystemOneGatewayException("Jev categorization request failed") from exc
+            system_one_response: SystemOneResponse = await self._request(state, question)
+            return self._decision_from_response(system_one_response, question)
+        except (KeyError, TypeError, ValidationError) as response_validation_error:
+            raise SystemOneGatewayException(
+                "Jev returned an invalid choice response",
+                {"Operation": "choice_response_validation", "Model": self._jev_model},
+            ) from response_validation_error
+        except TypeSafeError as type_safe_error:
+            raise SystemOneGatewayException(
+                "Jev categorization request failed",
+                {"Operation": "categorization_request", "Model": self._jev_model},
+            ) from type_safe_error
 
     def _ensure_open(self) -> None:
         if self._closed:
-            raise SystemOneGatewayException("Jev gateway is closed")
+            raise SystemOneGatewayException(
+                "Jev gateway is closed", {"Operation": "gateway_open_state_check", "GatewayState": "closed"}
+            )
 
     def _client_for_request(self) -> AsyncTypeSafeClient:
         self._ensure_open()
-        if self._client is None:
-            self._client = AsyncTypeSafeClient(
-                api_key=self._settings.open_router_key.get_secret_value(),
-                base_url=str(self._settings.open_router_base_url),
+        if self._async_type_safe_client is None:
+            self._async_type_safe_client = AsyncTypeSafeClient(
+                api_key=self._jev_settings.open_router_key.get_secret_value(),
+                base_url=str(self._jev_settings.open_router_base_url),
+                transport=self._async_base_transport,
             )
-        return self._client
+        return self._async_type_safe_client
 
-    async def _request(self, state: str, question: ChoiceQuestion) -> SystemOneResponse:
-        client: AsyncTypeSafeClient = self._client_for_request()
-        return await client.system_one(
+    async def _request(self, state: str, choice_question: ChoiceQuestion) -> SystemOneResponse:
+        async_type_safe_client: AsyncTypeSafeClient = self._client_for_request()
+        return await async_type_safe_client.system_one(
             state=state,
-            questions={"category": Choice(instructions=question.instructions, criteria=question.criteria)},
-            model=self._settings.jev_model,
+            questions={"category": Choice(instructions=choice_question.instructions, criteria=choice_question.criteria)},
+            model=self._jev_model,
         )
 
     @staticmethod
-    def _decision_from_response(response: SystemOneResponse, question: ChoiceQuestion) -> ChoiceDecision:
-        answer: ChoiceAnswer = response.choices["category"]
-        decision: ChoiceDecision = ChoiceDecision.model_validate(answer.model_dump())
-        if set(decision.probabilities) != set(question.criteria):
-            raise SystemOneGatewayException("Jev returned probabilities for unexpected categories")
-        return decision
+    def _decision_from_response(system_one_response: SystemOneResponse, choice_question: ChoiceQuestion) -> ChoiceDecision:
+        choice_answer: ChoiceAnswer = system_one_response.choices["category"]
+        choice_decision: ChoiceDecision = ChoiceDecision.model_validate(choice_answer.model_dump())
+        OpenRouterJevGateway._validate_expected_categories(choice_decision, choice_question)
+        return choice_decision
+
+    @staticmethod
+    def _validate_expected_categories(choice_decision: ChoiceDecision, choice_question: ChoiceQuestion) -> None:
+        if set(choice_decision.probabilities) != set(choice_question.criteria):
+            raise SystemOneGatewayException(
+                "Jev returned probabilities for unexpected categories",
+                {
+                    "Operation": "choice_category_validation",
+                    "ExpectedCategories": ",".join(sorted(choice_question.criteria)),
+                    "ActualCategories": ",".join(sorted(choice_decision.probabilities)),
+                },
+            )
 
     async def close(self) -> None:
         if not self._closed:
             self._closed = True
-            if self._client is not None:
-                await self._client.aclose()
+            if self._async_type_safe_client is not None:
+                await self._async_type_safe_client.aclose()
+            elif self._async_base_transport is not None:
+                await self._async_base_transport.aclose()
