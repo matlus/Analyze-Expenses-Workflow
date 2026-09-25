@@ -1,12 +1,17 @@
 import json
+import math
 import traceback
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 from types import TracebackType
 from typing import ClassVar, override
 
-type ExceptionContext = dict[str, str | int | float | bool]
+type ExceptionValue = str | int | float | bool
+type ExceptionContext = dict[str, ExceptionValue]
+type ExceptionContextInput = Mapping[str, ExceptionValue]
+type ExceptionField = tuple[str, ExceptionValue]
 
 
 class Severity(IntEnum):
@@ -36,18 +41,60 @@ class ExceptionCause:
     message: str
     traceback: TracebackType | None = None
 
-    def to_dict(self) -> dict[str, str]:
-        cause_data: dict[str, str] = {"exception_type": self.exception_type, "message": self.message}
-        if self.traceback is not None:
-            cause_data["traceback"] = "".join(traceback.format_tb(self.traceback))
-        return cause_data
+
+@dataclass(frozen=True, slots=True)
+class ExceptionDiagnostics:
+    application_name: str
+    exception_type: str
+    action: ExceptionAction
+    reason: str
+    log_event: ExpenseLogEvent
+    severity: Severity
+    http_status_code: int
+    message: str
+    additional_fields: tuple[ExceptionField, ...]
+    cause: ExceptionCause | None
+    traceback_text: str | None
+
+    def fields(self) -> tuple[ExceptionField, ...]:
+        standard_fields: tuple[ExceptionField, ...] = self._standard_fields()
+        additional_fields: tuple[ExceptionField, ...] = self._unreserved_additional_fields(standard_fields)
+        cause_fields: tuple[ExceptionField, ...] = self._cause_fields()
+        return (*additional_fields, *standard_fields, *cause_fields)
+
+    def _standard_fields(self) -> tuple[ExceptionField, ...]:
+        standard_fields: tuple[ExceptionField, ...] = (
+            ("ApplicationName", self.application_name),
+            ("ExceptionType", self.exception_type),
+            ("Action", self.action.value),
+            ("Reason", self.reason),
+            ("LogEvent", self.log_event.value),
+            ("Severity", self.severity.name),
+            ("HttpStatusCode", self.http_status_code),
+            ("Message", self.message),
+        )
+        return standard_fields
+
+    def _unreserved_additional_fields(self, standard_fields: tuple[ExceptionField, ...]) -> tuple[ExceptionField, ...]:
+        reserved_names: frozenset[str] = frozenset(field[0] for field in standard_fields) | {
+            "CausedBy",
+            "Cause",
+            "Traceback",
+        }
+        return tuple(field for field in self.additional_fields if field[0] not in reserved_names)
+
+    def _cause_fields(self) -> tuple[ExceptionField, ...]:
+        return (("CausedBy", self.cause.exception_type), ("Cause", self.cause.message)) if self.cause is not None else ()
+
+    def fields_with_traceback(self) -> tuple[ExceptionField, ...]:
+        traceback_fields: tuple[ExceptionField, ...] = (("Traceback", self.traceback_text),) if self.traceback_text is not None else ()
+        return (*self.fields(), *traceback_fields)
 
 
-class AnalyzeExpensesException(Exception, ABC):
+class AnalyzeExpensesExceptionBase(Exception, ABC):
     APPLICATION_NAME: ClassVar[str] = "AnalyzeExpensesWorkflow"
-    TRACEBACK_KEY: ClassVar[str] = "Traceback"
 
-    def __init__(self, message: str, log_event: ExpenseLogEvent, contextual_data_by_name: ExceptionContext | None = None) -> None:
+    def __init__(self, message: str, log_event: ExpenseLogEvent, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         abstract_method_names: frozenset[str] = type(self).__abstractmethods__
         if abstract_method_names:
             names: str = ", ".join(sorted(abstract_method_names))
@@ -55,7 +102,7 @@ class AnalyzeExpensesException(Exception, ABC):
         super().__init__(message)
         self._message: str = message
         self._log_event: ExpenseLogEvent = log_event
-        self._additional_contextual_data_by_name: ExceptionContext = dict(contextual_data_by_name or {})
+        self._additional_fields: tuple[ExceptionField, ...] = tuple((field[0], field[1]) for field in (contextual_data_by_name or {}).items())
 
     @property
     def message(self) -> str:
@@ -89,53 +136,57 @@ class AnalyzeExpensesException(Exception, ABC):
         return ExceptionCause(type(cause_exception).__name__, str(cause_exception), cause_exception.__traceback__)
 
     @property
-    def contextual_data_by_name(self) -> ExceptionContext:
-        contextual_data: ExceptionContext = dict(self._additional_contextual_data_by_name)
-        contextual_data.update({
-            "ApplicationName": self.APPLICATION_NAME,
-            "ExceptionType": type(self).__name__,
-            "Action": self.action.value,
-            "Reason": self.reason,
-            "LogEvent": self.log_event.value,
-            "Severity": self.severity.name,
-            "HttpStatusCode": self.http_status_code,
-            "Message": self.message,
-        })
-        return contextual_data
+    def diagnostics(self) -> ExceptionDiagnostics:
+        return ExceptionDiagnostics(
+            application_name=self.APPLICATION_NAME,
+            exception_type=type(self).__name__,
+            action=self.action,
+            reason=self.reason,
+            log_event=self.log_event,
+            severity=self.severity,
+            http_status_code=self.http_status_code,
+            message=self.message,
+            additional_fields=self._additional_fields,
+            cause=self.cause,
+            traceback_text="".join(traceback.format_tb(self.__traceback__)) if self.__traceback__ is not None else None,
+        )
 
-    def add_contextual_data(self, contextual_data_by_name: ExceptionContext) -> None:
-        self._additional_contextual_data_by_name.update(contextual_data_by_name)
+    def to_string(self) -> str:
+        return self._render_fields(self.diagnostics.fields_with_traceback())
 
-    def _complete_exception_data(self, *, include_traceback: bool) -> ExceptionContext:
-        complete_exception_data: ExceptionContext = self.contextual_data_by_name
-        exception_cause: ExceptionCause | None = self.cause
-        if exception_cause is not None:
-            complete_exception_data["CausedBy"] = exception_cause.exception_type
-            complete_exception_data["Cause"] = exception_cause.message
-        if include_traceback and self.__traceback__ is not None:
-            complete_exception_data[self.TRACEBACK_KEY] = "".join(traceback.format_tb(self.__traceback__))
-        return complete_exception_data
+    def to_string_without_traceback(self) -> str:
+        return self._render_fields(self.diagnostics.fields())
 
-    def to_string(self, *, include_traceback: bool = True) -> str:
-        complete_exception_data: ExceptionContext = self._complete_exception_data(include_traceback=include_traceback)
-        lines: list[str] = [f"{key}: {value}" for key, value in complete_exception_data.items() if key != self.TRACEBACK_KEY]
-        if include_traceback and self.TRACEBACK_KEY in complete_exception_data:
-            lines.extend(("", str(complete_exception_data[self.TRACEBACK_KEY])))
+    @staticmethod
+    def _render_fields(fields: tuple[ExceptionField, ...]) -> str:
+        lines: list[str] = [f"{field[0]}: {field[1]}" for field in fields if field[0] != "Traceback"]
+        traceback_text: str | None = next((str(field[1]) for field in fields if field[0] == "Traceback"), None)
+        if traceback_text is not None:
+            lines.extend(("", traceback_text))
         return "\n".join(lines)
 
     def to_json(self) -> str:
-        return json.dumps(self._complete_exception_data(include_traceback=True), indent=2)
+        serializable_diagnostics: dict[str, ExceptionValue] = {
+            field[0]: str(field[1]) if isinstance(field[1], float) and not math.isfinite(field[1]) else field[1]
+            for field in self.diagnostics.fields_with_traceback()
+        }
+        return json.dumps(serializable_diagnostics, indent=2, allow_nan=False)
 
 
-class AnalyzeExpensesBusinessException(AnalyzeExpensesException, ABC):
+class AnalyzeExpensesBusinessExceptionBase(AnalyzeExpensesExceptionBase, ABC):
     @property
     @override
     def http_status_code(self) -> int:
         return 400
 
 
-class AnalyzeExpensesTechnicalException(AnalyzeExpensesException, ABC):
+class AnalyzeExpensesTechnicalExceptionBase(AnalyzeExpensesExceptionBase, ABC):
     @property
     @override
     def http_status_code(self) -> int:
         return 500
+
+
+AnalyzeExpensesException = AnalyzeExpensesExceptionBase
+AnalyzeExpensesBusinessException = AnalyzeExpensesBusinessExceptionBase
+AnalyzeExpensesTechnicalException = AnalyzeExpensesTechnicalExceptionBase

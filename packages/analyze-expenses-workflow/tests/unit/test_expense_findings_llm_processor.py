@@ -104,6 +104,40 @@ async def test_three_findings_use_exact_calculated_numbers_and_required_coverage
     assert "shopping-coverage" in gateway.prompts[0]
 
 
+async def test_shopping_coverage_cites_each_month_counted_in_its_statement() -> None:
+    shopping_comparisons: tuple[BudgetComparison, BudgetComparison] = (
+        BudgetComparison(
+            date(2026, 6, 1),
+            ExpenseCategory.SHOPPING,
+            Decimal("100.00"),
+            Decimal("80.00"),
+            Decimal("-20.00"),
+            (1,),
+            "A mixed retailer was assigned to Other.",
+            (2,),
+        ),
+        BudgetComparison(date(2026, 7, 1), ExpenseCategory.SHOPPING, Decimal("100.00"), Decimal("30.00"), Decimal("-70.00"), (3,), None),
+    )
+    reconciliation: CalculationReconciliation = CalculationReconciliation(
+        source_line_count=3,
+        included_line_numbers=(1, 2, 3),
+        duplicate_line_numbers=(),
+        unresolved_line_numbers=(),
+        unparsed_line_numbers=(),
+        classified_spending=Decimal("130.00"),
+        unresolved_outflow=Decimal("0.00"),
+        observed_outflow=Decimal("130.00"),
+        is_balanced=True,
+    )
+    calculations: ExpenseCalculationResult = ExpenseCalculationResult((), (), shopping_comparisons, (), reconciliation)
+    gateway: FakeLlmGateway = FakeLlmGateway([_response("shopping-coverage", "reconciliation-spending", "reconciliation-coverage")])
+
+    findings: tuple[ExpenseFinding, ExpenseFinding, ExpenseFinding] = await _processor(gateway).findings(calculations)
+
+    assert "2 of 2 reported months" in findings[0].text
+    assert findings[0].source_line_numbers == (1, 2, 3)
+
+
 async def test_unsupported_model_prose_is_rejected_then_semantically_retried() -> None:
     valid_ids: tuple[str, ...] = (
         "budget-2026-08-01-dining_coffee",

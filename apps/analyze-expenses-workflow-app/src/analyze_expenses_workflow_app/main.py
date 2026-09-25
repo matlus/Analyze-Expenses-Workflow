@@ -5,7 +5,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from analyze_expenses_workflow import DomainFacade, ExpenseAnalysisResult
+from analyze_expenses_workflow import DomainFacade, ExpenseAnalysisResult, ExpenseInputException
 from analyze_expenses_workflow_app.composers.composer_expense_analysis_report import ComposerExpenseAnalysisReport
 
 _FIXTURE_PREAMBLE: tuple[str, str] = (
@@ -21,7 +21,9 @@ def _expense_lines_from_text(source_text: str) -> list[str]:
     source_lines: list[str] = source_text.splitlines()
     if tuple(source_lines[:2]) == _FIXTURE_PREAMBLE:
         source_lines = source_lines[2:]
-    return [line for line in source_lines if line.strip()]
+        if source_lines and not source_lines[0].strip():
+            source_lines = source_lines[1:]
+    return source_lines
 
 
 def _paths_alias(input_path: Path, output_path: Path) -> bool:
@@ -33,18 +35,16 @@ def _paths_alias(input_path: Path, output_path: Path) -> bool:
         return False
 
 
-async def run(
-    input_path: Path, output_path: Path | None = None, confirmed_duplicate_line_numbers: tuple[int, ...] = ()
-) -> str:
+async def run(input_path: Path, output_path: Path | None = None, confirmed_duplicate_line_numbers: tuple[int, ...] = ()) -> str:
     if output_path is not None and await asyncio.to_thread(_paths_alias, input_path, output_path):
-        raise ValueError("Output path must differ from the input expense file")
+        raise ExpenseInputException(f"Output path must differ from the input expense file: output={output_path}, input={input_path}")
     source_text: str = await asyncio.to_thread(input_path.read_text, encoding="utf-8-sig")
     expense_lines: list[str] = _expense_lines_from_text(source_text)
-    async with DomainFacade() as facade:
-        analysis: ExpenseAnalysisResult = await facade.analyze_expenses(
+    async with DomainFacade() as domain_facade:
+        expense_analysis_result: ExpenseAnalysisResult = await domain_facade.analyze_expenses(
             expense_lines, confirmed_duplicate_line_numbers=confirmed_duplicate_line_numbers
         )
-    report: str = ComposerExpenseAnalysisReport.compose(analysis)
+    report: str = ComposerExpenseAnalysisReport.compose(expense_analysis_result)
     if output_path is not None:
         await asyncio.to_thread(output_path.write_text, report, encoding="utf-8")
     return report
@@ -59,7 +59,7 @@ def main(arguments: Sequence[str] | None = None) -> None:
         type=int,
         action="append",
         default=[],
-        help="Source line number confirmed as a duplicate of the preceding identical line; repeat for multiple lines.",
+        help="Expense input line number, after any recognized heading, confirmed as a duplicate of the preceding identical line.",
     )
     options: argparse.Namespace = parser.parse_args(arguments)
     report: str = asyncio.run(run(options.input, options.output, tuple(options.confirmed_duplicate_line)))
