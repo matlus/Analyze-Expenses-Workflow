@@ -1,0 +1,10 @@
+{"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Please check the root site and www."}]}}
+{"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "I will check both hosts over HTTPS."}]}}
+{"type": "response_item", "payload": {"type": "custom_tool_call", "call_id": "www", "name": "functions.exec", "input": "curl -Iv https://www.example.org"}}
+{"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "www", "output": "HTTP/2 301\nlocation: https://example.org/\nSSL certificate verify ok"}}
+{"type": "response_item", "payload": {"type": "custom_tool_call", "call_id": "root_old", "name": "functions.exec", "input": "curl -Iv https://example.org"}}
+{"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "root_old", "output": "HTTP/2 503\ncertificate provisioning pending"}}
+{"type": "response_item", "payload": {"type": "custom_tool_call", "call_id": "root_new", "name": "functions.exec", "input": "curl -Iv https://example.org"}}
+{"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "root_new", "output": "HTTP/2 200\ncontent-type: text/html\nSSL certificate verify ok"}}
+{"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "What is the current status of both hosts? Can I say HTTPS is ready?"}]}}
+{"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "The root site responds over HTTPS, and www redirects to it. The earlier certificate issue appears resolved."}]}}

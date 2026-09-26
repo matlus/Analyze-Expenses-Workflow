@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "context-compaction"
+version = "0.1.0"
+description = "Evidence-preserving Jev context selection experiments."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.13.5",
+    "python-dotenv>=1.2.3",
+    "typesafe-sdk>=0.7.1",
+]
+
+[project.scripts]
+context-compaction = "context_compaction.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["context_compaction*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"context_compaction" = ["py.typed"]
