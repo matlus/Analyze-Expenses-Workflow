@@ -34,7 +34,7 @@ Our [reader](../../packages/context-compaction/src/context_compaction/rollout.py
 
 ## Put that context into a Jev request
 
-The [state builder](../../packages/context-compaction/src/context_compaction/selection.py) builds a `state` containing the current goal and the ordered timeline. The [question builder](../../packages/context-compaction/src/context_compaction/questions.py) creates one yes/no [Noul question](https://docs.typesafe.ai/primitives/noul) per tool event. Each question asks whether removing that event risks losing a still valid fact, caveat, error, or source needed for the current goal. Jev sees the tool call and result text and the surrounding messages. It is not browsing the website or rerunning `curl`.
+The [state builder](../../packages/context-compaction/src/context_compaction/managers/processors/context_selection_processor.py) builds a `state` containing the current goal and the ordered timeline. The [question builder](../../packages/context-compaction/src/context_compaction/questions.py) creates one yes/no [Noul question](https://docs.typesafe.ai/primitives/noul) per tool event. Each question asks whether removing that event risks losing a still valid fact, caveat, error, or source needed for the current goal. Jev sees the tool call and result text and the surrounding messages. It is not browsing the website or rerunning `curl`.
 
 This is the **complete request body** used for the live teaching call, also saved as [jev-request.json](examples/jev-request.json):
 
@@ -137,7 +137,7 @@ The input suggests an interpretation: `tool_3` has the unique `www` redirect, `t
 
 ## Let code make the retention decision
 
-The [gateway](../../packages/context-compaction/src/context_compaction/gateway.py) sends the prepared state and Noul questions through the TypeSafe SDK. Inside the application, the state is a frozen `JevState` record containing typed message and tool entries. `asdict(state)` converts that record to the JSON-shaped data the SDK accepts; the JSON shown earlier remains the same. The gateway verifies that Jev answered every requested tool ID and that each probability is between zero and one. The [retention function](../../packages/context-compaction/src/context_compaction/selection.py) then applies the trial's `0.5` threshold. These lines show the essential data flow; the linked functions also handle errors and validation:
+The [gateway](../../packages/context-compaction/src/context_compaction/managers/gateways/jev_gateway.py) sends the prepared state and Noul questions through the TypeSafe SDK. Inside the application, the state is a frozen `JevState` record containing typed message and tool entries. `asdict(state)` converts that record to the JSON-shaped data the SDK accepts; the JSON shown earlier remains the same. The gateway verifies that Jev answered every requested tool ID and that each probability is between zero and one. The [retention function](../../packages/context-compaction/src/context_compaction/managers/processors/context_selection_processor.py) then applies the trial's `0.5` threshold. The CLI calls the domain facade. Its manager validates the operation inputs first, then delegates preparation, Jev evaluation, and selection. The service locator supplies a gateway with its transport; tests substitute that transport while exercising the real gateway. The gateway validates returned answers before exposing probabilities to the manager. These lines show the essential data flow:
 
 ```python
 from dataclasses import asdict

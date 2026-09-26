@@ -114,6 +114,7 @@ name = "context-compaction"
 version = "0.1.0"
 source = { editable = "packages/context-compaction" }
 dependencies = [
+    { name = "httpx2" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "typesafe-sdk" },
@@ -121,6 +122,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx2", specifier = ">=2.5.0" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "typesafe-sdk", specifier = ">=0.7.1" },

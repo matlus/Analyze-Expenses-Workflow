@@ -21,3 +21,9 @@ Each command asks Jev the same retention questions three times with each of two 
 Read the reduction alongside `required_tools_retained` and the simple recency baselines. A lower character count is useful only when the context still supports a correct answer. The `excerpt` mode is available for a larger window, but its judgments are less conclusive because Jev sees only selected portions of each tool result.
 
 The first live results are summarized in [RESULTS.md](RESULTS.md). The raw decision records remain in ignored `.workspace_tmp/context-compaction/` directories.
+
+## Domain entry point
+
+`DomainFacade()` supports offline preparation without credentials or a client. For live work, use `async with DomainFacade(enable_jev=True)`; its service locator creates the gateway and its transport, and closure follows the facade → manager → gateway → client ownership chain. The manager validates each operation before processing. Jev response validation stays in the gateway.
+
+Tests substitute the HTTP transport through a testing service locator, exercising the production gateway and SDK request mapping without live Jev calls. Artifact writes remain in the CLI while that design is deferred.
