@@ -1,0 +1,21 @@
+{
+  "model": "typesafe/jev-1.13-20260917",
+  "usage": {
+    "input_tokens": 828,
+    "output_tokens": 58
+  },
+  "answers": {
+    "tool_3": {
+      "type": "noul",
+      "noul": 0.5
+    },
+    "tool_5": {
+      "type": "noul",
+      "noul": 0.47
+    },
+    "tool_7": {
+      "type": "noul",
+      "noul": 0.7
+    }
+  }
+}

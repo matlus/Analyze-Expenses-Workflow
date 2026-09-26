@@ -4,6 +4,8 @@
 **Scope:** TypeSafe AI's Jev model, its documented interface, architectural patterns, worked examples, use cases, limitations, and a method for evaluating it in a new workflow.
 **Evidence basis:** TypeSafe's public documentation and cookbooks. Cookbook numbers are vendor-published results on the stated examples. This guide does not claim to be an independent benchmark or a live test of Jev on a new dataset.
 
+For a focused application of these ideas, see [context compaction as evidence selection](context-compaction/README.md).
+
 ## Contents
 
 1. [The short version](#1-the-short-version)
