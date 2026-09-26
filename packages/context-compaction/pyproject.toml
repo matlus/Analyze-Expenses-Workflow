@@ -9,6 +9,7 @@ description = "Evidence-preserving Jev context selection experiments."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "httpx2>=2.5.0",
     "pydantic>=2.13.5",
     "python-dotenv>=1.2.3",
     "typesafe-sdk>=0.7.1",

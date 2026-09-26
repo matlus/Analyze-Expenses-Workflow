@@ -3,69 +3,46 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Set as AbstractSet
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from types import TracebackType
-from typing import Self, final
+from typing import Self
 
-from pydantic import SecretStr
-from typesafe_sdk import AsyncTypeSafeClient, Noul, SystemOneResponse
+import httpx2
+from pydantic import ValidationError
+from typesafe_sdk import AsyncTypeSafeClient, Noul, SystemOneResponse, TypeSafeAPIResponseValidationError
 
-from context_compaction.errors import ContextCompactionTechnicalError
-from context_compaction.questions import RetentionQuestion
-from context_compaction.records import JevState
-
-
-class JevGatewayError(ContextCompactionTechnicalError):
-    """Base class for distinct Jev gateway failures."""
-
-    def __init__(self, message: str, *, operation: str, model: str, details: Mapping[str, str] | None = None) -> None:
-        self.operation: str = operation
-        self.model: str = model
-        self.details: dict[str, str] = dict(details or {})
-        context: str = ", ".join(f"{name}={self.details[name]}" for name in self.details)
-        super().__init__(f"{message} operation={operation}, model={model}" + (f", {context}" if context else ""))
-
-
-@final
-class JevGatewayClosedError(JevGatewayError):
-    """The caller used a gateway after its client was released."""
-
-
-@final
-class JevRequestError(JevGatewayError):
-    """The provider request failed."""
-
-
-@final
-class JevResponseError(JevGatewayError):
-    """The provider returned an unusable answer."""
-
-
-@final
-class JevCleanupError(JevGatewayError):
-    """The provider client could not be closed."""
-
-
-@dataclass(frozen=True)
-class JevSettings:
-    api_key: SecretStr
-    base_url: str
-    model: str
-
-
-@dataclass(frozen=True)
-class JevDecisionBatch:
-    model: str
-    usage: dict[str, int | None]
-    probabilities: dict[str, float]
+from context_compaction.managers.exceptions.jev_gateway_error import (
+    JevCleanupError,
+    JevGatewayClosedError,
+    JevGatewayError,
+    JevRequestError,
+    JevResponseError,
+)
+from context_compaction.managers.models.context_models import JevDecisionBatch, JevSettings, RetentionQuestion
+from context_compaction.managers.models.records import JevState
 
 
 class JevGateway:
-    def __init__(self, jev_settings: JevSettings, async_type_safe_client: AsyncTypeSafeClient | None = None) -> None:
+    def __init__(
+        self,
+        jev_settings: JevSettings,
+        async_type_safe_client: AsyncTypeSafeClient | None = None,
+        *,
+        async_base_transport: httpx2.AsyncBaseTransport | None = None,
+    ) -> None:
+        if async_type_safe_client is not None and async_base_transport is not None:
+            raise ValueError("Provide either a Jev client or an HTTP transport.")
         self._model: str = jev_settings.model
-        self._async_type_safe_client: AsyncTypeSafeClient | None = async_type_safe_client or AsyncTypeSafeClient(
-            api_key=jev_settings.api_key.get_secret_value(), base_url=jev_settings.base_url
+        self._async_type_safe_client: AsyncTypeSafeClient = (
+            async_type_safe_client
+            if async_type_safe_client is not None
+            else AsyncTypeSafeClient(api_key=jev_settings.api_key.get_secret_value(), base_url=jev_settings.base_url, transport=async_base_transport)
         )
+
+        self._async_base_transport: httpx2.AsyncBaseTransport | None = async_base_transport
+        self._transport_close_pending: bool = False
+        self._client_closed: bool = False
+        self._closed: bool = False
 
     async def decide(self, jev_state: JevState, questions: Mapping[str, RetentionQuestion]) -> JevDecisionBatch:
         system_one_response: SystemOneResponse = await self._request(jev_state, questions)
@@ -80,16 +57,21 @@ class JevGateway:
         return JevRequestError("Jev context-retention request failed.", operation=operation, model=self._model)
 
     async def _request(self, jev_state: JevState, questions: Mapping[str, RetentionQuestion]) -> SystemOneResponse:
-        async_type_safe_client: AsyncTypeSafeClient | None = self._async_type_safe_client
-        if async_type_safe_client is None:
+        if self._closed:
             raise JevGatewayClosedError("Jev gateway is closed.", operation="system_one", model=self._model)
         sdk_questions: Mapping[str, Noul] = self._sdk_questions(questions)
+        return await self._request_system_one(jev_state, sdk_questions)
+
+    async def _request_system_one(self, jev_state: JevState, sdk_questions: Mapping[str, Noul]) -> SystemOneResponse:
+        async_type_safe_client: AsyncTypeSafeClient = self._async_type_safe_client
         try:
             system_one_response: SystemOneResponse = await async_type_safe_client.system_one(
                 state=asdict(jev_state),
                 questions=sdk_questions,
                 model=self._model,
             )
+        except (ValidationError, TypeSafeAPIResponseValidationError) as error:
+            raise JevResponseError("Jev returned an invalid structured response.", operation="validate_response", model=self._model) from error
         except Exception as error:
             raise self._provider_failure("system_one") from error
         return system_one_response
@@ -102,7 +84,7 @@ class JevGateway:
                 "Jev returned a missing or unexpected retention answer.",
                 operation="validate_response",
                 model=self._model,
-                details={
+                detail_value_by_name={
                     "expected_question_ids": repr(sorted(expected_question_ids)),
                     "answer_ids": repr(sorted(answer_ids)),
                     "noul_ids": repr(sorted(noul_ids)),
@@ -115,7 +97,7 @@ class JevGateway:
                 "Jev returned a probability outside zero to one.",
                 operation="validate_response",
                 model=self._model,
-                details={"rejected_probabilities": repr(rejected_probabilities)},
+                detail_value_by_name={"rejected_probabilities": repr(rejected_probabilities)},
             )
         usage: dict[str, int | None] = {
             "input_tokens": system_one_response.usage.input_tokens,
@@ -124,14 +106,27 @@ class JevGateway:
         return JevDecisionBatch(system_one_response.model, usage, probabilities)
 
     async def close(self) -> None:
-        async_type_safe_client: AsyncTypeSafeClient | None = self._async_type_safe_client
-        if async_type_safe_client is None:
-            return
-        try:
-            await async_type_safe_client.aclose()
-        except Exception as error:
-            raise self._provider_failure("aclose") from error
-        self._async_type_safe_client = None
+        if not self._closed:
+            await self._close_resources()
+            self._closed = True
+
+    async def _close_resources(self) -> None:
+        if not self._client_closed:
+            try:
+                await self._async_type_safe_client.aclose()
+            except BaseException as error:
+                if self._async_base_transport is not None:
+                    self._transport_close_pending = True
+                if isinstance(error, Exception):
+                    raise self._provider_failure("aclose") from error
+                raise
+            self._client_closed = True
+        if self._transport_close_pending and self._async_base_transport is not None:
+            try:
+                await self._async_base_transport.aclose()
+            except Exception as error:
+                raise self._provider_failure("aclose") from error
+            self._transport_close_pending = False
 
     async def __aenter__(self) -> Self:
         return self

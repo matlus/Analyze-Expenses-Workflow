@@ -1,19 +1,6 @@
-"""Describe the Jev retention judgments for each completed tool event."""
-
-from __future__ import annotations
-
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Literal
 
-from context_compaction.rollout import Segment, ToolSegment
-
-type Variant = Literal["current", "careful"]
-
-
-@dataclass(frozen=True)
-class RetentionQuestion:
-    instructions: str
+from context_compaction.managers.models.context_models import RetentionQuestion, Segment, ToolSegment, Variant
 
 
 def build_questions(segments: tuple[Segment, ...], variant: Variant) -> Mapping[str, RetentionQuestion]:

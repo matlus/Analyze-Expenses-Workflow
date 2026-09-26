@@ -36,7 +36,7 @@ class JevQuestionRecord:
 
 @dataclass(frozen=True)
 class JevRequestRecord:
-    state: JevState
+    jev_state: JevState
     questions: dict[str, JevQuestionRecord]
 
 
@@ -72,7 +72,7 @@ class TrialManifest:
     protected_messages: int
     tool_events: tuple[ToolEventSummary, ...]
     original_characters: int
-    baselines: TrialBaselines
+    trial_baselines: TrialBaselines
     measurement: str
 
 
