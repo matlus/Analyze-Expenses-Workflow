@@ -14,15 +14,17 @@ from analyze_expenses_workflow.managers.configuration_providers.settings_models.
 )
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.jev_settings import JevSettings
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.llm_operation_settings import LlmOperation, LlmOperationSettings
+from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionAction, ExpenseLogEvent, Severity
 from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import ConfigurationSettingException
-from analyze_expenses_workflow.managers.gateways.codex_subscription_gateway import CodexSubscriptionGateway
-from analyze_expenses_workflow.managers.gateways.copilot_subscription_gateway import CopilotSubscriptionGateway
+from analyze_expenses_workflow.managers.gateways.llm_gateway_codex_subscription import LlmGatewayCodexSubscription
+from analyze_expenses_workflow.managers.gateways.llm_gateway_copilot_subscription import LlmGatewayCopilotSubscription
 from analyze_expenses_workflow.managers.gateways.llm_gateway_protocol import LlmGatewayProtocol
-from analyze_expenses_workflow.managers.gateways.open_router_jev_gateway import OpenRouterJevGateway
+from analyze_expenses_workflow.managers.gateways.system_one_gateway_open_router_jev import SystemOneGatewayOpenRouterJev
 from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol import ChoiceDecision, ChoiceQuestion
 from analyze_expenses_workflow.managers.llm_processors.expense_line_extraction_llm_processor import ExpenseLineExtractionLlmProcessor
 from analyze_expenses_workflow.managers.processors.expense_line_jev_extraction_processor import ExpenseLineJevExtractionProcessor
 from analyze_expenses_workflow.managers.processors.expense_line_parsing_processor import ExpenseLineParsingProcessor
+from analyze_expenses_workflow.managers.service_locators.service_locator_production import ServiceLocatorProduction
 from analyze_expenses_workflow.models.parsed_expense_line import ParsedExpenseLine
 
 
@@ -45,14 +47,13 @@ class _ExperimentJevGateway:
 
 
 class _ExperimentLlmGateway:
-    _EXPECTED_REQUEST: tuple[str, str | None] = ("experiment-model", "low")
-
-    def __init__(self, expense_lines: list[str]) -> None:
+    def __init__(self, expense_lines: list[str], expected_model: str) -> None:
         self.prompts: list[str] = []
         self._expense_lines: list[str] = expense_lines
+        self._expected_request: tuple[str, str | None] = (expected_model, "low")
 
     async def complete(self, prompt: str, model: str, reasoning_effort: str | None) -> str:
-        assert (model, reasoning_effort) == self._EXPECTED_REQUEST
+        assert (model, reasoning_effort) == self._expected_request
         self.prompts.append(prompt)
         return json.dumps(
             {
@@ -101,10 +102,28 @@ class _RecordingLlmGateway:
 
 @pytest.mark.parametrize("minimum_choice_probability", [-0.1, 1.1, float("inf"), float("nan")])
 def test_JevExtraction_WhenChoiceThresholdIsInvalid_ThenRejectsConfiguration(minimum_choice_probability: float) -> None:
-    system_one_gateway_protocol: _ExperimentJevGateway = _ExperimentJevGateway()
+    experiment_jev_gateway: _ExperimentJevGateway = _ExperimentJevGateway()
+    expected_exception_message_pattern: str = "between zero and one"
+    expected_context_value: str = str(minimum_choice_probability)
 
-    with pytest.raises(ConfigurationSettingException, match="between zero and one"):
-        ExpenseLineJevExtractionProcessor(system_one_gateway_protocol, minimum_choice_probability)
+    with pytest.raises(ConfigurationSettingException, match=expected_exception_message_pattern) as raised_exception:
+        ExpenseLineJevExtractionProcessor(experiment_jev_gateway, minimum_choice_probability)
+    actual_configuration_setting_exception: ConfigurationSettingException = raised_exception.value
+    assert (
+        actual_configuration_setting_exception.action,
+        actual_configuration_setting_exception.reason,
+        actual_configuration_setting_exception.log_event,
+        actual_configuration_setting_exception.severity,
+        actual_configuration_setting_exception.http_status_code,
+        dict(actual_configuration_setting_exception.diagnostics.additional_fields).get("MinimumChoiceProbability"),
+    ) == (
+        ExceptionAction.INFRA_ACTION_REQUIRED,
+        "Configuration is invalid or unavailable",
+        ExpenseLogEvent.CONFIGURATION,
+        Severity.ERROR,
+        500,
+        expected_context_value,
+    )
 
 
 @pytest.fixture
@@ -157,46 +176,47 @@ async def test_ExpenseParsingCascade_WhenLinesNeedCodeJevAndLlm_ThenResolvesEach
         (missing_amount_issue, "llm_extraction_failed"),
         2,
     )
+    expected_model: str = f"test-model-{secrets.token_hex(8)}"
     expense_line_parsing_processor: ExpenseLineParsingProcessor = ExpenseLineParsingProcessor()
-    code_lines: tuple[ParsedExpenseLine, ...] = await expense_line_parsing_processor.parse(expense_lines)
-    actual_code_issues: tuple[tuple[str, ...], ...] = tuple(line.issues for line in code_lines)
+    code_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_parsing_processor.parse(expense_lines)
+    actual_code_issues: tuple[tuple[str, ...], ...] = tuple(line.issues for line in code_parsed_expense_lines)
     actual_code_description_cleanup: tuple[bool, bool, bool] = (
-        "$" not in (code_lines[1].description or ""),
-        "2026" not in (code_lines[2].description or ""),
-        "$" not in (code_lines[3].description or ""),
+        "$" not in (code_parsed_expense_lines[1].description or ""),
+        "2026" not in (code_parsed_expense_lines[2].description or ""),
+        "$" not in (code_parsed_expense_lines[3].description or ""),
     )
     assert (actual_code_issues, actual_code_description_cleanup) == expected_code_stage
 
-    jev_gateway: _ExperimentJevGateway = _ExperimentJevGateway()
-    expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(jev_gateway, 0.8)
-    jev_lines: tuple[ParsedExpenseLine, ...] = await expense_line_jev_extraction_processor.extract_uncertain_lines(
-        code_lines, expense_line_parsing_processor.infer_year(expense_lines)
+    experiment_jev_gateway: _ExperimentJevGateway = _ExperimentJevGateway()
+    expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(experiment_jev_gateway, 0.8)
+    jev_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_jev_extraction_processor.extract_uncertain_lines(
+        code_parsed_expense_lines, expense_line_parsing_processor.infer_year(expense_lines)
     )
     actual_jev_stage: tuple[Decimal | None, date | None, tuple[str, ...], tuple[str, ...], Decimal | None, int] = (
-        jev_lines[1].amount,
-        jev_lines[2].occurred_on,
-        jev_lines[1].issues,
-        jev_lines[2].issues,
-        jev_lines[3].amount,
-        len(jev_gateway.requested_lines),
+        jev_parsed_expense_lines[1].amount,
+        jev_parsed_expense_lines[2].occurred_on,
+        jev_parsed_expense_lines[1].issues,
+        jev_parsed_expense_lines[2].issues,
+        jev_parsed_expense_lines[3].amount,
+        len(experiment_jev_gateway.requested_lines),
     )
     assert actual_jev_stage == expected_jev_stage
 
-    llm_gateway: _ExperimentLlmGateway = _ExperimentLlmGateway(expense_lines)
+    experiment_llm_gateway: _ExperimentLlmGateway = _ExperimentLlmGateway(expense_lines, expected_model)
     expense_line_extraction_llm_processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
-        llm_gateway, LlmOperationSettings(model="experiment-model", reasoning_effort="low")
+        experiment_llm_gateway, LlmOperationSettings(model=expected_model, reasoning_effort="low")
     )
-    resolved_lines: tuple[ParsedExpenseLine, ...] = await expense_line_extraction_llm_processor.extract_uncertain_lines(
-        jev_lines, expense_line_parsing_processor.infer_year(expense_lines)
+    resolved_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_extraction_llm_processor.extract_uncertain_lines(
+        jev_parsed_expense_lines, expense_line_parsing_processor.infer_year(expense_lines)
     )
     actual_llm_stage: tuple[bool, bool, Decimal | None, tuple[str, ...], Decimal | None, tuple[str, ...], int] = (
-        resolved_lines[0] == code_lines[0],
-        resolved_lines[1:3] == jev_lines[1:3],
-        resolved_lines[3].amount,
-        resolved_lines[3].issues,
-        resolved_lines[4].amount,
-        resolved_lines[4].issues,
-        len(llm_gateway.prompts),
+        resolved_parsed_expense_lines[0] == code_parsed_expense_lines[0],
+        resolved_parsed_expense_lines[1:3] == jev_parsed_expense_lines[1:3],
+        resolved_parsed_expense_lines[3].amount,
+        resolved_parsed_expense_lines[3].issues,
+        resolved_parsed_expense_lines[4].amount,
+        resolved_parsed_expense_lines[4].issues,
+        len(experiment_llm_gateway.prompts),
     )
     assert actual_llm_stage == expected_llm_stage
 
@@ -211,14 +231,16 @@ async def test_JevExtraction_WhenEqualChargeAndBalanceOccur_ThenUsesSelectedOccu
     expected_final_issues: tuple[str, ...] = () if expected_amount is not None else expected_initial_issues
     expected_result: tuple[Decimal | None, tuple[str, ...]] = (expected_amount, expected_final_issues)
     expense_line_parsing_processor: ExpenseLineParsingProcessor = ExpenseLineParsingProcessor()
-    parsed_lines: tuple[ParsedExpenseLine, ...] = await expense_line_parsing_processor.parse([source_text])
-    assert parsed_lines[0].issues == expected_initial_issues
-    jev_gateway: _ExperimentJevGateway = _ExperimentJevGateway(selected_choice)
-    expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(jev_gateway, 0.8)
+    parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_parsing_processor.parse([source_text])
+    assert parsed_expense_lines[0].issues == expected_initial_issues
+    experiment_jev_gateway: _ExperimentJevGateway = _ExperimentJevGateway(selected_choice)
+    expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(experiment_jev_gateway, 0.8)
 
-    extracted_lines: tuple[ParsedExpenseLine, ...] = await expense_line_jev_extraction_processor.extract_uncertain_lines(parsed_lines, 2026)
+    extracted_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_jev_extraction_processor.extract_uncertain_lines(
+        parsed_expense_lines, 2026
+    )
 
-    assert (extracted_lines[0].amount, extracted_lines[0].issues) == expected_result
+    assert (extracted_parsed_expense_lines[0].amount, extracted_parsed_expense_lines[0].issues) == expected_result
 
 
 @pytest.mark.parametrize(
@@ -229,8 +251,8 @@ async def test_JevExtraction_WhenRefundAndPurchaseAmountsCoexist_ThenKeepsSelect
     source_text: str = f"2026-08-16 | {secrets.token_hex(8)} | Refund $5.00; new purchase $20.00"
     expense_line_parsing_processor: ExpenseLineParsingProcessor = ExpenseLineParsingProcessor()
     parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_parsing_processor.parse([source_text])
-    jev_gateway: _ExperimentJevGateway = _ExperimentJevGateway(selected_choice)
-    expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(jev_gateway, 0.8)
+    experiment_jev_gateway: _ExperimentJevGateway = _ExperimentJevGateway(selected_choice)
+    expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(experiment_jev_gateway, 0.8)
     expected_issues: tuple[str, ...] = ()
     expected_result: tuple[Decimal, tuple[str, ...]] = (expected_amount, expected_issues)
 
@@ -247,24 +269,24 @@ async def test_JevExtraction_WhenLiveGatewaySelectsCandidates_ThenResolvesDateAn
     expense_parsing_experiment_lines: list[str], record_property: Callable[[str, object], None]
 ) -> None:
     expense_line_parsing_processor: ExpenseLineParsingProcessor = ExpenseLineParsingProcessor()
-    parsed_lines: tuple[ParsedExpenseLine, ...] = await expense_line_parsing_processor.parse(expense_parsing_experiment_lines)
+    parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_parsing_processor.parse(expense_parsing_experiment_lines)
     jev_settings: JevSettings = ConfigurationProvider().get_jev_settings()
-    open_router_jev_gateway: OpenRouterJevGateway = OpenRouterJevGateway(jev_settings)
+    system_one_gateway_open_router_jev: SystemOneGatewayOpenRouterJev = SystemOneGatewayOpenRouterJev(jev_settings)
     expected_selected_fields: tuple[Decimal, date] = (Decimal("-8.00"), date(2026, 8, 14))
     try:
         expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(
-            open_router_jev_gateway, jev_settings.parsing_minimum_choice_probability
+            system_one_gateway_open_router_jev, jev_settings.parsing_minimum_choice_probability
         )
-        selected_lines: tuple[ParsedExpenseLine, ...] = await expense_line_jev_extraction_processor.extract_uncertain_lines(
-            parsed_lines, expense_line_parsing_processor.infer_year(expense_parsing_experiment_lines)
+        selected_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_jev_extraction_processor.extract_uncertain_lines(
+            parsed_expense_lines, expense_line_parsing_processor.infer_year(expense_parsing_experiment_lines)
         )
     finally:
-        await open_router_jev_gateway.close()
+        await system_one_gateway_open_router_jev.close()
 
-    record_property("selected_refund_amount", str(selected_lines[1].amount))
-    record_property("selected_purchase_date", str(selected_lines[2].occurred_on))
-    record_property("selected_balance_line_amount", str(selected_lines[3].amount))
-    assert (selected_lines[1].amount, selected_lines[2].occurred_on) == expected_selected_fields
+    record_property("selected_refund_amount", str(selected_parsed_expense_lines[1].amount))
+    record_property("selected_purchase_date", str(selected_parsed_expense_lines[2].occurred_on))
+    record_property("selected_balance_line_amount", str(selected_parsed_expense_lines[3].amount))
+    assert (selected_parsed_expense_lines[1].amount, selected_parsed_expense_lines[2].occurred_on) == expected_selected_fields
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_LLM_TESTS") != "1", reason="Real subscription LLM calls are opt-in")
@@ -284,15 +306,21 @@ async def test_CodexExtraction_WhenLiveJevAbstains_ThenResolvesAmount(expense_pa
     expected_initial_issues: tuple[str, ...] = ("multiple_amounts",)
     expected_resolved_fields: tuple[Decimal, tuple[str, ...]] = (Decimal("7.50"), ())
     assert parsed_expense_line.issues == expected_initial_issues
-    recording_llm_gateway: _RecordingLlmGateway = _RecordingLlmGateway(CodexSubscriptionGateway())
+    service_locator_production: ServiceLocatorProduction = ServiceLocatorProduction()
+    recording_llm_gateway: _RecordingLlmGateway = _RecordingLlmGateway(LlmGatewayCodexSubscription(service_locator_production.create_codex_client()))
     try:
         expense_line_extraction_llm_processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
             recording_llm_gateway, configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_LINE_EXTRACTION)
         )
-        resolved: tuple[ParsedExpenseLine, ...] = await expense_line_extraction_llm_processor.extract_uncertain_lines((parsed_expense_line,), 2026)
+        resolved_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_extraction_llm_processor.extract_uncertain_lines(
+            (parsed_expense_line,), 2026
+        )
     finally:
         await recording_llm_gateway.close()
-    assert (resolved[0].amount, resolved[0].issues) == expected_resolved_fields, recording_llm_gateway.responses
+    assert (
+        resolved_parsed_expense_lines[0].amount,
+        resolved_parsed_expense_lines[0].issues,
+    ) == expected_resolved_fields, recording_llm_gateway.responses
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_COPILOT_TESTS") != "1", reason="Real Copilot calls are opt-in")
@@ -309,10 +337,16 @@ async def test_CopilotExtraction_WhenLiveOpenAiModelRuns_ThenResolvesAmount(expe
     expected_initial_issues: tuple[str, ...] = ("multiple_amounts",)
     expected_resolved_fields: tuple[Decimal, tuple[str, ...]] = (Decimal("7.50"), ())
     assert parsed_expense_line.issues == expected_initial_issues
-    async with CopilotSubscriptionGateway() as copilot_gateway:
+    service_locator_production: ServiceLocatorProduction = ServiceLocatorProduction()
+    async with LlmGatewayCopilotSubscription(service_locator_production.create_copilot_client()) as copilot_gateway:
         recording_llm_gateway: _RecordingLlmGateway = _RecordingLlmGateway(copilot_gateway)
         expense_line_extraction_llm_processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
             recording_llm_gateway, configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_LINE_EXTRACTION)
         )
-        resolved: tuple[ParsedExpenseLine, ...] = await expense_line_extraction_llm_processor.extract_uncertain_lines((parsed_expense_line,), 2026)
-    assert (resolved[0].amount, resolved[0].issues) == expected_resolved_fields, recording_llm_gateway.responses
+        resolved_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_extraction_llm_processor.extract_uncertain_lines(
+            (parsed_expense_line,), 2026
+        )
+    assert (
+        resolved_parsed_expense_lines[0].amount,
+        resolved_parsed_expense_lines[0].issues,
+    ) == expected_resolved_fields, recording_llm_gateway.responses

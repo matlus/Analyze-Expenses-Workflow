@@ -13,7 +13,7 @@ from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception im
     ExceptionContextInput,
     ExpenseLogEvent,
 )
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmGatewayException
+from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmRequestFailedException
 from analyze_expenses_workflow.managers.gateways.llm_gateway_protocol import LlmGatewayProtocol
 from analyze_expenses_workflow.managers.llm_processors.clients.llm_request_client import (
     LlmRequestClient,
@@ -200,7 +200,7 @@ class ExpenseLineExtractionLlmProcessor:
             return _ExtractionAttempt(merged_lines[0], merged_lines[1], merged_lines[2])
         except (ValidationError, _ExtractionValidationError) as exc:
             return _ExtractionAttempt((), pending_parsed_expense_lines, str(exc))
-        except LlmGatewayException:
+        except LlmRequestFailedException:
             return _ExtractionAttempt((), pending_parsed_expense_lines, retry_problem, gateway_failed=True)
 
     async def _attempt_extraction(self, prompt: str) -> _ExtractionResponse:

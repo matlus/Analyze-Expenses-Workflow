@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import ClassVar
 
 from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import ConfigurationSettingException
-from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import SystemOneGatewayException
+from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import JevRequestFailedException
 from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol import ChoiceDecision, ChoiceQuestion, SystemOneGatewayProtocol
 from analyze_expenses_workflow.managers.processors.evidence_parsers.expense_line_evidence_parser import (
     AmountEvidenceOccurrence,
@@ -129,7 +129,7 @@ class ExpenseLineJevExtractionProcessor:
             choice_decision: ChoiceDecision = await self._system_one_gateway_protocol.choose(
                 source_text, ChoiceQuestion(instructions=instructions, criteria=candidate_descriptions_by_choice_key)
             )
-        except SystemOneGatewayException:
+        except JevRequestFailedException:
             return None
         return self._accepted_candidate_index(choice_decision, candidate_descriptions_by_choice_key)
 

@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.llm_operation_settings import LlmOperationSettings
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmGatewayException
+from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmRequestFailedException
 from analyze_expenses_workflow.managers.llm_processors.bases.llm_processor_base import ProcessingEventKind
 from analyze_expenses_workflow.managers.llm_processors.expense_line_extraction_llm_processor import ExpenseLineExtractionLlmProcessor
 from analyze_expenses_workflow.models.parsed_expense_line import ParsedExpenseLine
@@ -28,7 +28,7 @@ class FakeLlmGateway:
 
 class FailingLlmGateway:
     async def complete(self, prompt: str, model: str, reasoning_effort: str | None) -> str:
-        raise LlmGatewayException("Subscription request failed")
+        raise LlmRequestFailedException("Subscription request failed")
 
     async def close(self) -> None:
         return None

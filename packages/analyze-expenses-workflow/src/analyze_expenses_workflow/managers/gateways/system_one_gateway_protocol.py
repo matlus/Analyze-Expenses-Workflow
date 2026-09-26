@@ -1,17 +1,17 @@
-from typing import Annotated, Protocol, Self
+from typing import Annotated, ClassVar, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ChoiceQuestion(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     instructions: str
     criteria: dict[str, str]
 
 
 class ChoiceDecision(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     choice: str
     confidence: float = Field(ge=0, le=1, allow_inf_nan=False)
@@ -26,6 +26,6 @@ class ChoiceDecision(BaseModel):
 
 
 class SystemOneGatewayProtocol(Protocol):
-    async def choose(self, state: str, question: ChoiceQuestion) -> ChoiceDecision: ...
+    async def choose(self, state: str, choice_question: ChoiceQuestion) -> ChoiceDecision: ...
 
     async def close(self) -> None: ...

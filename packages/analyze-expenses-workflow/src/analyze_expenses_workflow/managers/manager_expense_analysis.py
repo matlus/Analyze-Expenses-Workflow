@@ -8,10 +8,10 @@ from analyze_expenses_workflow.managers.configuration_providers.settings_models.
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import CodingAssistantSubscription
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.jev_settings import JevSettings
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.llm_operation_settings import LlmOperation, LlmOperationSettings
-from analyze_expenses_workflow.managers.gateways.codex_subscription_gateway import CodexSubscriptionGateway
-from analyze_expenses_workflow.managers.gateways.copilot_subscription_gateway import CopilotSubscriptionGateway
+from analyze_expenses_workflow.managers.gateways.llm_gateway_codex_subscription import LlmGatewayCodexSubscription
+from analyze_expenses_workflow.managers.gateways.llm_gateway_copilot_subscription import LlmGatewayCopilotSubscription
 from analyze_expenses_workflow.managers.gateways.llm_gateway_protocol import LlmGatewayProtocol
-from analyze_expenses_workflow.managers.gateways.open_router_jev_gateway import OpenRouterJevGateway
+from analyze_expenses_workflow.managers.gateways.system_one_gateway_open_router_jev import SystemOneGatewayOpenRouterJev
 from analyze_expenses_workflow.managers.llm_processors.expense_findings_llm_processor import ExpenseFindingsLlmProcessor
 from analyze_expenses_workflow.managers.llm_processors.expense_line_extraction_llm_processor import ExpenseLineExtractionLlmProcessor
 from analyze_expenses_workflow.managers.processors.expense_calculation_processor import ExpenseCalculationProcessor
@@ -22,7 +22,7 @@ from analyze_expenses_workflow.managers.processors.transaction_categorization_pr
 from analyze_expenses_workflow.managers.service_locators.service_locator_protocol import ServiceLocatorProtocol
 from analyze_expenses_workflow.managers.validators.validator_expense_lines import ValidatorExpenseLines
 from analyze_expenses_workflow.models.expense_analysis_result import ExpenseAnalysisResult, ExpenseCategorization
-from analyze_expenses_workflow.models.expense_calculation_result import BudgetTarget, CalculationReconciliation, ExpenseCalculationResult
+from analyze_expenses_workflow.models.expense_calculation_result import BudgetTarget, ExpenseCalculationResult
 from analyze_expenses_workflow.models.expense_category_catalog import ExpenseCategory
 from analyze_expenses_workflow.models.expense_finding import ExpenseFinding
 from analyze_expenses_workflow.models.expense_transaction import ExpenseTransaction
@@ -32,22 +32,34 @@ from analyze_expenses_workflow.models.parsed_expense_line import ParsedExpenseLi
 class ManagerExpenseAnalysis:
     def __init__(self, service_locator_protocol: ServiceLocatorProtocol) -> None:
         configuration_provider: ConfigurationProvider = service_locator_protocol.get_configuration_provider()
+        self._configure_budget(configuration_provider)
+        self._create_gateways(service_locator_protocol, configuration_provider)
+        self._create_processors(configuration_provider)
+        self._llm_gateway_closed: bool = False
+        self._jev_gateway_closed: bool = False
+
+    def _configure_budget(self, configuration_provider: ConfigurationProvider) -> None:
+        self._budget_settings: BudgetSettings = configuration_provider.get_budget_settings()
+
+    def _create_gateways(self, service_locator_protocol: ServiceLocatorProtocol, configuration_provider: ConfigurationProvider) -> None:
         coding_assistant_subscription: CodingAssistantSubscription = (
             configuration_provider.get_coding_assistant_settings().coding_assistant_subscription
         )
         jev_settings: JevSettings = configuration_provider.get_jev_settings()
-        self._budget_settings: BudgetSettings = configuration_provider.get_budget_settings()
+        self._system_one_gateway_open_router_jev: SystemOneGatewayOpenRouterJev = SystemOneGatewayOpenRouterJev(
+            jev_settings, async_base_transport=service_locator_protocol.create_jev_http_transport()
+        )
+        self._llm_gateway_protocol: LlmGatewayProtocol = self._create_llm_gateway(service_locator_protocol, coding_assistant_subscription)
+
+    def _create_processors(self, configuration_provider: ConfigurationProvider) -> None:
+        jev_settings: JevSettings = configuration_provider.get_jev_settings()
         extraction_llm_operation_settings: LlmOperationSettings = configuration_provider.get_llm_operation_settings(
             LlmOperation.EXPENSE_LINE_EXTRACTION
         )
         findings_llm_operation_settings: LlmOperationSettings = configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_FINDINGS)
-        self._open_router_jev_gateway: OpenRouterJevGateway = OpenRouterJevGateway(
-            jev_settings, async_base_transport=service_locator_protocol.create_jev_http_transport()
-        )
-        self._llm_gateway_protocol: LlmGatewayProtocol = self._create_llm_gateway(coding_assistant_subscription)
         self._expense_line_parsing_processor: ExpenseLineParsingProcessor = ExpenseLineParsingProcessor()
         self._expense_line_jev_extraction_processor: ExpenseLineJevExtractionProcessor = ExpenseLineJevExtractionProcessor(
-            self._open_router_jev_gateway, jev_settings.parsing_minimum_choice_probability
+            self._system_one_gateway_open_router_jev, jev_settings.parsing_minimum_choice_probability
         )
         self._expense_line_extraction_llm_processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
             self._llm_gateway_protocol, extraction_llm_operation_settings
@@ -56,17 +68,19 @@ class ManagerExpenseAnalysis:
             self._llm_gateway_protocol, findings_llm_operation_settings
         )
         self._transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
-            self._open_router_jev_gateway
+            self._system_one_gateway_open_router_jev
         )
         self._expense_reconciliation_processor: ExpenseReconciliationProcessor = ExpenseReconciliationProcessor()
         self._expense_calculation_processor: ExpenseCalculationProcessor = ExpenseCalculationProcessor()
 
     @staticmethod
-    def _create_llm_gateway(coding_assistant_subscription: CodingAssistantSubscription) -> LlmGatewayProtocol:
+    def _create_llm_gateway(
+        service_locator_protocol: ServiceLocatorProtocol, coding_assistant_subscription: CodingAssistantSubscription
+    ) -> LlmGatewayProtocol:
         if coding_assistant_subscription == CodingAssistantSubscription.GPT_CODEX:
-            return CodexSubscriptionGateway()
+            return LlmGatewayCodexSubscription(service_locator_protocol.create_codex_client())
         if coding_assistant_subscription == CodingAssistantSubscription.GITHUB_COPILOT:
-            return CopilotSubscriptionGateway()
+            return LlmGatewayCopilotSubscription(service_locator_protocol.create_copilot_client())
         raise ValueError(f"Unsupported coding assistant subscription: {coding_assistant_subscription}")
 
     async def analyze_expenses(self, expense_lines: Sequence[str], confirmed_duplicate_line_numbers: tuple[int, ...] = ()) -> ExpenseAnalysisResult:
@@ -76,7 +90,7 @@ class ManagerExpenseAnalysis:
         expense_transactions: tuple[ExpenseTransaction, ...] = await self._expense_reconciliation_processor.reconcile(
             parsed_expense_lines, expense_categorization_slots, confirmed_duplicate_line_numbers
         )
-        expense_calculation_result: ExpenseCalculationResult = await self._calculate_and_validate(expense_transactions)
+        expense_calculation_result: ExpenseCalculationResult = await self._calculate(expense_transactions)
         expense_findings: tuple[ExpenseFinding, ExpenseFinding, ExpenseFinding] = await self._expense_findings_llm_processor.findings(
             expense_calculation_result
         )
@@ -92,24 +106,15 @@ class ManagerExpenseAnalysis:
         )
         return await self._expense_line_extraction_llm_processor.extract_uncertain_lines(jev_parsed_expense_lines, inferred_year)
 
-    async def _calculate_and_validate(self, expense_transactions: tuple[ExpenseTransaction, ...]) -> ExpenseCalculationResult:
+    async def _calculate(self, expense_transactions: tuple[ExpenseTransaction, ...]) -> ExpenseCalculationResult:
         budget_targets: tuple[BudgetTarget, ...] = self._budget_targets()
-        expense_calculation_result: ExpenseCalculationResult = await self._expense_calculation_processor.calculate(
-            expense_transactions, budget_targets
-        )
-        self._validate_reconciliation(expense_calculation_result.reconciliation)
-        return expense_calculation_result
+        return await self._expense_calculation_processor.calculate(expense_transactions, budget_targets)
 
     def _budget_targets(self) -> tuple[BudgetTarget, ...]:
         return (
             BudgetTarget(ExpenseCategory.DINING_COFFEE, self._budget_settings.dining_coffee_monthly_budget),
             BudgetTarget(ExpenseCategory.SHOPPING, self._budget_settings.shopping_monthly_budget),
         )
-
-    @staticmethod
-    def _validate_reconciliation(calculation_reconciliation: CalculationReconciliation) -> None:
-        if not calculation_reconciliation.is_balanced:
-            raise ValueError("Expense totals did not reconcile")
 
     @staticmethod
     def _build_result(
@@ -131,6 +136,9 @@ class ManagerExpenseAnalysis:
         )
 
     async def _categorize_lines(self, parsed_expense_lines: tuple[ParsedExpenseLine, ...]) -> tuple[ExpenseCategorization | None, ...]:
+        return await self._run_categorization_tasks(parsed_expense_lines)
+
+    async def _run_categorization_tasks(self, parsed_expense_lines: tuple[ParsedExpenseLine, ...]) -> tuple[ExpenseCategorization | None, ...]:
         semaphore: asyncio.Semaphore = asyncio.Semaphore(8)
 
         async with asyncio.TaskGroup() as task_group:
@@ -162,24 +170,29 @@ class ManagerExpenseAnalysis:
         )
 
     async def close(self) -> None:
-        await self._close_gateways()
+        if not (self._llm_gateway_closed and self._jev_gateway_closed):
+            await self._close_gateways()
 
     async def _close_gateways(self) -> None:
         llm_gateway_close_failure: BaseException | None = None
-        try:
-            await self._llm_gateway_protocol.close()
-        except BaseException as close_failure:  # noqa: BLE001 - close Jev before propagating cancellation or failure
-            llm_gateway_close_failure = close_failure
+        if not self._llm_gateway_closed:
+            try:
+                await self._llm_gateway_protocol.close()
+                self._llm_gateway_closed = True
+            except BaseException as close_failure:  # noqa: BLE001 - close Jev before propagating cancellation or failure
+                llm_gateway_close_failure = close_failure
 
-        try:
-            await self._open_router_jev_gateway.close()
-        except BaseException as jev_gateway_close_failure:
-            if llm_gateway_close_failure is None:
-                raise
-            raise BaseExceptionGroup(
-                "Closing expense analysis gateways failed",
-                [llm_gateway_close_failure, jev_gateway_close_failure],
-            ) from None
+        if not self._jev_gateway_closed:
+            try:
+                await self._system_one_gateway_open_router_jev.close()
+                self._jev_gateway_closed = True
+            except BaseException as jev_gateway_close_failure:
+                if llm_gateway_close_failure is None:
+                    raise
+                raise BaseExceptionGroup(
+                    "Closing expense analysis gateways failed",
+                    [llm_gateway_close_failure, jev_gateway_close_failure],
+                ) from None
 
         if llm_gateway_close_failure is not None:
             raise llm_gateway_close_failure

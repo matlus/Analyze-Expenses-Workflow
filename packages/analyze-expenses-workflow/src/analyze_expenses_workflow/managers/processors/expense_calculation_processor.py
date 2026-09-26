@@ -1,4 +1,5 @@
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from itertools import pairwise
@@ -40,60 +41,66 @@ class ExpenseCalculationProcessor:
 
     @classmethod
     def _monthly_category_totals(cls, transactions: tuple[ExpenseTransaction, ...]) -> tuple[MonthlyCategoryTotal, ...]:
-        grouped_transactions: dict[tuple[date, ExpenseCategory], list[ExpenseTransaction]] = cls._group_by_month_and_category(transactions)
+        grouped_transactions: Mapping[tuple[date, ExpenseCategory], Sequence[ExpenseTransaction]] = cls._group_by_month_and_category(transactions)
         return cls._build_monthly_category_totals(grouped_transactions)
 
     @classmethod
     def _group_by_month_and_category(
         cls, transactions: tuple[ExpenseTransaction, ...]
-    ) -> dict[tuple[date, ExpenseCategory], list[ExpenseTransaction]]:
+    ) -> Mapping[tuple[date, ExpenseCategory], Sequence[ExpenseTransaction]]:
         grouped_transactions: defaultdict[tuple[date, ExpenseCategory], list[ExpenseTransaction]] = defaultdict(list)
         for transaction in transactions:
-            occurred_on, _ = cls._dated_amount(transaction)
+            occurred_on: date = cls._dated_amount(transaction)[0]
             category: ExpenseCategory = cls._spending_category(transaction)
             grouped_transactions[(cls._month(occurred_on), category)].append(transaction)
         return grouped_transactions
 
     @classmethod
     def _build_monthly_category_totals(
-        cls, grouped_transactions: dict[tuple[date, ExpenseCategory], list[ExpenseTransaction]]
+        cls, grouped_transactions: Mapping[tuple[date, ExpenseCategory], Sequence[ExpenseTransaction]]
     ) -> tuple[MonthlyCategoryTotal, ...]:
-        return tuple(
-            MonthlyCategoryTotal(
-                month=month,
-                category=category,
-                amount=sum((cls._dated_amount(transaction)[1] for transaction in category_transactions), Decimal(0)),
-                source_line_numbers=tuple(sorted(transaction.parsed_line.line_number for transaction in category_transactions)),
+        monthly_category_totals: list[MonthlyCategoryTotal] = []
+        month_and_category: tuple[date, ExpenseCategory]
+        category_transactions: Sequence[ExpenseTransaction]
+        for month_and_category, category_transactions in sorted(
+            grouped_transactions.items(),
+            key=lambda grouped_transaction_entry: (grouped_transaction_entry[0][0], grouped_transaction_entry[0][1].value),
+        ):
+            monthly_category_totals.append(
+                MonthlyCategoryTotal(
+                    month=month_and_category[0],
+                    category=month_and_category[1],
+                    amount=sum((cls._dated_amount(transaction)[1] for transaction in category_transactions), Decimal(0)),
+                    source_line_numbers=tuple(sorted(transaction.parsed_line.line_number for transaction in category_transactions)),
+                )
             )
-            for (month, category), category_transactions in sorted(grouped_transactions.items(), key=lambda item: (item[0][0], item[0][1].value))
-        )
+        return tuple(monthly_category_totals)
 
     @classmethod
     def _monthly_totals(
         cls, monthly_category_totals: tuple[MonthlyCategoryTotal, ...], unresolved_transactions: tuple[ExpenseTransaction, ...]
     ) -> tuple[MonthlyTotal, ...]:
-        unresolved_by_month: dict[date, list[ExpenseTransaction]] = cls._group_unresolved_by_month(unresolved_transactions)
-        months: tuple[date, ...] = cls._months_to_total(monthly_category_totals, unresolved_by_month)
+        unresolved_by_month: Mapping[date, Sequence[ExpenseTransaction]] = cls._group_unresolved_by_month(unresolved_transactions)
+        category_months: tuple[date, ...] = tuple(monthly_category_total.month for monthly_category_total in monthly_category_totals)
+        months: tuple[date, ...] = cls._months_to_total(category_months, unresolved_by_month)
         return tuple(cls._monthly_total(month, monthly_category_totals, unresolved_by_month.get(month, [])) for month in months)
 
     @classmethod
-    def _group_unresolved_by_month(cls, transactions: tuple[ExpenseTransaction, ...]) -> dict[date, list[ExpenseTransaction]]:
+    def _group_unresolved_by_month(cls, transactions: tuple[ExpenseTransaction, ...]) -> Mapping[date, Sequence[ExpenseTransaction]]:
         unresolved_by_month: defaultdict[date, list[ExpenseTransaction]] = defaultdict(list)
         for transaction in transactions:
-            occurred_on, _ = cls._dated_amount(transaction)
+            occurred_on: date = cls._dated_amount(transaction)[0]
             unresolved_by_month[cls._month(occurred_on)].append(transaction)
         return unresolved_by_month
 
     @staticmethod
-    def _months_to_total(
-        monthly_category_totals: tuple[MonthlyCategoryTotal, ...], unresolved_by_month: dict[date, list[ExpenseTransaction]]
-    ) -> tuple[date, ...]:
-        months: set[date] = {total.month for total in monthly_category_totals} | set(unresolved_by_month)
+    def _months_to_total(category_months: Sequence[date], unresolved_by_month: Mapping[date, Sequence[ExpenseTransaction]]) -> tuple[date, ...]:
+        months: set[date] = set(category_months) | set(unresolved_by_month)
         return tuple(sorted(months))
 
     @classmethod
     def _monthly_total(
-        cls, month: date, category_totals: tuple[MonthlyCategoryTotal, ...], unresolved_transactions: list[ExpenseTransaction]
+        cls, month: date, category_totals: tuple[MonthlyCategoryTotal, ...], unresolved_transactions: Sequence[ExpenseTransaction]
     ) -> MonthlyTotal:
         month_categories: tuple[MonthlyCategoryTotal, ...] = tuple(total for total in category_totals if total.month == month)
         classified_spending: Decimal = sum((total.amount for total in month_categories), Decimal(0))
@@ -117,33 +124,35 @@ class ExpenseCalculationProcessor:
         budget_targets: tuple[BudgetTarget, ...],
         included_transactions: tuple[ExpenseTransaction, ...],
     ) -> tuple[BudgetComparison, ...]:
-        category_lookup: dict[tuple[date, ExpenseCategory], MonthlyCategoryTotal] = cls._category_totals_by_month_and_category(category_totals)
+        monthly_category_total_by_month_and_category: Mapping[tuple[date, ExpenseCategory], MonthlyCategoryTotal] = (
+            cls._category_totals_by_month_and_category(category_totals)
+        )
         return tuple(
-            cls._budget_comparison(monthly_total.month, target, category_lookup, included_transactions)
+            cls._budget_comparison(monthly_total.month, budget_target, monthly_category_total_by_month_and_category, included_transactions)
             for monthly_total in monthly_totals
-            for target in budget_targets
+            for budget_target in budget_targets
         )
 
     @classmethod
     def _budget_comparison(
         cls,
         month: date,
-        target: BudgetTarget,
-        category_lookup: dict[tuple[date, ExpenseCategory], MonthlyCategoryTotal],
+        budget_target: BudgetTarget,
+        monthly_category_total_by_month_and_category: Mapping[tuple[date, ExpenseCategory], MonthlyCategoryTotal],
         included_transactions: tuple[ExpenseTransaction, ...],
     ) -> BudgetComparison:
-        category_total: MonthlyCategoryTotal | None = category_lookup.get((month, target.category))
-        actual: Decimal = category_total.amount if category_total is not None else Decimal(0)
-        source_line_numbers: tuple[int, ...] = category_total.source_line_numbers if category_total is not None else ()
+        monthly_category_total: MonthlyCategoryTotal | None = monthly_category_total_by_month_and_category.get((month, budget_target.category))
+        actual_spending: Decimal = monthly_category_total.amount if monthly_category_total is not None else Decimal(0)
+        source_line_numbers: tuple[int, ...] = monthly_category_total.source_line_numbers if monthly_category_total is not None else ()
         return BudgetComparison(
             month=month,
-            category=target.category,
-            target=target.monthly_amount,
-            actual=actual,
-            variance=actual - target.monthly_amount,
+            category=budget_target.category,
+            target=budget_target.monthly_amount,
+            actual=actual_spending,
+            variance=actual_spending - budget_target.monthly_amount,
             source_line_numbers=source_line_numbers,
-            coverage_note=cls._shopping_coverage_note(month, target.category, included_transactions),
-            coverage_source_line_numbers=cls._shopping_coverage_lines(month, target.category, included_transactions),
+            coverage_note=cls._shopping_coverage_note(month, budget_target.category, included_transactions),
+            coverage_source_line_numbers=cls._shopping_coverage_lines(month, budget_target.category, included_transactions),
         )
 
     @classmethod
@@ -155,9 +164,7 @@ class ExpenseCalculationProcessor:
         return f"Shopping coverage is incomplete because mixed-retailer charges are in Other (source lines {line_numbers})."
 
     @classmethod
-    def _shopping_coverage_lines(
-        cls, month: date, category: ExpenseCategory, transactions: tuple[ExpenseTransaction, ...]
-    ) -> tuple[int, ...]:
+    def _shopping_coverage_lines(cls, month: date, category: ExpenseCategory, transactions: tuple[ExpenseTransaction, ...]) -> tuple[int, ...]:
         if category != ExpenseCategory.SHOPPING:
             return ()
         return tuple(
@@ -181,36 +188,53 @@ class ExpenseCalculationProcessor:
     def _month_category_deltas(
         cls, category_totals: tuple[MonthlyCategoryTotal, ...], monthly_totals: tuple[MonthlyTotal, ...]
     ) -> tuple[MonthCategoryDelta, ...]:
-        lookup: dict[tuple[date, ExpenseCategory], MonthlyCategoryTotal] = cls._category_totals_by_month_and_category(category_totals)
-        month_pairs: tuple[tuple[date, date], ...] = cls._adjacent_month_pairs(monthly_totals)
-        return tuple(delta for from_month, to_month in month_pairs for delta in cls._deltas_for_pair(from_month, to_month, lookup))
+        monthly_category_total_by_month_and_category: Mapping[tuple[date, ExpenseCategory], MonthlyCategoryTotal] = (
+            cls._category_totals_by_month_and_category(category_totals)
+        )
+        months: tuple[date, ...] = tuple(monthly_total.month for monthly_total in monthly_totals)
+        month_pairs: tuple[tuple[date, date], ...] = cls._adjacent_month_pairs(months)
+        deltas: list[MonthCategoryDelta] = []
+        month_pair: tuple[date, date]
+        for month_pair in month_pairs:
+            deltas.extend(cls._deltas_for_pair(month_pair[0], month_pair[1], monthly_category_total_by_month_and_category))
+        return tuple(deltas)
 
     @staticmethod
     def _category_totals_by_month_and_category(
-        category_totals: tuple[MonthlyCategoryTotal, ...]
-    ) -> dict[tuple[date, ExpenseCategory], MonthlyCategoryTotal]:
+        category_totals: tuple[MonthlyCategoryTotal, ...],
+    ) -> Mapping[tuple[date, ExpenseCategory], MonthlyCategoryTotal]:
         return {(total.month, total.category): total for total in category_totals}
 
     @staticmethod
-    def _adjacent_month_pairs(monthly_totals: tuple[MonthlyTotal, ...]) -> tuple[tuple[date, date], ...]:
-        months: tuple[date, ...] = tuple(total.month for total in monthly_totals)
+    def _adjacent_month_pairs(months: Sequence[date]) -> tuple[tuple[date, date], ...]:
         return tuple(pairwise(months))
 
     @staticmethod
     def _deltas_for_pair(
-        from_month: date, to_month: date, lookup: dict[tuple[date, ExpenseCategory], MonthlyCategoryTotal]
+        from_month: date,
+        to_month: date,
+        monthly_category_total_by_month_and_category: Mapping[tuple[date, ExpenseCategory], MonthlyCategoryTotal],
     ) -> tuple[MonthCategoryDelta, ...]:
-        categories: set[ExpenseCategory] = {category for month, category in lookup if month in (from_month, to_month)}
+        categories: set[ExpenseCategory] = {
+            month_and_category[1]
+            for month_and_category in monthly_category_total_by_month_and_category
+            if month_and_category[0] in (from_month, to_month)
+        }
         deltas: list[MonthCategoryDelta] = []
         for category in categories:
-            previous: MonthlyCategoryTotal | None = lookup.get((from_month, category))
-            current: MonthlyCategoryTotal | None = lookup.get((to_month, category))
-            previous_amount: Decimal = previous.amount if previous is not None else Decimal(0)
-            current_amount: Decimal = current.amount if current is not None else Decimal(0)
+            from_month_monthly_category_total: MonthlyCategoryTotal | None = monthly_category_total_by_month_and_category.get((from_month, category))
+            to_month_monthly_category_total: MonthlyCategoryTotal | None = monthly_category_total_by_month_and_category.get((to_month, category))
+            previous_amount: Decimal = from_month_monthly_category_total.amount if from_month_monthly_category_total is not None else Decimal(0)
+            current_amount: Decimal = to_month_monthly_category_total.amount if to_month_monthly_category_total is not None else Decimal(0)
             if previous_amount == 0 and current_amount == 0:
                 continue
             source_line_numbers: tuple[int, ...] = tuple(
-                sorted((*(() if previous is None else previous.source_line_numbers), *(() if current is None else current.source_line_numbers)))
+                sorted(
+                    (
+                        *(() if from_month_monthly_category_total is None else from_month_monthly_category_total.source_line_numbers),
+                        *(() if to_month_monthly_category_total is None else to_month_monthly_category_total.source_line_numbers),
+                    )
+                )
             )
             deltas.append(
                 MonthCategoryDelta(
@@ -247,7 +271,7 @@ class ExpenseCalculationProcessor:
                 and transaction.parsed_line.amount < 0
             )
         )
-        return CalculationReconciliation(
+        calculation_reconciliation: CalculationReconciliation = CalculationReconciliation(
             source_line_count=len(transactions),
             included_line_numbers=line_numbers_by_treatment[TransactionTreatment.INCLUDED_SPENDING],
             duplicate_line_numbers=line_numbers_by_treatment[TransactionTreatment.EXCLUDED_DUPLICATE],
@@ -265,6 +289,9 @@ class ExpenseCalculationProcessor:
             unresolved_credit_line_numbers=line_numbers_by_treatment[TransactionTreatment.UNCATEGORIZED_CREDIT],
             refund_line_numbers=refunds,
         )
+        if not calculation_reconciliation.is_balanced:
+            raise ValueError("Expense totals did not reconcile")
+        return calculation_reconciliation
 
     @staticmethod
     def _dated_amount(transaction: ExpenseTransaction) -> tuple[date, Decimal]:
