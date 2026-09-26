@@ -1,64 +1,128 @@
 import asyncio
+import secrets
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx2
 import pytest
 from pydantic import HttpUrl, SecretStr
 from typesafe_sdk import AsyncTypeSafeClient
 
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.jev_settings import JevSettings
-from analyze_expenses_workflow.managers.gateways.open_router_jev_gateway import OpenRouterJevGateway
+from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import JevResourceCleanupFailedException
+from analyze_expenses_workflow.managers.gateways.system_one_gateway_open_router_jev import SystemOneGatewayOpenRouterJev
 from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol import ChoiceDecision, ChoiceQuestion
 
 
 def _settings() -> JevSettings:
     return JevSettings(
-        open_router_key=SecretStr("test-only-key"),
+        open_router_key=SecretStr(secrets.token_hex(16)),
         open_router_base_url=HttpUrl("https://openrouter.ai/api/v1"),
         jev_model="typesafe/jev",
     )
 
 
 @pytest.mark.asyncio
-async def test_concurrent_jev_requests_share_one_lazily_created_client() -> None:
-    answer: MagicMock = MagicMock()
-    answer.model_dump.return_value = {"choice": "groceries", "confidence": 0.9, "probabilities": {"groceries": 0.9}}
-    response: MagicMock = MagicMock(choices={"category": answer})
-    client: MagicMock = MagicMock()
-    client.system_one = AsyncMock(return_value=response)
-    client.aclose = AsyncMock()
-    question: ChoiceQuestion = ChoiceQuestion(instructions="Classify expense", criteria={"groceries": "food"})
+async def test_choose_WhenJevRequestsAreConcurrent_ThenSharesOneClient() -> None:
+    expected_choice: str = secrets.token_hex(8)
+    expected_request_count: int = 8
+    expected_client_creation_count: int = 1
+    expected_client_close_count: int = 1
+    expense_description: str = f"{secrets.token_hex(8)} $10"
+    choice_answer_mock: MagicMock = MagicMock()
+    choice_answer_mock.model_dump.return_value = {
+        "choice": expected_choice,
+        "confidence": 0.9,
+        "probabilities": {expected_choice: 0.9},
+    }
+    system_one_response_mock: MagicMock = MagicMock(choices={"category": choice_answer_mock})
+    async_type_safe_client_mock: MagicMock = MagicMock()
+    async_type_safe_client_mock.system_one = AsyncMock(return_value=system_one_response_mock)
+    async_type_safe_client_mock.aclose = AsyncMock()
+    choice_question: ChoiceQuestion = ChoiceQuestion(
+        instructions=f"Classify expense {secrets.token_hex(8)}",
+        criteria={expected_choice: secrets.token_hex(8)},
+    )
 
     with patch(
-        "analyze_expenses_workflow.managers.gateways.open_router_jev_gateway.AsyncTypeSafeClient",
-        return_value=client,
-    ) as client_factory:
-        gateway: OpenRouterJevGateway = OpenRouterJevGateway(_settings())
-        decisions: list[ChoiceDecision] = list(await asyncio.gather(*(gateway.choose("Kroger $10", question) for _ in range(8))))
-        await gateway.close()
+        "analyze_expenses_workflow.managers.gateways.system_one_gateway_open_router_jev.AsyncTypeSafeClient",
+        return_value=async_type_safe_client_mock,
+    ) as async_type_safe_client_factory_mock:
+        system_one_gateway_open_router_jev: SystemOneGatewayOpenRouterJev = SystemOneGatewayOpenRouterJev(_settings())
+        choice_decisions: list[ChoiceDecision] = list(
+            await asyncio.gather(
+                *(system_one_gateway_open_router_jev.choose(expense_description, choice_question) for _ in range(expected_request_count))
+            )
+        )
+        await system_one_gateway_open_router_jev.close()
 
-    assert len(decisions) == 8
-    assert all(decision.choice == "groceries" for decision in decisions)
-    client_factory.assert_called_once()
-    assert client.system_one.await_count == 8
-    client.aclose.assert_awaited_once()
+    assert (
+        len(choice_decisions),
+        [choice_decision.choice for choice_decision in choice_decisions],
+        async_type_safe_client_factory_mock.call_count,
+        async_type_safe_client_mock.system_one.await_count,
+        async_type_safe_client_mock.aclose.await_count,
+    ) == (
+        expected_request_count,
+        [expected_choice] * expected_request_count,
+        expected_client_creation_count,
+        expected_request_count,
+        expected_client_close_count,
+    )
 
 
 @pytest.mark.asyncio
-async def test_unused_jev_gateway_does_not_create_client() -> None:
-    with patch("analyze_expenses_workflow.managers.gateways.open_router_jev_gateway.AsyncTypeSafeClient") as client_factory:
-        gateway: OpenRouterJevGateway = OpenRouterJevGateway(_settings())
-        await gateway.close()
+async def test_close_WhenJevGatewayIsUnused_ThenClosesItsClient() -> None:
+    with patch(
+        "analyze_expenses_workflow.managers.gateways.system_one_gateway_open_router_jev.AsyncTypeSafeClient"
+    ) as async_type_safe_client_factory_mock:
+        async_type_safe_client_mock: MagicMock = async_type_safe_client_factory_mock.return_value
+        async_type_safe_client_mock.aclose = AsyncMock()
+        system_one_gateway_open_router_jev: SystemOneGatewayOpenRouterJev = SystemOneGatewayOpenRouterJev(_settings())
+        await system_one_gateway_open_router_jev.close()
 
-    client_factory.assert_not_called()
+    async_type_safe_client_factory_mock.assert_called_once()
+    assert async_type_safe_client_factory_mock.call_args.kwargs["transport"] is None
+    async_type_safe_client_mock.aclose.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_jev_gateway_accepts_injected_client() -> None:
-    client: MagicMock = MagicMock()
-    client.aclose = AsyncMock()
-    gateway: OpenRouterJevGateway = OpenRouterJevGateway(_settings(), cast("AsyncTypeSafeClient", client))
+async def test_close_WhenJevClientIsInjected_ThenClosesThatClient() -> None:
+    async_type_safe_client_mock: MagicMock = MagicMock()
+    async_type_safe_client_mock.aclose = AsyncMock()
+    system_one_gateway_open_router_jev: SystemOneGatewayOpenRouterJev = SystemOneGatewayOpenRouterJev(
+        _settings(), cast("AsyncTypeSafeClient", async_type_safe_client_mock)
+    )
 
-    await gateway.close()
+    await system_one_gateway_open_router_jev.close()
 
-    client.aclose.assert_awaited_once()
+    async_type_safe_client_mock.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_WhenPendingTransportFailsAfterClientCloses_ThenRetriesOnlyTransport() -> None:
+    expected_client_close_count: int = 2
+    expected_transport_close_count: int = 2
+    async_type_safe_client_mock: MagicMock = MagicMock()
+    async_type_safe_client_mock.aclose = AsyncMock(side_effect=[OSError(secrets.token_hex(8)), None])
+    async_base_transport_mock: MagicMock = MagicMock(spec=httpx2.AsyncBaseTransport)
+    async_base_transport_mock.aclose = AsyncMock(side_effect=[OSError(secrets.token_hex(8)), None])
+
+    with patch(
+        "analyze_expenses_workflow.managers.gateways.system_one_gateway_open_router_jev.AsyncTypeSafeClient",
+        return_value=async_type_safe_client_mock,
+    ):
+        system_one_gateway_open_router_jev: SystemOneGatewayOpenRouterJev = SystemOneGatewayOpenRouterJev(
+            _settings(), async_base_transport=cast("httpx2.AsyncBaseTransport", async_base_transport_mock)
+        )
+        with pytest.raises(JevResourceCleanupFailedException):
+            await system_one_gateway_open_router_jev.close()
+        with pytest.raises(JevResourceCleanupFailedException):
+            await system_one_gateway_open_router_jev.close()
+        await system_one_gateway_open_router_jev.close()
+        await system_one_gateway_open_router_jev.close()
+
+    assert (async_type_safe_client_mock.aclose.await_count, async_base_transport_mock.aclose.await_count) == (
+        expected_client_close_count,
+        expected_transport_close_count,
+    )

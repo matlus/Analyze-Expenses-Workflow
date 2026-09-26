@@ -12,6 +12,7 @@ license = "MIT"
 authors = [{ name = "Your Name", email = "your.email@example.com" }]
 dependencies = [
     "github-copilot-sdk>=1.0.14",
+    "httpx2>=2.13.1",
     "openai-codex>=0.156.1",
     "pydantic>=2.13.5",
     "python-dotenv>=1.2.3",
@@ -34,4 +35,4 @@ python_functions = ["test_*"]
 asyncio_mode = "auto"
 markers = ["live_jev: calls the real Jev service through OpenRouter"]
 addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]

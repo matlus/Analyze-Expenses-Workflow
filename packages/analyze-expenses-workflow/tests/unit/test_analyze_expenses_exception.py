@@ -18,8 +18,20 @@ from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception im
 from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import ConfigurationSettingException
 from analyze_expenses_workflow.managers.exceptions.expense_findings_exception import ExpenseFindingsException
 from analyze_expenses_workflow.managers.exceptions.expense_input_exception import ExpenseInputException
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmGatewayException
-from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import SystemOneGatewayException
+from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
+    LlmClientCleanupFailedException,
+    LlmGatewayClosedException,
+    LlmGatewayException,
+    LlmRequestFailedException,
+    LlmResponseInvalidException,
+    LlmUnsupportedReasoningEffortException,
+)
+from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import (
+    JevGatewayClosedException,
+    JevRequestFailedException,
+    JevResourceCleanupFailedException,
+    JevResponseInvalidException,
+)
 from analyze_expenses_workflow.managers.processors.expense_line_parsing_processor import ExpenseLineParsingProcessor
 from analyze_expenses_workflow.managers.processors.expense_reconciliation_processor import ExpenseReconciliationProcessor
 from analyze_expenses_workflow.managers.validators.validator_expense_lines import ValidatorExpenseLines
@@ -104,8 +116,50 @@ async def test_ExpenseParsing_WhenBlankLineFollowsExpense_ThenPreservesUnparsedL
             "Expense findings could not be grounded",
             ExpenseLogEvent.FINDINGS_SELECTION,
         ),
-        (LlmGatewayException, ExceptionAction.RETRY_ACTION_NEEDED, "Coding assistant request failed", ExpenseLogEvent.LLM_GATEWAY),
-        (SystemOneGatewayException, ExceptionAction.RETRY_ACTION_NEEDED, "Jev gateway request failed", ExpenseLogEvent.JEV_GATEWAY),
+        (LlmRequestFailedException, ExceptionAction.RETRY_ACTION_NEEDED, "Coding assistant request failed", ExpenseLogEvent.LLM_GATEWAY),
+        (
+            LlmGatewayClosedException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Coding assistant gateway was used after closing",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
+        (
+            LlmUnsupportedReasoningEffortException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Coding assistant reasoning effort is unsupported",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
+        (
+            LlmResponseInvalidException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Coding assistant response violates its contract",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
+        (
+            LlmClientCleanupFailedException,
+            ExceptionAction.RETRY_ACTION_NEEDED,
+            "Coding assistant client cleanup failed",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
+        (JevRequestFailedException, ExceptionAction.RETRY_ACTION_NEEDED, "Jev gateway request failed", ExpenseLogEvent.JEV_GATEWAY),
+        (
+            JevResponseInvalidException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Jev choice response violates its contract",
+            ExpenseLogEvent.JEV_GATEWAY,
+        ),
+        (
+            JevGatewayClosedException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Jev gateway was used after closing",
+            ExpenseLogEvent.JEV_GATEWAY,
+        ),
+        (
+            JevResourceCleanupFailedException,
+            ExceptionAction.RETRY_ACTION_NEEDED,
+            "Jev gateway resource cleanup failed",
+            ExpenseLogEvent.JEV_GATEWAY,
+        ),
     ],
 )
 def test_ExpenseException_WhenTechnicalErrorIsConstructed_ThenSharesApplicationBase(
@@ -155,7 +209,7 @@ def test_ExpenseException_WhenContextChangesAfterConstruction_ThenPreservesDiagn
     expected_diagnostic_values_by_name: dict[str, str | int | float | bool] = {
         operation_context_key: expected_operation,
         "ApplicationName": "AnalyzeExpensesWorkflow",
-        exception_type_context_key: LlmGatewayException.__name__,
+        exception_type_context_key: LlmRequestFailedException.__name__,
         "Action": ExceptionAction.RETRY_ACTION_NEEDED.value,
         "Reason": "Coding assistant request failed",
         "LogEvent": ExpenseLogEvent.LLM_GATEWAY.value,
@@ -165,7 +219,7 @@ def test_ExpenseException_WhenContextChangesAfterConstruction_ThenPreservesDiagn
         "CausedBy": "ValueError",
         "Cause": expected_cause_message,
     }
-    llm_gateway_exception: LlmGatewayException = LlmGatewayException(expected_message, supplied_context_by_name)
+    llm_gateway_exception: LlmGatewayException = LlmRequestFailedException(expected_message, supplied_context_by_name)
     llm_gateway_exception.__cause__ = ValueError(expected_cause_message)
 
     supplied_context_by_name[operation_context_key] = secrets.token_hex(8)
@@ -177,7 +231,9 @@ def test_ExpenseException_WhenContextContainsNonfiniteFloat_ThenWritesStrictJson
     score_context_key: str = "Score"
     nonfinite_score_text: str = "nan"
     expected_score_text: str = nonfinite_score_text
-    llm_gateway_exception: LlmGatewayException = LlmGatewayException(secrets.token_hex(8), {score_context_key: float(nonfinite_score_text)})
+    llm_gateway_exception: LlmGatewayException = LlmRequestFailedException(
+        secrets.token_hex(8), {score_context_key: float(nonfinite_score_text)}
+    )
 
     actual_diagnostic_values_by_name: dict[str, str | int | float | bool] = json.loads(
         llm_gateway_exception.to_json(), parse_constant=lambda value: pytest.fail(f"Nonstandard JSON constant: {value}")
@@ -189,8 +245,8 @@ def test_ExpenseException_WhenContextContainsNonfiniteFloat_ThenWritesStrictJson
 def test_ExpenseException_WhenTracebackProjectionIsSelected_ThenOnlyThatProjectionIncludesTraceback() -> None:
     expected_traceback_field: str = "Traceback"
     expected_traceback_presence: tuple[bool, bool, bool, bool] = (False, True, False, True)
-    with pytest.raises(LlmGatewayException) as raised:
-        raise LlmGatewayException(secrets.token_hex(8))
+    with pytest.raises(LlmRequestFailedException) as raised:
+        raise LlmRequestFailedException(secrets.token_hex(8))
     llm_gateway_exception: LlmGatewayException = raised.value
     actual_plain_field_names: tuple[str, ...] = tuple(name for name, _ in llm_gateway_exception.diagnostics.fields())
     actual_trace_field_names: tuple[str, ...] = tuple(name for name, _ in llm_gateway_exception.diagnostics.fields_with_traceback())

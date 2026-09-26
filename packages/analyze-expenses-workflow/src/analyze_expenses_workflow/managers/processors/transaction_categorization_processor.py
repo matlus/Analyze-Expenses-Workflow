@@ -1,7 +1,7 @@
 import re
 from typing import ClassVar
 
-from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import SystemOneGatewayException
+from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import JevResponseInvalidException
 from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol import ChoiceDecision, ChoiceQuestion, SystemOneGatewayProtocol
 from analyze_expenses_workflow.models.expense_analysis_result import CategoryProbability, ExpenseCategorization
 from analyze_expenses_workflow.models.expense_category_catalog import STANDARD_EXPENSE_CATEGORY_CATALOG, ExpenseCategory, ExpenseCategoryCatalog
@@ -53,7 +53,7 @@ class TransactionCategorizationProcessor:
                 CategoryProbability(category=ExpenseCategory(name), probability=probability) for name, probability in decision.probabilities.items()
             )
         except ValueError as exc:
-            raise SystemOneGatewayException("Jev selected an unrecognized expense category") from exc
+            raise JevResponseInvalidException("Jev selected an unrecognized expense category") from exc
         return model_category, probabilities
 
     def _apply_category_policy(self, description: str | None, model_category: ExpenseCategory) -> tuple[ExpenseCategory, str | None]:
