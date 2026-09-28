@@ -5,7 +5,7 @@ from secrets import token_hex
 import pytest
 from pydantic import ValidationError
 
-from analyze_expenses_workflow import ConfigurationSettingException
+from analyze_expenses_workflow.domain_facades import ConfigurationSettingException
 from analyze_expenses_workflow.managers.configuration_providers.configuration_provider import ConfigurationProvider
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.budget_settings import BudgetSettings
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import (

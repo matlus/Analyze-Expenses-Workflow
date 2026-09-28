@@ -1,5 +1,10 @@
 # Analyze Expenses Workflow
 
+Import `DomainFacade` and its public result and exception types from
+`analyze_expenses_workflow.domain_facades`. The package root retains the same
+exports for existing callers; the facade namespace owns the single `__all__`
+list. Implementation classes remain under `managers` and `models`.
+
 The public entry point is `DomainFacade.analyze_expenses(list[str])`. It is
 asynchronous and returns a frozen `ExpenseAnalysisResult` containing the
 source-line ledger, category decisions and probabilities, calculated tables,
@@ -23,6 +28,13 @@ The returned `ExpenseAnalysisResult` has these inspectable parts:
   budget comparisons, month-to-month deltas, and a reconciliation record;
 - `findings` contains exactly three typed evidence statements with source lines;
 - `method` and `calculation_code` explain the calculation contract.
+
+The facade namespace exports each type in that result graph, including the
+category, transaction treatment, parsed line, calculation records, and finding.
+Internal configuration and processors are not part of that namespace. Exception
+diagnostic values such as action, log event, and severity remain readable through
+public exception properties; tests can compare their values without importing
+internal diagnostic enum types.
 
 The remaining processors parse, reconcile, and calculate. The caller may pass
 confirmed duplicate line numbers; each must match the preceding source line

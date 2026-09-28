@@ -2,9 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from acceptance_support.mediator_jev import CapturedJevRequest
-from analyze_expenses_workflow import ExpenseAnalysisResult, ExpenseCategory, SystemOneGatewayException
-from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionAction, ExceptionValue, ExpenseLogEvent, Severity
-from analyze_expenses_workflow.models.expense_analysis_result import ExpenseCategorization
+from analyze_expenses_workflow.domain_facades import ExpenseAnalysisResult, ExpenseCategorization, ExpenseCategory, SystemOneGatewayException
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,10 +18,10 @@ class ExpectedJevCategorization:
 @dataclass(frozen=True, slots=True)
 class ExpectedJevGatewayFailure:
     exception_type: type[SystemOneGatewayException]
-    action: ExceptionAction
+    action: str
     reason: str
-    log_event: ExpenseLogEvent
-    severity: Severity
+    log_event: str
+    severity: str
     http_status_code: int
     message_phrases: tuple[str, ...]
     contextual_fields: tuple[tuple[str, str], ...] = ()
@@ -56,7 +54,9 @@ def assert_jev_categorization(
             mismatches.append(f"Expected policy note {expected_jev_categorization.policy_note!r}, got {actual_expense_categorization.policy_note!r}")
         if not 0.0 <= actual_expense_categorization.confidence <= 1.0:
             mismatches.append(f"Confidence outside [0, 1]: {actual_expense_categorization.confidence}")
-        actual_probability_categories: set[ExpenseCategory] = {item.category for item in actual_expense_categorization.probabilities}
+        actual_probability_categories: set[ExpenseCategory] = {
+            category_probability.category for category_probability in actual_expense_categorization.probabilities
+        }
         if actual_probability_categories != expected_jev_categorization.probability_categories:
             mismatches.append(
                 f"Expected probability categories {expected_jev_categorization.probability_categories}, got {actual_probability_categories}"
@@ -112,16 +112,15 @@ def assert_jev_gateway_failure(
     mismatches: list[str] = []
     if type(actual_system_one_gateway_exception) is not expected_jev_gateway_failure.exception_type:
         mismatches.append(
-            f"Expected exception {expected_jev_gateway_failure.exception_type.__name__}, "
-            f"got {type(actual_system_one_gateway_exception).__name__}"
+            f"Expected exception {expected_jev_gateway_failure.exception_type.__name__}, got {type(actual_system_one_gateway_exception).__name__}"
         )
-    if actual_system_one_gateway_exception.action != expected_jev_gateway_failure.action:
+    if actual_system_one_gateway_exception.action.value != expected_jev_gateway_failure.action:
         mismatches.append(f"Expected action {expected_jev_gateway_failure.action}, got {actual_system_one_gateway_exception.action}")
     if actual_system_one_gateway_exception.reason != expected_jev_gateway_failure.reason:
         mismatches.append(f"Expected reason {expected_jev_gateway_failure.reason!r}, got {actual_system_one_gateway_exception.reason!r}")
-    if actual_system_one_gateway_exception.log_event != expected_jev_gateway_failure.log_event:
+    if actual_system_one_gateway_exception.log_event.value != expected_jev_gateway_failure.log_event:
         mismatches.append(f"Expected log event {expected_jev_gateway_failure.log_event}, got {actual_system_one_gateway_exception.log_event}")
-    if actual_system_one_gateway_exception.severity != expected_jev_gateway_failure.severity:
+    if actual_system_one_gateway_exception.severity.name != expected_jev_gateway_failure.severity:
         mismatches.append(f"Expected severity {expected_jev_gateway_failure.severity}, got {actual_system_one_gateway_exception.severity}")
     if actual_system_one_gateway_exception.http_status_code != expected_jev_gateway_failure.http_status_code:
         mismatches.append(
@@ -134,7 +133,7 @@ def assert_jev_gateway_failure(
             f"Expected cause {expected_jev_gateway_failure.cause_exception_type.__name__}, "
             f"got {type(actual_system_one_gateway_exception.__cause__).__name__}"
         )
-    actual_contextual_field_value_by_name: dict[str, ExceptionValue] = dict(actual_system_one_gateway_exception.diagnostics.additional_fields)
+    actual_contextual_field_value_by_name: dict[str, object] = dict(actual_system_one_gateway_exception.diagnostics.additional_fields)
     mismatches.extend(
         f"Expected context {expected_contextual_field[0]}={expected_contextual_field[1]!r}, "
         f"got {actual_contextual_field_value_by_name.get(expected_contextual_field[0])!r}"

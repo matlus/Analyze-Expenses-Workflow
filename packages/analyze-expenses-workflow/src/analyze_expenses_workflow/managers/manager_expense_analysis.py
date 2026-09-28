@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Sequence
 from types import TracebackType
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from analyze_expenses_workflow.managers.configuration_providers.configuration_provider import ConfigurationProvider
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.budget_settings import BudgetSettings
@@ -21,12 +23,16 @@ from analyze_expenses_workflow.managers.processors.expense_reconciliation_proces
 from analyze_expenses_workflow.managers.processors.transaction_categorization_processor import TransactionCategorizationProcessor
 from analyze_expenses_workflow.managers.service_locators.service_locator_protocol import ServiceLocatorProtocol
 from analyze_expenses_workflow.managers.validators.validator_expense_lines import ValidatorExpenseLines
-from analyze_expenses_workflow.models.expense_analysis_result import ExpenseAnalysisResult, ExpenseCategorization
-from analyze_expenses_workflow.models.expense_calculation_result import BudgetTarget, ExpenseCalculationResult
-from analyze_expenses_workflow.models.expense_category_catalog import ExpenseCategory
-from analyze_expenses_workflow.models.expense_finding import ExpenseFinding
-from analyze_expenses_workflow.models.expense_transaction import ExpenseTransaction
-from analyze_expenses_workflow.models.parsed_expense_line import ParsedExpenseLine
+from analyze_expenses_workflow.models import BudgetTarget, ExpenseAnalysisResult, ExpenseCategory
+
+if TYPE_CHECKING:
+    from analyze_expenses_workflow.models import (
+        ExpenseCalculationResult,
+        ExpenseCategorization,
+        ExpenseFinding,
+        ExpenseTransaction,
+        ParsedExpenseLine,
+    )
 
 
 class ManagerExpenseAnalysis:
@@ -46,9 +52,7 @@ class ManagerExpenseAnalysis:
             configuration_provider.get_coding_assistant_settings().coding_assistant_subscription
         )
         jev_settings: JevSettings = configuration_provider.get_jev_settings()
-        self._system_one_gateway_open_router_jev: SystemOneGatewayOpenRouterJev = SystemOneGatewayOpenRouterJev(
-            jev_settings, async_base_transport=service_locator_protocol.create_jev_http_transport()
-        )
+        self._system_one_gateway_open_router_jev: SystemOneGatewayOpenRouterJev = self._create_jev_gateway(service_locator_protocol, jev_settings)
         self._llm_gateway_protocol: LlmGatewayProtocol = self._create_llm_gateway(service_locator_protocol, coding_assistant_subscription)
 
     def _create_processors(self, configuration_provider: ConfigurationProvider) -> None:
@@ -72,6 +76,10 @@ class ManagerExpenseAnalysis:
         )
         self._expense_reconciliation_processor: ExpenseReconciliationProcessor = ExpenseReconciliationProcessor()
         self._expense_calculation_processor: ExpenseCalculationProcessor = ExpenseCalculationProcessor()
+
+    @staticmethod
+    def _create_jev_gateway(service_locator_protocol: ServiceLocatorProtocol, jev_settings: JevSettings) -> SystemOneGatewayOpenRouterJev:
+        return SystemOneGatewayOpenRouterJev(jev_settings, async_base_transport=service_locator_protocol.create_jev_http_transport())
 
     @staticmethod
     def _create_llm_gateway(

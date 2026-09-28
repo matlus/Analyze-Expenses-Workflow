@@ -51,7 +51,7 @@ async def test_complete_WhenCodexEffortIsInvalid_ThenRejectsBeforeRequest() -> N
     expected_allowed_reasoning_efforts: str = "high, low, max, medium, minimal, none, ultra, xhigh"
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmUnsupportedReasoningEffortException,
-        action=ExceptionAction.INFRA_ACTION_REQUIRED,
+        action=ExceptionAction.INFRA_ACTION_REQUIRED.value,
         reason="Coding assistant reasoning effort is unsupported",
         message_phrases=("Codex", "does not recognize reasoning effort"),
         contextual_fields=(
@@ -79,7 +79,7 @@ async def test_complete_WhenCodexProviderFails_ThenTranslatesFailure() -> None:
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action=ExceptionAction.RETRY_ACTION_NEEDED.value,
         reason="Coding assistant request failed",
         message_phrases=("Codex", "request failed"),
         contextual_fields=(("Operation", "turn_request"), ("Model", expected_model), ("ReasoningEffort", "default")),
@@ -138,7 +138,7 @@ async def test_complete_WhenCopilotReceivesCodexOnlyEffort_ThenRejectsBeforeRequ
     expected_allowed_reasoning_efforts: str = "high, low, max, medium, xhigh"
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmUnsupportedReasoningEffortException,
-        action=ExceptionAction.INFRA_ACTION_REQUIRED,
+        action=ExceptionAction.INFRA_ACTION_REQUIRED.value,
         reason="Coding assistant reasoning effort is unsupported",
         message_phrases=("Copilot", "does not recognize reasoning effort"),
         contextual_fields=(
@@ -166,7 +166,7 @@ async def test_complete_WhenCopilotProviderFails_ThenTranslatesFailure() -> None
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action=ExceptionAction.RETRY_ACTION_NEEDED.value,
         reason="Coding assistant request failed",
         message_phrases=("Copilot", "request failed"),
         contextual_fields=(("Operation", "session_request"), ("Model", expected_model), ("ReasoningEffort", "default")),
