@@ -6,15 +6,14 @@ from acceptance_support.mediator_codex import TestMediatorCodex
 from acceptance_support.mediator_jev import TestMediatorJev
 from acceptance_support.service_locator_testing import create_domain_facade, create_subscription_test_configuration
 
-from analyze_expenses_workflow import DomainFacade
-from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import (
-    CodingAssistantSubscription,
-)
-from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionAction
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
+from analyze_expenses_workflow.domain_facades import (
+    DomainFacade,
     LlmClientCleanupFailedException,
     LlmRequestFailedException,
     LlmResponseInvalidException,
+)
+from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import (
+    CodingAssistantSubscription,
 )
 
 
@@ -27,7 +26,7 @@ async def test_analyze_expenses_WhenCodexTurnFails_ThenReportsGatewayFailureAtBo
     expected_close_count: int = 1
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action="RetryActionNeeded",
         reason="Coding assistant request failed",
         message_phrases=("Codex", "request failed"),
         contextual_fields=(("Operation", "turn_request"), ("Model", expected_model), ("ReasoningEffort", "medium")),
@@ -48,9 +47,7 @@ async def test_analyze_expenses_WhenCodexTurnFails_ThenReportsGatewayFailureAtBo
 
     actual_llm_gateway_exception: LlmRequestFailedException = raised_exception.value
     assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
-    assert_codex_requests(
-        test_mediator_codex, test_mediator_jev, expected_model, expected_expense_line, expected_request_count, expected_close_count
-    )
+    assert_codex_requests(test_mediator_codex, test_mediator_jev, expected_model, expected_expense_line, expected_request_count, expected_close_count)
 
 
 async def test_close_WhenCalledTwice_ThenOwnedGatewaysCloseOnce() -> None:
@@ -81,7 +78,7 @@ async def test_analyze_expenses_WhenCodexTurnHasNoResponse_ThenReportsInvalidRes
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
     expected_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmResponseInvalidException,
-        action=ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+        action="DeveloperActionRequired",
         reason="Coding assistant response violates its contract",
         message_phrases=("Codex", "no completed response"),
         contextual_fields=(("Operation", "response_validation"), ("TurnStatus", "completed")),
@@ -115,7 +112,7 @@ async def test_close_WhenCodexClientFailsOnce_ThenFacadeCanRetryCleanup() -> Non
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmClientCleanupFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action="RetryActionNeeded",
         reason="Coding assistant client cleanup failed",
         message_phrases=("Codex", "cleanup failed"),
         contextual_fields=(("Operation", "client_close"),),

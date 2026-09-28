@@ -13,9 +13,10 @@ from acceptance_support.asserter_jev import (
 from acceptance_support.mediator_jev import JevTransportCloseError, TestMediatorJev
 from acceptance_support.service_locator_testing import create_domain_facade
 
-from analyze_expenses_workflow import DomainFacade, ExpenseAnalysisResult, ExpenseCategory
-from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionAction, ExpenseLogEvent, Severity
-from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import (
+from analyze_expenses_workflow.domain_facades import (
+    DomainFacade,
+    ExpenseAnalysisResult,
+    ExpenseCategory,
     JevRequestFailedException,
     JevResourceCleanupFailedException,
 )
@@ -52,10 +53,10 @@ async def test_analyze_expenses_WhenJevServiceRejectsRequest_ThenReportsGatewayF
     test_open_router_key: str = secrets.token_hex(16)
     expected_jev_gateway_failure: ExpectedJevGatewayFailure = ExpectedJevGatewayFailure(
         exception_type=JevRequestFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action="RetryActionNeeded",
         reason="Jev gateway request failed",
-        log_event=ExpenseLogEvent.JEV_GATEWAY,
-        severity=Severity.ERROR,
+        log_event="ExpenseJevGateway",
+        severity="ERROR",
         http_status_code=500,
         message_phrases=("Jev", "request failed"),
         contextual_fields=(("Operation", "categorization_request"), ("Model", expected_jev_model)),
@@ -73,9 +74,7 @@ async def test_analyze_expenses_WhenJevServiceRejectsRequest_ThenReportsGatewayF
         with pytest.RaisesGroup(JevRequestFailedException) as raised_exception_group:
             await domain_facade.analyze_expenses([expected_expense_line])
 
-    actual_system_one_gateway_exception: JevRequestFailedException = cast(
-        "JevRequestFailedException", raised_exception_group.value.exceptions[0]
-    )
+    actual_system_one_gateway_exception: JevRequestFailedException = cast("JevRequestFailedException", raised_exception_group.value.exceptions[0])
     assert_jev_gateway_failure(actual_system_one_gateway_exception, expected_jev_gateway_failure)
     assert_jev_requests(test_mediator_jev.captured_jev_requests, expected_jev_request_method, expected_jev_request_path, expected_expense_line)
 
@@ -87,10 +86,10 @@ async def test_close_WhenJevTransportCloseFailsOnce_ThenFacadeCanRetryCleanup() 
     test_open_router_key: str = secrets.token_hex(16)
     expected_jev_gateway_failure: ExpectedJevGatewayFailure = ExpectedJevGatewayFailure(
         exception_type=JevResourceCleanupFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action="RetryActionNeeded",
         reason="Jev gateway resource cleanup failed",
-        log_event=ExpenseLogEvent.JEV_GATEWAY,
-        severity=Severity.ERROR,
+        log_event="ExpenseJevGateway",
+        severity="ERROR",
         http_status_code=500,
         message_phrases=("Jev", "client cleanup failed"),
         contextual_fields=(("Operation", "client_close"), ("Model", expected_jev_model)),
@@ -126,10 +125,10 @@ async def test_close_WhenJevClientAndPendingTransportCloseFail_ThenFacadeRetries
     test_open_router_key: str = secrets.token_hex(16)
     expected_transport_failure: ExpectedJevGatewayFailure = ExpectedJevGatewayFailure(
         exception_type=JevResourceCleanupFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action="RetryActionNeeded",
         reason="Jev gateway resource cleanup failed",
-        log_event=ExpenseLogEvent.JEV_GATEWAY,
-        severity=Severity.ERROR,
+        log_event="ExpenseJevGateway",
+        severity="ERROR",
         http_status_code=500,
         message_phrases=("Jev", "transport cleanup failed"),
         contextual_fields=(("Operation", "transport_close"), ("Model", expected_jev_model)),

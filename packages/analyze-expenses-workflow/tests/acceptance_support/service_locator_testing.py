@@ -7,7 +7,7 @@ from copilot import CopilotClient
 from openai_codex import AsyncCodex
 
 from acceptance_support.mediator_jev import TestMediatorJev
-from analyze_expenses_workflow import DomainFacade
+from analyze_expenses_workflow.domain_facades import DomainFacade
 from analyze_expenses_workflow.managers.configuration_providers.configuration_provider import ConfigurationProvider
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import CodingAssistantSubscription
 from analyze_expenses_workflow.managers.service_locators.service_locator_production import ServiceLocatorProduction

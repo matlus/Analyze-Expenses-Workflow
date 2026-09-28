@@ -1,6 +1,7 @@
 import asyncio
 import os
 import secrets
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
@@ -11,20 +12,22 @@ from typing import Self
 import pytest
 
 import analyze_expenses_workflow_app.main as app_main
-from analyze_expenses_workflow.managers.exceptions.expense_input_exception import ExpenseInputException
-from analyze_expenses_workflow.managers.processors.expense_line_parsing_processor import ExpenseLineParsingProcessor
-from analyze_expenses_workflow.models.expense_analysis_result import ExpenseAnalysisResult, ExpenseCategorization
-from analyze_expenses_workflow.models.expense_calculation_result import (
+from analyze_expenses_workflow.domain_facades import (
     BudgetComparison,
     CalculationReconciliation,
+    ExpenseAnalysisResult,
     ExpenseCalculationResult,
+    ExpenseCategorization,
+    ExpenseCategory,
+    ExpenseFinding,
+    ExpenseInputException,
+    ExpenseTransaction,
     MonthlyCategoryTotal,
     MonthlyTotal,
+    ParsedExpenseLine,
+    TransactionTreatment,
 )
-from analyze_expenses_workflow.models.expense_category_catalog import ExpenseCategory
-from analyze_expenses_workflow.models.expense_finding import ExpenseFinding
-from analyze_expenses_workflow.models.expense_transaction import ExpenseTransaction, TransactionTreatment
-from analyze_expenses_workflow.models.parsed_expense_line import ParsedExpenseLine
+from analyze_expenses_workflow.managers.processors.expense_line_parsing_processor import ExpenseLineParsingProcessor
 from analyze_expenses_workflow_app.composers.composer_expense_analysis_report import ComposerExpenseAnalysisReport
 
 
@@ -274,7 +277,7 @@ async def test_ExpenseInput_WhenBlankLineSeparatesExpenses_ThenPreservesSourceLi
 
 
 def _assert_expense_line_boundaries(
-    actual_expense_lines: list[str], expected_count: int, expected_first_prefix: str, expected_last_prefix: str
+    actual_expense_lines: Sequence[str], expected_count: int, expected_first_prefix: str, expected_last_prefix: str
 ) -> None:
     failures: list[str] = []
     if len(actual_expense_lines) != expected_count:

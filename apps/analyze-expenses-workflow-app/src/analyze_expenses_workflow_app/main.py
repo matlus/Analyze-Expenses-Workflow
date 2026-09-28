@@ -5,7 +5,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from analyze_expenses_workflow import DomainFacade, ExpenseAnalysisResult, ExpenseInputException
+from analyze_expenses_workflow.domain_facades import DomainFacade, ExpenseAnalysisResult, ExpenseInputException
 from analyze_expenses_workflow_app.composers.composer_expense_analysis_report import ComposerExpenseAnalysisReport
 
 _FIXTURE_PREAMBLE: tuple[str, str] = (

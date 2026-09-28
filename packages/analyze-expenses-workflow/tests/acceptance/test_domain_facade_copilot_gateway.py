@@ -6,15 +6,14 @@ from acceptance_support.mediator_copilot import TestMediatorCopilot
 from acceptance_support.mediator_jev import TestMediatorJev
 from acceptance_support.service_locator_testing import create_domain_facade, create_subscription_test_configuration
 
-from analyze_expenses_workflow import DomainFacade
-from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import (
-    CodingAssistantSubscription,
-)
-from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionAction
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
+from analyze_expenses_workflow.domain_facades import (
+    DomainFacade,
     LlmClientCleanupFailedException,
     LlmRequestFailedException,
     LlmResponseInvalidException,
+)
+from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import (
+    CodingAssistantSubscription,
 )
 
 
@@ -30,7 +29,7 @@ async def test_analyze_expenses_WhenCopilotSessionFails_ThenReportsGatewayFailur
     expected_jev_request_count: int = 0
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action="RetryActionNeeded",
         reason="Coding assistant request failed",
         message_phrases=("Copilot", "request failed"),
         contextual_fields=(("Operation", "session_request"), ("Model", expected_model), ("ReasoningEffort", "medium")),
@@ -71,7 +70,7 @@ async def test_analyze_expenses_WhenCopilotSessionEmitsError_ThenReportsGatewayF
     expected_jev_request_count: int = 0
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action="RetryActionNeeded",
         reason="Coding assistant request failed",
         message_phrases=("Copilot", "request failed"),
         contextual_fields=(("Operation", "session_request"), ("Model", expected_model), ("ReasoningEffort", "medium")),
@@ -105,7 +104,7 @@ async def test_analyze_expenses_WhenCopilotSessionHasNoMessage_ThenReportsInvali
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
     expected_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmResponseInvalidException,
-        action=ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+        action="DeveloperActionRequired",
         reason="Coding assistant response violates its contract",
         message_phrases=("Copilot", "no message"),
         contextual_fields=(("Operation", "response_validation"), ("EventDataType", "None")),
@@ -139,7 +138,7 @@ async def test_close_WhenCopilotClientFailsOnce_ThenFacadeCanRetryCleanup() -> N
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmClientCleanupFailedException,
-        action=ExceptionAction.RETRY_ACTION_NEEDED,
+        action="RetryActionNeeded",
         reason="Coding assistant client cleanup failed",
         message_phrases=("Copilot", "cleanup failed"),
         contextual_fields=(("Operation", "client_stop"),),

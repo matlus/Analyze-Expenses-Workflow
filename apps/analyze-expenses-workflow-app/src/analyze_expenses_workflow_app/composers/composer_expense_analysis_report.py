@@ -1,13 +1,27 @@
 from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
-from typing import final
+from typing import Final, final
 
-from analyze_expenses_workflow import ExpenseAnalysisResult, ExpenseCategory
+from analyze_expenses_workflow.domain_facades import (
+    ExpenseAnalysisResult,
+    ExpenseCategorization,
+    ExpenseCategory,
+    ExpenseFinding,
+    ExpenseTransaction,
+    ParsedExpenseLine,
+)
 
 
 @final
 class ComposerExpenseAnalysisReport:
+    _EXPENSE_CATEGORY_COLUMN: Final[str] = "Expense category"
+    _MONTH_COLUMN: Final[str] = "Month"
+    _SOURCE_LINES_COLUMN: Final[str] = "Source lines"
+    _CLASSIFIED_SPENDING_LABEL: Final[str] = "Classified spending"
+    _UNRESOLVED_OUTFLOW_LABEL: Final[str] = "Unresolved outflow"
+    _OBSERVED_OUTFLOW_LABEL: Final[str] = "Observed outflow"
+
     @classmethod
     def compose(cls, expense_analysis_result: ExpenseAnalysisResult) -> str:
         sections: list[str] = [
@@ -27,30 +41,29 @@ class ComposerExpenseAnalysisReport:
     def _ledger(cls, expense_analysis_result: ExpenseAnalysisResult) -> str:
         rows: list[tuple[str, ...]] = cls._ledger_rows(expense_analysis_result)
         return "## Transaction ledger\n\n" + cls._table(
-            ("Line", "Source text", "Date", "Description", "Amount", "Expense category", "Treatment", "Note"), rows
+            ("Line", "Source text", "Date", "Description", "Amount", cls._EXPENSE_CATEGORY_COLUMN, "Treatment", "Note"), rows
         )
 
     @classmethod
     def _ledger_rows(cls, expense_analysis_result: ExpenseAnalysisResult) -> list[tuple[str, ...]]:
-        rows: list[tuple[str, ...]] = []
-        for expense_transaction in expense_analysis_result.transactions:
-            parsed_expense_line = expense_transaction.parsed_line
-            expense_categorization = expense_transaction.categorization
-            rows.append(
-                (
-                    str(parsed_expense_line.line_number),
-                    parsed_expense_line.source_text,
-                    parsed_expense_line.occurred_on.isoformat() if parsed_expense_line.occurred_on is not None else "—",
-                    parsed_expense_line.description or "—",
-                    cls._money(parsed_expense_line.amount) if parsed_expense_line.amount is not None else "—",
-                    cls._category(expense_categorization.category) if expense_categorization is not None else "—",
-                    expense_transaction.treatment.value.replace("_", " "),
-                    expense_categorization.policy_note
-                    if expense_categorization is not None and expense_categorization.policy_note is not None
-                    else ", ".join(parsed_expense_line.issues),
-                )
-            )
-        return rows
+        return [cls._ledger_row(expense_transaction) for expense_transaction in expense_analysis_result.transactions]
+
+    @classmethod
+    def _ledger_row(cls, expense_transaction: ExpenseTransaction) -> tuple[str, ...]:
+        parsed_expense_line: ParsedExpenseLine = expense_transaction.parsed_line
+        expense_categorization: ExpenseCategorization | None = expense_transaction.categorization
+        return (
+            str(parsed_expense_line.line_number),
+            parsed_expense_line.source_text,
+            parsed_expense_line.occurred_on.isoformat() if parsed_expense_line.occurred_on is not None else "—",
+            parsed_expense_line.description or "—",
+            cls._money(parsed_expense_line.amount) if parsed_expense_line.amount is not None else "—",
+            cls._category(expense_categorization.category) if expense_categorization is not None else "—",
+            expense_transaction.treatment.value.replace("_", " "),
+            expense_categorization.policy_note
+            if expense_categorization is not None and expense_categorization.policy_note is not None
+            else ", ".join(parsed_expense_line.issues),
+        )
 
     @classmethod
     def _monthly_categories(cls, expense_analysis_result: ExpenseAnalysisResult) -> str:
@@ -63,7 +76,9 @@ class ComposerExpenseAnalysisReport:
             )
             for monthly_category_total in expense_analysis_result.calculations.monthly_category_totals
         ]
-        return "## Monthly spending by expense category\n\n" + cls._table(("Month", "Expense category", "Amount", "Source lines"), rows)
+        return "## Monthly spending by expense category\n\n" + cls._table(
+            (cls._MONTH_COLUMN, cls._EXPENSE_CATEGORY_COLUMN, "Amount", cls._SOURCE_LINES_COLUMN), rows
+        )
 
     @classmethod
     def _monthly_totals(cls, expense_analysis_result: ExpenseAnalysisResult) -> str:
@@ -77,7 +92,10 @@ class ComposerExpenseAnalysisReport:
             )
             for monthly_total in expense_analysis_result.calculations.monthly_totals
         ]
-        return "## Monthly totals\n\n" + cls._table(("Month", "Classified spending", "Unresolved outflow", "Observed outflow", "Source lines"), rows)
+        return "## Monthly totals\n\n" + cls._table(
+            (cls._MONTH_COLUMN, cls._CLASSIFIED_SPENDING_LABEL, cls._UNRESOLVED_OUTFLOW_LABEL, cls._OBSERVED_OUTFLOW_LABEL, cls._SOURCE_LINES_COLUMN),
+            rows,
+        )
 
     @classmethod
     def _budgets(cls, expense_analysis_result: ExpenseAnalysisResult) -> str:
@@ -95,7 +113,17 @@ class ComposerExpenseAnalysisReport:
             for budget_comparison in expense_analysis_result.calculations.budget_comparisons
         ]
         return "## Budget comparisons\n\n" + cls._table(
-            ("Month", "Expense category", "Target", "Actual", "Actual minus target", "Source lines", "Coverage", "Coverage source lines"), rows
+            (
+                cls._MONTH_COLUMN,
+                cls._EXPENSE_CATEGORY_COLUMN,
+                "Target",
+                "Actual",
+                "Actual minus target",
+                cls._SOURCE_LINES_COLUMN,
+                "Coverage",
+                "Coverage source lines",
+            ),
+            rows,
         )
 
     @classmethod
@@ -111,7 +139,9 @@ class ComposerExpenseAnalysisReport:
             )
             for month_category_delta in expense_analysis_result.calculations.month_category_deltas
         ]
-        return "## Month-to-month changes\n\n" + cls._table(("Months", "Expense category", "Previous", "Current", "Change", "Source lines"), rows)
+        return "## Month-to-month changes\n\n" + cls._table(
+            ("Months", cls._EXPENSE_CATEGORY_COLUMN, "Previous", "Current", "Change", cls._SOURCE_LINES_COLUMN), rows
+        )
 
     @classmethod
     def _quality(cls, expense_analysis_result: ExpenseAnalysisResult) -> str:
@@ -130,22 +160,26 @@ class ComposerExpenseAnalysisReport:
     def _quality_summary_rows(cls, expense_analysis_result: ExpenseAnalysisResult) -> list[tuple[str, ...]]:
         calculation_reconciliation = expense_analysis_result.calculations.reconciliation
         return [
-            ("Source lines", str(calculation_reconciliation.source_line_count)),
+            (cls._SOURCE_LINES_COLUMN, str(calculation_reconciliation.source_line_count)),
             ("Included spending lines", cls._line_numbers(calculation_reconciliation.included_line_numbers)),
             ("Confirmed duplicate lines", cls._line_numbers(calculation_reconciliation.duplicate_line_numbers)),
             ("Unresolved outflow lines", cls._line_numbers(calculation_reconciliation.unresolved_line_numbers)),
             ("Unresolved credit lines", cls._line_numbers(calculation_reconciliation.unresolved_credit_line_numbers)),
             ("Refund or negative adjustment lines", cls._line_numbers(calculation_reconciliation.refund_line_numbers)),
             ("Unparsed lines", cls._line_numbers(calculation_reconciliation.unparsed_line_numbers)),
-            ("Classified spending", cls._money(calculation_reconciliation.classified_spending)),
-            ("Unresolved outflow", cls._money(calculation_reconciliation.unresolved_outflow)),
-            ("Observed outflow", cls._money(calculation_reconciliation.observed_outflow)),
+            (cls._CLASSIFIED_SPENDING_LABEL, cls._money(calculation_reconciliation.classified_spending)),
+            (cls._UNRESOLVED_OUTFLOW_LABEL, cls._money(calculation_reconciliation.unresolved_outflow)),
+            (cls._OBSERVED_OUTFLOW_LABEL, cls._money(calculation_reconciliation.observed_outflow)),
             ("Reconciled", "Yes" if calculation_reconciliation.is_balanced else "No"),
         ]
 
     @staticmethod
     def _quality_issue_rows(expense_analysis_result: ExpenseAnalysisResult) -> list[tuple[str, ...]]:
-        return [(str(line.line_number), ", ".join(line.issues)) for line in expense_analysis_result.parsed_lines if line.issues]
+        return [
+            (str(parsed_expense_line.line_number), ", ".join(parsed_expense_line.issues))
+            for parsed_expense_line in expense_analysis_result.parsed_lines
+            if parsed_expense_line.issues
+        ]
 
     @classmethod
     def _unparsed_note(cls, expense_analysis_result: ExpenseAnalysisResult) -> str:
@@ -183,6 +217,8 @@ class ComposerExpenseAnalysisReport:
     @staticmethod
     def _findings(expense_analysis_result: ExpenseAnalysisResult) -> str:
         numbered_findings: list[str] = []
+        finding_number: int
+        expense_finding: ExpenseFinding
         for finding_number, expense_finding in enumerate(expense_analysis_result.findings, start=1):
             numbered_findings.append(
                 f"{finding_number}. {expense_finding.text} "

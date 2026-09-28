@@ -4,19 +4,13 @@ from openai_codex import ApprovalMode, Sandbox
 
 from acceptance_support.mediator_codex import TestMediatorCodex
 from acceptance_support.mediator_jev import TestMediatorJev
-from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    ExceptionAction,
-    ExceptionValue,
-    ExpenseLogEvent,
-    Severity,
-)
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmGatewayException
+from analyze_expenses_workflow.domain_facades import LlmGatewayException
 
 
 @dataclass(frozen=True, slots=True)
 class ExpectedLlmGatewayFailure:
     exception_type: type[LlmGatewayException]
-    action: ExceptionAction
+    action: str
     reason: str
     message_phrases: tuple[str, ...]
     contextual_fields: tuple[tuple[str, str], ...]
@@ -25,27 +19,27 @@ class ExpectedLlmGatewayFailure:
 
 
 def assert_codex_requests(
-    test_mediator_codex: TestMediatorCodex,
-    test_mediator_jev: TestMediatorJev,
+    actual_test_mediator_codex: TestMediatorCodex,
+    actual_test_mediator_jev: TestMediatorJev,
     expected_model: str,
     expected_expense_line: str,
     expected_request_count: int,
     expected_close_count: int,
 ) -> None:
     mismatches: list[str] = []
-    if len(test_mediator_codex.captured_prompts) != expected_request_count:
-        mismatches.append(f"Expected {expected_request_count} Codex prompts, got {len(test_mediator_codex.captured_prompts)}")
-    if test_mediator_codex.captured_models != [expected_model] * expected_request_count:
-        mismatches.append(f"Expected Codex model {expected_model!r} for each request, got {test_mediator_codex.captured_models!r}")
-    if test_mediator_codex.captured_sandboxes != [Sandbox.read_only] * expected_request_count:
-        mismatches.append(f"Expected read-only Codex sandbox for each request, got {test_mediator_codex.captured_sandboxes!r}")
-    if test_mediator_codex.captured_approval_modes != [ApprovalMode.deny_all] * expected_request_count:
-        mismatches.append(f"Expected denied Codex approvals for each request, got {test_mediator_codex.captured_approval_modes!r}")
-    if test_mediator_codex.close_count != expected_close_count:
-        mismatches.append(f"Expected {expected_close_count} Codex closes, got {test_mediator_codex.close_count}")
-    if test_mediator_jev.captured_jev_requests:
-        mismatches.append(f"Expected no Jev requests, got {len(test_mediator_jev.captured_jev_requests)}")
-    if not test_mediator_codex.captured_prompts or expected_expense_line not in test_mediator_codex.captured_prompts[0]:
+    if len(actual_test_mediator_codex.captured_prompts) != expected_request_count:
+        mismatches.append(f"Expected {expected_request_count} Codex prompts, got {len(actual_test_mediator_codex.captured_prompts)}")
+    if actual_test_mediator_codex.captured_models != [expected_model] * expected_request_count:
+        mismatches.append(f"Expected Codex model {expected_model!r} for each request, got {actual_test_mediator_codex.captured_models!r}")
+    if actual_test_mediator_codex.captured_sandboxes != [Sandbox.read_only] * expected_request_count:
+        mismatches.append(f"Expected read-only Codex sandbox for each request, got {actual_test_mediator_codex.captured_sandboxes!r}")
+    if actual_test_mediator_codex.captured_approval_modes != [ApprovalMode.deny_all] * expected_request_count:
+        mismatches.append(f"Expected denied Codex approvals for each request, got {actual_test_mediator_codex.captured_approval_modes!r}")
+    if actual_test_mediator_codex.close_count != expected_close_count:
+        mismatches.append(f"Expected {expected_close_count} Codex closes, got {actual_test_mediator_codex.close_count}")
+    if actual_test_mediator_jev.captured_jev_requests:
+        mismatches.append(f"Expected no Jev requests, got {len(actual_test_mediator_jev.captured_jev_requests)}")
+    if not actual_test_mediator_codex.captured_prompts or expected_expense_line not in actual_test_mediator_codex.captured_prompts[0]:
         mismatches.append(f"Expected the Codex prompt to contain expense line {expected_expense_line!r}")
     assert not mismatches, f"Codex request for expense line {expected_expense_line!r} has {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
 
@@ -59,20 +53,20 @@ def assert_llm_gateway_failure(
         mismatches.append(
             f"Expected exception {expected_llm_gateway_failure.exception_type.__name__}, got {type(actual_llm_gateway_exception).__name__}"
         )
-    if actual_llm_gateway_exception.action != expected_llm_gateway_failure.action:
+    if actual_llm_gateway_exception.action.value != expected_llm_gateway_failure.action:
         mismatches.append(f"Expected action {expected_llm_gateway_failure.action}, got {actual_llm_gateway_exception.action}")
     if actual_llm_gateway_exception.reason != expected_llm_gateway_failure.reason:
         mismatches.append(f"Expected reason {expected_llm_gateway_failure.reason!r}, got {actual_llm_gateway_exception.reason!r}")
-    if actual_llm_gateway_exception.log_event != ExpenseLogEvent.LLM_GATEWAY:
+    if actual_llm_gateway_exception.log_event.value != "ExpenseLlmGateway":
         mismatches.append(f"Expected LLM gateway log event, got {actual_llm_gateway_exception.log_event}")
-    if actual_llm_gateway_exception.severity != Severity.ERROR:
+    if actual_llm_gateway_exception.severity.name != "ERROR":
         mismatches.append(f"Expected error severity, got {actual_llm_gateway_exception.severity}")
     if actual_llm_gateway_exception.http_status_code != 500:
         mismatches.append(f"Expected HTTP status 500, got {actual_llm_gateway_exception.http_status_code}")
-    actual_contextual_field_value_by_name: dict[str, ExceptionValue] = dict(actual_llm_gateway_exception.diagnostics.additional_fields)
+    actual_contextual_field_value_by_name: dict[str, object] = dict(actual_llm_gateway_exception.diagnostics.additional_fields)
     expected_contextual_field: tuple[str, str]
     for expected_contextual_field in expected_llm_gateway_failure.contextual_fields:
-        actual_contextual_field_value: ExceptionValue | None = actual_contextual_field_value_by_name.get(expected_contextual_field[0])
+        actual_contextual_field_value: object = actual_contextual_field_value_by_name.get(expected_contextual_field[0])
         if actual_contextual_field_value != expected_contextual_field[1]:
             mismatches.append(
                 f"Expected context {expected_contextual_field[0]}={expected_contextual_field[1]!r}, got {actual_contextual_field_value!r}"
