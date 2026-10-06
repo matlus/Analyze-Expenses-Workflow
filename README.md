@@ -2,6 +2,10 @@
 
 Architecture: [Markdown document](docs/architecture/expense-analysis-control-flow.md) · [interactive HTML page](docs/architecture/expense-analysis-control-flow.html) (open locally).
 
+Teaching article: [Verified, Not Trusted: Expense Analysis, Part Two](https://matlus.com/writing/verified-not-trusted-expense-analysis-part-two/)
+walks through the Python controller, Jev decisions, LLM extraction fallback,
+source reconciliation, decimal calculations, and verified finding selection.
+
 This Python workspace analyzes a list of expense lines through the asynchronous
 `DomainFacade.analyze_expenses(list[str])` entry point. Its frozen result contains
 the transaction ledger, Jev category decisions, monthly totals, budget
