@@ -14,6 +14,19 @@ class ClaudeCodeCliBaseException(AnalyzeExpensesTechnicalBaseException):
 
 
 @final
+class ClaudeCodeCliNotFoundException(ClaudeCodeCliBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.INFRA_ACTION_REQUIRED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Claude Code CLI executable was not found on PATH"
+
+
+@final
 class ClaudeCodeCliStartFailedException(ClaudeCodeCliBaseException):
     @property
     @override

@@ -40,7 +40,7 @@ class LlmGatewayClosedException(LlmGatewayBaseException):
 
 
 @final
-class LlmResponseInvalidException(LlmGatewayBaseException):
+class LlmResponseEmptyException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -49,7 +49,20 @@ class LlmResponseInvalidException(LlmGatewayBaseException):
     @property
     @override
     def reason(self) -> str:
-        return "Coding assistant response violates its contract"
+        return "Coding assistant returned no response text"
+
+
+@final
+class LlmResponseUnreadableException(LlmGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.DEVELOPER_ACTION_REQUIRED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Coding assistant response could not be read"
 
 
 @final
@@ -66,6 +79,19 @@ class LlmClientCleanupFailedException(LlmGatewayBaseException):
 
 
 @final
+class LlmSessionDeleteFailedException(LlmGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.RETRY_ACTION_NEEDED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Coding assistant session could not be deleted from the user's history"
+
+
+@final
 class LlmRequestRejectedException(LlmGatewayBaseException):
     @property
     @override
@@ -79,7 +105,7 @@ class LlmRequestRejectedException(LlmGatewayBaseException):
 
 
 @final
-class LlmCliUnavailableException(LlmGatewayBaseException):
+class LlmCliNotFoundException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -88,4 +114,43 @@ class LlmCliUnavailableException(LlmGatewayBaseException):
     @property
     @override
     def reason(self) -> str:
-        return "Coding assistant CLI is not installed or could not be started"
+        return "Coding assistant CLI is not installed"
+
+
+@final
+class LlmCliStartFailedException(LlmGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.INFRA_ACTION_REQUIRED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Coding assistant CLI is installed but could not be started"
+
+
+@final
+class LlmRequestTimedOutException(LlmGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.RETRY_ACTION_NEEDED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Coding assistant request did not finish within its time limit"
+
+
+@final
+class LlmCliExitedException(LlmGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.RETRY_ACTION_NEEDED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Coding assistant CLI exited with an error and no result"

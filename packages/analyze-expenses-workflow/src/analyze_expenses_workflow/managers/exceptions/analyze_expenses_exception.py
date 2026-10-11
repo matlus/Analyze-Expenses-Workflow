@@ -33,6 +33,7 @@ class ExpenseLogEvent(Enum):
     JEV_GATEWAY = "ExpenseJevGateway"
     LLM_RESPONSE_VALIDATION = "ExpenseLlmResponseValidation"
     FINDINGS_SELECTION = "ExpenseFindingsSelection"
+    REPORT_OUTPUT = "ExpenseReportOutput"
 
 
 @dataclass(frozen=True, slots=True)

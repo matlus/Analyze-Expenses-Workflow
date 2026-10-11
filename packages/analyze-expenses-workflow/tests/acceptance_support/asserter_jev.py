@@ -24,7 +24,7 @@ class ExpectedJevGatewayFailure:
     severity: str
     http_status_code: int
     message_phrases: tuple[str, ...]
-    contextual_fields: tuple[tuple[str, str], ...] = ()
+    contextual_fields: tuple[tuple[str, str | int], ...] = ()
     forbidden_message_phrases: tuple[str, ...] = ()
     cause_exception_type: type[BaseException] | None = None
 
@@ -135,25 +135,32 @@ def assert_jev_gateway_failure(
     actual_contextual_field_value_by_name: dict[str, object] = dict(actual_system_one_gateway_base_exception.diagnostics.additional_fields)
     mismatches.extend(
         f"Expected context {expected_contextual_field[0]}={expected_contextual_field[1]!r}, "
-        f"got {actual_contextual_field_value_by_name.get(expected_contextual_field[0])!r}"
+        f"got {_redact(repr(actual_contextual_field_value_by_name.get(expected_contextual_field[0])), expected_jev_gateway_failure)}"
         for expected_contextual_field in expected_jev_gateway_failure.contextual_fields
         if actual_contextual_field_value_by_name.get(expected_contextual_field[0]) != expected_contextual_field[1]
     )
-    redacted_actual_gateway_message: str = actual_system_one_gateway_base_exception.message
-    forbidden_phrase: str
-    for forbidden_phrase in expected_jev_gateway_failure.forbidden_message_phrases:
-        redacted_actual_gateway_message = redacted_actual_gateway_message.replace(forbidden_phrase, "<redacted>")
+    redacted_actual_gateway_message: str = _redact(actual_system_one_gateway_base_exception.message, expected_jev_gateway_failure)
     mismatches.extend(
         f"Expected message phrase {expected_phrase!r} in gateway message {redacted_actual_gateway_message!r}"
         for expected_phrase in expected_jev_gateway_failure.message_phrases
         if expected_phrase.casefold() not in actual_system_one_gateway_base_exception.message.casefold()
     )
+    # The rendered diagnostics carry the message, every context value and the cause text, and all of them reach the logs.
+    actual_rendered_diagnostics: str = actual_system_one_gateway_base_exception.to_string_without_traceback()
     mismatches.extend(
-        "Configured credential appeared in gateway message"
+        "Configured credential appeared in gateway diagnostics"
         for forbidden_phrase in expected_jev_gateway_failure.forbidden_message_phrases
-        if forbidden_phrase in actual_system_one_gateway_base_exception.message
+        if forbidden_phrase in actual_rendered_diagnostics
     )
     assert not mismatches, (
         f"Jev gateway failure for reason {expected_jev_gateway_failure.reason!r} and context "
         f"{dict(expected_jev_gateway_failure.contextual_fields)!r} has {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
     )
+
+
+def _redact(diagnostic_text: str, expected_jev_gateway_failure: ExpectedJevGatewayFailure) -> str:
+    redacted_diagnostic_text: str = diagnostic_text
+    forbidden_phrase: str
+    for forbidden_phrase in expected_jev_gateway_failure.forbidden_message_phrases:
+        redacted_diagnostic_text = redacted_diagnostic_text.replace(forbidden_phrase, "<redacted>")
+    return redacted_diagnostic_text

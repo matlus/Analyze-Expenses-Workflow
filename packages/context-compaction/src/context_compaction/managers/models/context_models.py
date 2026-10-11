@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import SecretStr
 
@@ -12,6 +12,8 @@ from context_compaction.managers.models.records import ContextEntry, JevState
 type MessageKind = Literal["user", "assistant"]
 type EvidenceMode = Literal["full", "excerpt"]
 type Variant = Literal["current", "careful"]
+
+MAXIMUM_TRIAL_RUNS: Final[int] = 5
 
 
 @dataclass(frozen=True)

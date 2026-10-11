@@ -9,11 +9,15 @@ from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception im
 
 
 @final
-class ExpenseInputException(AnalyzeExpensesBusinessBaseException):
-    def __init__(self, message: str, line_number: int | None = None) -> None:
-        contextual_data_by_name: ExceptionContext = {"LineNumber": line_number} if line_number is not None else {}
+class ExpenseInputInvalidException(AnalyzeExpensesBusinessBaseException):
+    def __init__(self, problems: tuple[str, ...], line_numbers: tuple[int, ...]) -> None:
+        message: str = f"Expense input has {len(problems)} problem(s): " + "; ".join(problems)
+        contextual_data_by_name: ExceptionContext = {"ProblemCount": len(problems)}
+        if line_numbers:
+            contextual_data_by_name["LineNumbers"] = ", ".join(str(line_number) for line_number in line_numbers)
         super().__init__(message, ExpenseLogEvent.INPUT_VALIDATION, contextual_data_by_name)
-        self.line_number: int | None = line_number
+        self.problems: tuple[str, ...] = problems
+        self.line_numbers: tuple[int, ...] = line_numbers
 
     @property
     @override

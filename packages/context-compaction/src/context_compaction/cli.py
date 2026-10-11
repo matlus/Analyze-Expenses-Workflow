@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import cast
 
 from context_compaction import (
+    MAXIMUM_TRIAL_RUNS,
     Compaction,
     CompactionResult,
     ContextCompactionBusinessBaseException,
-    ContextCompactionInputException,
     ContextCompactionTechnicalBaseException,
     ContextEntry,
     DecisionRecord,
@@ -29,11 +29,10 @@ from context_compaction import (
     ToolSegment,
     TrialCase,
     TrialManifest,
+    TrialOutputOverwritesRolloutException,
     TrialResultRecord,
     Variant,
 )
-
-MAXIMUM_RUNS = 5
 
 
 @dataclass(frozen=True)
@@ -62,9 +61,7 @@ class ValidatorTrialOutputPaths:
         output_artifact_paths: tuple[Path, ...] = ValidatorTrialOutputPaths._planned_paths(output_dir)
         for output_artifact_path in output_artifact_paths:
             if source.resolve() == output_artifact_path.resolve() or (output_artifact_path.exists() and source.samefile(output_artifact_path)):
-                raise ContextCompactionInputException(
-                    f"Trial output would overwrite or delete the original rollout; source={source}, output={output_artifact_path}."
-                )
+                raise TrialOutputOverwritesRolloutException(source, output_artifact_path)
 
     @staticmethod
     def _planned_paths(output_dir: Path) -> tuple[Path, ...]:
@@ -72,7 +69,7 @@ class ValidatorTrialOutputPaths:
             output_dir / "manifest.json",
             output_dir / "jev_requests.json",
             output_dir / "live_results.json",
-            *(output_dir / f"compacted_{variant}_{repeat}.json" for variant in ("current", "careful") for repeat in range(1, MAXIMUM_RUNS + 1)),
+            *(output_dir / f"compacted_{variant}_{repeat}.json" for variant in ("current", "careful") for repeat in range(1, MAXIMUM_TRIAL_RUNS + 1)),
         )
 
 
@@ -93,7 +90,7 @@ def _write_json(path: Path, content: object) -> None:
 
 def _reset_trial_outputs(output_dir: Path) -> None:
     for variant in ("current", "careful"):
-        for repeat in range(1, MAXIMUM_RUNS + 1):
+        for repeat in range(1, MAXIMUM_TRIAL_RUNS + 1):
             compacted_path: Path = output_dir / f"compacted_{variant}_{repeat}.json"
             if compacted_path.is_file():
                 compacted_path.unlink()
@@ -170,17 +167,49 @@ async def _run_live(
             sys.stdout.write(f"{selected_variant} {repeat}/{trial_options.runs}: {compaction.reduction_percent}% reduction\n")
 
 
-async def _execute_trial(trial_options: TrialOptions, env_file: Path, request_records: Mapping[str, JevRequestRecord]) -> None:
-    async with DomainFacade(enable_jev=bool(trial_options.runs), env_file=env_file) as domain_facade:
+async def _execute_trial(trial_options: TrialOptions, env_file: Path, jev_request_record_by_variant: Mapping[str, JevRequestRecord]) -> None:
+    domain_facade: DomainFacade = DomainFacade.for_live_evaluation(env_file=env_file) if trial_options.runs else DomainFacade()
+    async with domain_facade:
         output_dir: Path = trial_options.output_dir
         await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
         _reset_trial_outputs(output_dir)
         _write_json(output_dir / "manifest.json", domain_facade.describe_context(trial_options.trial_case, trial_options.mode))
-        _write_json(output_dir / "jev_requests.json", request_records)
+        _write_json(output_dir / "jev_requests.json", jev_request_record_by_variant)
         if trial_options.runs:
             await _run_live(trial_options, domain_facade)
         else:
-            sys.stdout.write(f"Prepared {len(request_records['careful'].questions)} tool events; no Jev calls made.\n")
+            sys.stdout.write(f"Prepared {len(jev_request_record_by_variant['careful'].questions)} tool events; no Jev calls made.\n")
+
+
+def _diagnostic_context(namespace: argparse.Namespace) -> str:
+    return (
+        f"rollout={namespace.rollout}, lines={namespace.start_line}:{namespace.cutoff_line}, "
+        f"mode={namespace.evidence_mode}, runs={namespace.runs}, output_dir={namespace.output_dir}"
+        f", env_file={namespace.env_file}, threshold={namespace.threshold}, required_tools={namespace.required_tool}"
+    )
+
+
+def _linked_failure(failure: BaseException) -> BaseException | None:
+    if failure.__cause__ is not None:
+        return failure.__cause__
+    return None if failure.__suppress_context__ else failure.__context__
+
+
+def _describe_failure_chain(failure: BaseException) -> str:
+    # Our own exceptions carry authored, secret-free messages, so they are printed in full. A foreign
+    # exception is named by its type only, because its text can echo configuration lines or credentials.
+    chain_lines: list[str] = []
+    seen_failure_ids: set[int] = {id(failure)}
+    linked_failure: BaseException | None = _linked_failure(failure)
+    while linked_failure is not None and id(linked_failure) not in seen_failure_ids:
+        seen_failure_ids.add(id(linked_failure))
+        failure_type_name: str = f"{type(linked_failure).__module__}.{type(linked_failure).__qualname__}"
+        if isinstance(linked_failure, ContextCompactionTechnicalBaseException | ContextCompactionBusinessBaseException):
+            chain_lines.append(f"  caused by {failure_type_name}: {linked_failure}\n")
+        else:
+            chain_lines.append(f"  caused by {failure_type_name}\n")
+        linked_failure = _linked_failure(linked_failure)
+    return "".join(chain_lines)
 
 
 def main() -> int:
@@ -202,29 +231,20 @@ def main() -> int:
         required_tool_ids: set[str] = set(namespace.required_tool)
         available_tool_ids: set[str] = {segment.id for segment in trial_case.segments if isinstance(segment, ToolSegment)}
         preparation_domain_facade.validate_trial_options(namespace.runs, namespace.threshold, required_tool_ids, available_tool_ids)
-        request_records: dict[str, JevRequestRecord] = {
+        jev_request_record_by_variant: dict[str, JevRequestRecord] = {
             variant: _request_record(preparation_domain_facade.prepare(trial_case, mode, variant)) for variant in ("current", "careful")
         }
         output_dir: Path = namespace.output_dir.resolve()
         ValidatorTrialOutputPaths.validate(trial_case.source, output_dir)
         trial_options: TrialOptions = TrialOptions(trial_case, mode, namespace.runs, namespace.threshold, frozenset(required_tool_ids), output_dir)
-        asyncio.run(_execute_trial(trial_options, namespace.env_file, request_records))
+        asyncio.run(_execute_trial(trial_options, namespace.env_file, jev_request_record_by_variant))
         return 0
     except ContextCompactionBusinessBaseException as error:
-        diagnostic_context: str = (
-            f"rollout={namespace.rollout}, lines={namespace.start_line}:{namespace.cutoff_line}, "
-            f"mode={namespace.evidence_mode}, runs={namespace.runs}, output_dir={namespace.output_dir}"
-            f", env_file={namespace.env_file}, threshold={namespace.threshold}, required_tools={namespace.required_tool}"
-        )
-        sys.stderr.write(f"Context compaction stopped: {error}; {diagnostic_context}\n")
+        sys.stderr.write(f"Context compaction stopped: {error}; {_diagnostic_context(namespace)}\n")
         return 1
-    except (ContextCompactionTechnicalBaseException, OSError, TypeError, ValueError) as error:
-        diagnostic_context: str = (
-            f"rollout={namespace.rollout}, lines={namespace.start_line}:{namespace.cutoff_line}, "
-            f"mode={namespace.evidence_mode}, runs={namespace.runs}, output_dir={namespace.output_dir}"
-            f", env_file={namespace.env_file}, threshold={namespace.threshold}, required_tools={namespace.required_tool}"
-        )
-        sys.stderr.write(f"Context compaction technical failure: {error}; {diagnostic_context}\n")
+    except (ContextCompactionTechnicalBaseException, OSError) as error:
+        sys.stderr.write(f"Context compaction technical failure: {type(error).__name__}: {error}; {_diagnostic_context(namespace)}\n")
+        sys.stderr.write(_describe_failure_chain(error))
         return 1
 
 

@@ -1,6 +1,6 @@
 from typing import ClassVar, cast
 
-from openai_codex import ApprovalMode, AsyncCodex, AsyncThread, Sandbox, TurnResult
+from openai_codex import ApprovalMode, AsyncCodex, AsyncThread, AsyncTurnHandle, Sandbox, TurnResult
 from openai_codex.generated.v2_all import ReasoningEffort
 from openai_codex.types import TurnStatus
 
@@ -11,7 +11,11 @@ class TestMediatorCodex:
     SCRIPTED_TURN_FAILURE_MESSAGE: ClassVar[str] = "scripted Codex turn failure"
 
     def __init__(
-        self, close_failures_before_success: int = 0, return_incomplete_turn: bool = False, turn_failure_message: str = SCRIPTED_TURN_FAILURE_MESSAGE
+        self,
+        close_failures_before_success: int = 0,
+        return_incomplete_turn: bool = False,
+        turn_failure_message: str = SCRIPTED_TURN_FAILURE_MESSAGE,
+        time_out_turn: bool = False,
     ) -> None:
         self.captured_models: list[str] = []
         self.captured_prompts: list[str] = []
@@ -22,6 +26,7 @@ class TestMediatorCodex:
         self.close_failures_before_success: int = close_failures_before_success
         self._return_incomplete_turn: bool = return_incomplete_turn
         self._turn_failure_message: str = turn_failure_message
+        self._time_out_turn: bool = time_out_turn
 
     def create_client(self) -> AsyncCodex:
         return cast("AsyncCodex", self)
@@ -34,9 +39,12 @@ class TestMediatorCodex:
         self.captured_approval_modes.append(approval_mode)
         return cast("AsyncThread", self)
 
-    async def run(self, prompt: str, *, effort: ReasoningEffort | None) -> TurnResult:
+    async def turn(self, prompt: str, *, effort: ReasoningEffort | None) -> AsyncTurnHandle:
         self.captured_prompts.append(prompt)
         self.captured_reasoning_efforts.append(effort)
+        return cast("AsyncTurnHandle", self)
+
+    async def run(self) -> TurnResult:
         if self._return_incomplete_turn:
             return TurnResult(
                 id="scripted-incomplete-turn",
@@ -49,6 +57,8 @@ class TestMediatorCodex:
                 items=[],
                 usage=None,
             )
+        if self._time_out_turn:
+            raise TimeoutError(self._turn_failure_message)
         raise RuntimeError(self._turn_failure_message)
 
     async def close(self) -> None:

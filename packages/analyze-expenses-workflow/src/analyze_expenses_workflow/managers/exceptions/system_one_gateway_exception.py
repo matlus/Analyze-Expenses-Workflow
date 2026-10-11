@@ -27,7 +27,7 @@ class JevRequestFailedException(SystemOneGatewayBaseException):
 
 
 @final
-class JevResponseInvalidException(SystemOneGatewayBaseException):
+class JevRequestRejectedException(SystemOneGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -36,7 +36,72 @@ class JevResponseInvalidException(SystemOneGatewayBaseException):
     @property
     @override
     def reason(self) -> str:
-        return "Jev choice response violates its contract"
+        return "Jev rejected the request and will reject it again unless the request changes"
+
+
+@final
+class JevRateLimitRetriesExhaustedException(SystemOneGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.RETRY_ACTION_NEEDED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Jev kept rate limiting the request through every retry attempt"
+
+
+@final
+class JevServerRetryRequestedRetriesExhaustedException(SystemOneGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.RETRY_ACTION_NEEDED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Jev kept failing with a server error that asked for a retry through every retry attempt"
+
+
+@final
+class JevChoiceResponseMalformedException(SystemOneGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.DEVELOPER_ACTION_REQUIRED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Jev choice response does not have the expected shape"
+
+
+@final
+class JevChoiceCategoriesMismatchException(SystemOneGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.DEVELOPER_ACTION_REQUIRED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Jev returned probabilities for categories other than those asked about"
+
+
+@final
+class JevChoiceCategoryUnrecognizedException(SystemOneGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.DEVELOPER_ACTION_REQUIRED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Jev selected a category that is not a known expense category"
 
 
 @final
@@ -53,7 +118,7 @@ class JevGatewayClosedException(SystemOneGatewayBaseException):
 
 
 @final
-class JevResourceCleanupFailedException(SystemOneGatewayBaseException):
+class JevClientCleanupFailedException(SystemOneGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -62,4 +127,17 @@ class JevResourceCleanupFailedException(SystemOneGatewayBaseException):
     @property
     @override
     def reason(self) -> str:
-        return "Jev gateway resource cleanup failed"
+        return "Jev client cleanup failed"
+
+
+@final
+class JevTransportCleanupFailedException(SystemOneGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.RETRY_ACTION_NEEDED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Jev HTTP transport cleanup failed"

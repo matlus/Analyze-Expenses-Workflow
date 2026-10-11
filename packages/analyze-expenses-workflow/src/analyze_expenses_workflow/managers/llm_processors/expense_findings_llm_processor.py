@@ -59,8 +59,7 @@ class _FindingsResponse(BaseModel):
     proposed_findings: tuple[_ProposedFinding, _ProposedFinding, _ProposedFinding] = Field(alias="findings")
 
 
-@final
-class _FindingsValidationError(AnalyzeExpensesTechnicalBaseException):
+class _FindingsResponseInvalidBaseException(AnalyzeExpensesTechnicalBaseException):
     def __init__(self, message: str, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         super().__init__(message, ExpenseLogEvent.LLM_RESPONSE_VALIDATION, contextual_data_by_name)
 
@@ -69,10 +68,29 @@ class _FindingsValidationError(AnalyzeExpensesTechnicalBaseException):
     def action(self) -> ExceptionAction:
         return ExceptionAction.RETRY_ACTION_NEEDED
 
+
+@final
+class _FindingEvidenceIdsNotDistinctException(_FindingsResponseInvalidBaseException):
     @property
     @override
     def reason(self) -> str:
-        return "Proposed expense findings failed evidence validation"
+        return "Proposed findings repeat an evidence ID"
+
+
+@final
+class _FindingEvidenceIdsUnsupportedException(_FindingsResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Proposed findings cite evidence IDs that were not supplied"
+
+
+@final
+class _RequiredFindingEvidenceIdsOmittedException(_FindingsResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Proposed findings omit required evidence IDs"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +101,7 @@ class _SelectionSuccess:
 @dataclass(frozen=True, slots=True)
 class _SelectionFailure:
     retry_prompt: str
-    error: ValidationError | _FindingsValidationError
+    error: ValidationError | _FindingsResponseInvalidBaseException
 
 
 type _SelectionAttempt = _SelectionSuccess | _SelectionFailure
@@ -94,6 +112,9 @@ type _SelectionAttempt = _SelectionSuccess | _SelectionFailure
 class ExpenseFindingsLlmProcessor:
     _MAX_SEMANTIC_ATTEMPTS: ClassVar[int] = 2
     _FINDING_COUNT: ClassVar[int] = 3
+    _SHOPPING_COVERAGE_EVIDENCE_ID: ClassVar[str] = "shopping-coverage"
+    _VALIDATION_STAGE_CONTEXT_FIELD_NAME: ClassVar[str] = "ValidationStage"
+    _RECEIVED_EVIDENCE_IDS_CONTEXT_FIELD_NAME: ClassVar[str] = "ReceivedEvidenceIds"
 
     def __init__(
         self,
@@ -142,9 +163,11 @@ class ExpenseFindingsLlmProcessor:
         try:
             expense_findings: tuple[ExpenseFinding, ExpenseFinding, ExpenseFinding] = await self._attempt_selection(prompt, evidence, required_ids)
             return _SelectionSuccess(expense_findings)
-        except (ValidationError, _FindingsValidationError) as exc:
-            retry_prompt: str = f"{prompt}\nThe previous response failed validation: {exc}. Return corrected JSON only."
-            return _SelectionFailure(retry_prompt, exc)
+        except (ValidationError, _FindingsResponseInvalidBaseException) as findings_response_validation_error:
+            retry_prompt: str = (
+                f"{prompt}\nThe previous response failed validation: {findings_response_validation_error}. Return corrected JSON only."
+            )
+            return _SelectionFailure(retry_prompt, findings_response_validation_error)
 
     async def _attempt_selection(
         self, prompt: str, evidence: tuple[_FindingEvidence, ...], required_ids: tuple[str, ...]
@@ -197,9 +220,15 @@ class ExpenseFindingsLlmProcessor:
         candidates: tuple[str | None, ...] = (
             cls._required_dining_evidence_id(expense_calculation_result.budget_comparisons),
             cls._required_change_evidence_id(expense_calculation_result.month_category_deltas),
-            "shopping-coverage" if any(finding_evidence.evidence_id == "shopping-coverage" for finding_evidence in evidence) else None,
+            cls._required_shopping_coverage_evidence_id(evidence),
         )
         return tuple(dict.fromkeys(candidate for candidate in candidates if candidate is not None))[:3]
+
+    @classmethod
+    def _required_shopping_coverage_evidence_id(cls, evidence: tuple[_FindingEvidence, ...]) -> str | None:
+        if any(finding_evidence.evidence_id == cls._SHOPPING_COVERAGE_EVIDENCE_ID for finding_evidence in evidence):
+            return cls._SHOPPING_COVERAGE_EVIDENCE_ID
+        return None
 
     @classmethod
     def _required_dining_evidence_id(cls, budget_comparisons: tuple[BudgetComparison, ...]) -> str | None:
@@ -278,45 +307,42 @@ class ExpenseFindingsLlmProcessor:
                 }
             )
         )
-        return (_FindingEvidence("shopping-coverage", statement, source_line_numbers),)
+        return (_FindingEvidence(cls._SHOPPING_COVERAGE_EVIDENCE_ID, statement, source_line_numbers),)
 
     @classmethod
-    def _fallback_evidence(cls, reconciliation_evidence: _ReconciliationFindingEvidence) -> tuple[_FindingEvidence, ...]:
+    def _fallback_evidence(cls, reconciliation_finding_evidence: _ReconciliationFindingEvidence) -> tuple[_FindingEvidence, ...]:
         coverage_statement: str = " ".join(
             (
-                f"The analysis accounted for {reconciliation_evidence.source_line_count} source lines, including",
-                f"{len(reconciliation_evidence.duplicate_line_numbers)} excluded duplicates and",
-                f"{len(reconciliation_evidence.unparsed_line_numbers)} unparsed lines.",
+                f"The analysis accounted for {reconciliation_finding_evidence.source_line_count} source lines, including",
+                f"{len(reconciliation_finding_evidence.duplicate_line_numbers)} excluded duplicates and",
+                f"{len(reconciliation_finding_evidence.unparsed_line_numbers)} unparsed lines.",
             )
         )
         return (
             _FindingEvidence(
                 "reconciliation-spending",
-                f"Classified spending totaled {cls._money(reconciliation_evidence.classified_spending)} across the reported period.",
-                reconciliation_evidence.included_line_numbers,
+                f"Classified spending totaled {cls._money(reconciliation_finding_evidence.classified_spending)} across the reported period.",
+                reconciliation_finding_evidence.included_line_numbers,
             ),
             _FindingEvidence(
                 "reconciliation-unresolved",
-                f"Unresolved outflows totaled {cls._money(reconciliation_evidence.unresolved_outflow)} "
+                f"Unresolved outflows totaled {cls._money(reconciliation_finding_evidence.unresolved_outflow)} "
                 "and were kept separate from classified spending.",
-                reconciliation_evidence.unresolved_line_numbers,
+                reconciliation_finding_evidence.unresolved_line_numbers,
             ),
             _FindingEvidence(
                 "reconciliation-coverage",
                 coverage_statement,
-                tuple(range(1, reconciliation_evidence.source_line_count + 1)),
+                tuple(range(1, reconciliation_finding_evidence.source_line_count + 1)),
             ),
         )
 
     @staticmethod
     def _build_prompt(evidence: tuple[_FindingEvidence, ...], required_ids: tuple[str, ...]) -> str:
-        evidence_items: list[dict[str, object]] = [
-            {
-                "evidence_id": finding_evidence.evidence_id,
-                "statement": finding_evidence.statement,
-                "source_line_numbers": finding_evidence.source_line_numbers,
-            }
-            for finding_evidence in evidence
+        # The model chooses evidence by its ID and statement. The source line numbers grow with the number of expense lines,
+        # so they stay in the local evidence that the selected findings are built from instead of entering every prompt.
+        candidate_evidence_documents: list[dict[str, str]] = [
+            {"evidence_id": finding_evidence.evidence_id, "statement": finding_evidence.statement} for finding_evidence in evidence
         ]
         return (
             "Choose exactly three distinct evidence IDs from the supplied calculated evidence. "
@@ -325,7 +351,7 @@ class ExpenseFindingsLlmProcessor:
             "The application will render the exact evidence statements. Return one JSON object only.\n"
             f"schema: {json.dumps(_FindingsResponse.model_json_schema())}\n"
             f"required_evidence_ids: {json.dumps(required_ids)}\n"
-            f"candidate_evidence: {json.dumps(evidence_items)}"
+            f"candidate_evidence: {json.dumps(candidate_evidence_documents)}"
         )
 
     @classmethod
@@ -340,30 +366,33 @@ class ExpenseFindingsLlmProcessor:
         }
         selected_evidence_ids: tuple[str, ...] = tuple(proposed_finding.evidence_id for proposed_finding in findings_response.proposed_findings)
         if len(set(selected_evidence_ids)) != cls._FINDING_COUNT:
-            raise _FindingsValidationError(
+            raise _FindingEvidenceIdsNotDistinctException(
                 f"Finding evidence IDs must be distinct; received: {selected_evidence_ids}",
-                {"ValidationStage": "distinct_evidence_ids", "ReceivedEvidenceIds": str(selected_evidence_ids)},
+                {
+                    cls._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "distinct_evidence_ids",
+                    cls._RECEIVED_EVIDENCE_IDS_CONTEXT_FIELD_NAME: str(selected_evidence_ids),
+                },
             )
         unsupported_evidence_ids: tuple[str, ...] = tuple(
             evidence_id for evidence_id in selected_evidence_ids if evidence_id not in finding_evidence_by_evidence_id
         )
         if unsupported_evidence_ids:
-            raise _FindingsValidationError(
+            raise _FindingEvidenceIdsUnsupportedException(
                 f"Unsupported finding evidence IDs: {unsupported_evidence_ids}; supplied IDs: {tuple(finding_evidence_by_evidence_id)}",
                 {
-                    "ValidationStage": "supported_evidence_ids",
+                    cls._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "supported_evidence_ids",
                     "UnsupportedEvidenceIds": str(unsupported_evidence_ids),
                     "SuppliedEvidenceIds": str(tuple(finding_evidence_by_evidence_id)),
                 },
             )
         omitted_evidence_ids: tuple[str, ...] = tuple(evidence_id for evidence_id in required_ids if evidence_id not in selected_evidence_ids)
         if omitted_evidence_ids:
-            raise _FindingsValidationError(
+            raise _RequiredFindingEvidenceIdsOmittedException(
                 f"Required finding evidence IDs omitted: {omitted_evidence_ids}; received: {selected_evidence_ids}",
                 {
-                    "ValidationStage": "required_evidence_ids",
+                    cls._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "required_evidence_ids",
                     "OmittedEvidenceIds": str(omitted_evidence_ids),
-                    "ReceivedEvidenceIds": str(selected_evidence_ids),
+                    cls._RECEIVED_EVIDENCE_IDS_CONTEXT_FIELD_NAME: str(selected_evidence_ids),
                 },
             )
 

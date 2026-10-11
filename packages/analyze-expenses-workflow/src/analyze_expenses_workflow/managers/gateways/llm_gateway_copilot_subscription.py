@@ -1,3 +1,4 @@
+import asyncio
 from types import TracebackType
 from typing import Final, Self, cast, final
 
@@ -13,7 +14,10 @@ from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import 
     LlmGatewayBaseException,
     LlmGatewayClosedException,
     LlmRequestFailedException,
-    LlmResponseInvalidException,
+    LlmRequestTimedOutException,
+    LlmResponseEmptyException,
+    LlmResponseUnreadableException,
+    LlmSessionDeleteFailedException,
 )
 
 
@@ -21,6 +25,7 @@ from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import 
 class LlmGatewayCopilotSubscription:
     _OPERATION_CONTEXT_FIELD_NAME: Final[str] = "Operation"
     _MODEL_CONTEXT_FIELD_NAME: Final[str] = "Model"
+    _PROVIDER_ERROR_CONTEXT_FIELD_NAME: Final[str] = "ProviderError"
     _PROVIDER_ERROR_MESSAGE_LIMIT: Final[int] = 500
     # The SDK waits only 60 seconds by default, and a high-effort turn can take longer; Claude Code allows the same 900.
     _SESSION_TIMEOUT_SECONDS: Final[float] = 900.0
@@ -44,38 +49,49 @@ class LlmGatewayCopilotSubscription:
         self._ensure_open()
         resolved_reasoning_effort: ReasoningEffort | None = self._resolve_effort(reasoning_effort)
 
+        copilot_session_id: str
+        session_event: SessionEvent | None
         try:
-            session_event: SessionEvent | None = await self._send_message(self._copilot_client, prompt, model, resolved_reasoning_effort)
+            copilot_session_id, session_event = await self._send_message(self._copilot_client, prompt, model, resolved_reasoning_effort)
         except Exception as exc:
             if not self._is_sdk_failure(exc):
                 raise
             raise self._request_failure(exc, model, resolved_reasoning_effort) from exc
 
+        # Disconnecting keeps the session, and so the user's expense lines, in the user's Copilot history; a session that
+        # cannot be deleted fails the request so that the leftover history does not go unnoticed.
+        await self._delete_completed_session(self._copilot_client, copilot_session_id, model)
         return self._response_text(session_event)
 
     @classmethod
-    def _is_sdk_failure(cls, request_error: Exception) -> bool:
-        return isinstance(request_error, cls._SDK_FAILURE_TYPES) or type(request_error) is Exception
+    def _is_sdk_failure(cls, raised_error: Exception) -> bool:
+        return isinstance(raised_error, cls._SDK_FAILURE_TYPES) or type(raised_error) is Exception
+
+    @classmethod
+    def _provider_failure_message(cls, provider_error: BaseException) -> str:
+        return (str(provider_error) or type(provider_error).__name__)[: cls._PROVIDER_ERROR_MESSAGE_LIMIT]
 
     @classmethod
     def _request_failure(cls, request_error: Exception, model: str, reasoning_effort: ReasoningEffort | None) -> LlmGatewayBaseException:
         """An unreadable JSON-RPC response (the SDK's bare ValueError) fails the same way when resent; every other SDK
         failure, such as a lost connection or a session error, may succeed on another attempt."""
-        copilot_failure_message: str = (str(request_error) or type(request_error).__name__)[: cls._PROVIDER_ERROR_MESSAGE_LIMIT]
+        copilot_failure_message: str = cls._provider_failure_message(request_error)
         contextual_data_by_name: ExceptionContext = {
             cls._OPERATION_CONTEXT_FIELD_NAME: "session_request",
             cls._MODEL_CONTEXT_FIELD_NAME: model,
             "ReasoningEffort": reasoning_effort if reasoning_effort is not None else "default",
-            "ProviderError": copilot_failure_message,
+            cls._PROVIDER_ERROR_CONTEXT_FIELD_NAME: copilot_failure_message,
         }
+        if isinstance(request_error, TimeoutError):
+            return LlmRequestTimedOutException(f"Copilot CLI request timed out: {copilot_failure_message}", contextual_data_by_name)
         if type(request_error) is ValueError:
-            return LlmResponseInvalidException(f"Copilot returned an unreadable response: {copilot_failure_message}", contextual_data_by_name)
-        return LlmRequestFailedException(f"Copilot subscription request failed: {copilot_failure_message}", contextual_data_by_name)
+            return LlmResponseUnreadableException(f"Copilot CLI returned an unreadable response: {copilot_failure_message}", contextual_data_by_name)
+        return LlmRequestFailedException(f"Copilot CLI request failed: {copilot_failure_message}", contextual_data_by_name)
 
     def _ensure_open(self) -> None:
         if self._closed:
             raise LlmGatewayClosedException(
-                "Copilot gateway is closed", {self._OPERATION_CONTEXT_FIELD_NAME: "gateway_open_state_check", "GatewayState": "closed"}
+                "Copilot CLI gateway is closed", {self._OPERATION_CONTEXT_FIELD_NAME: "gateway_open_state_check", "GatewayState": "closed"}
             )
 
     @staticmethod
@@ -86,39 +102,80 @@ class LlmGatewayCopilotSubscription:
     @classmethod
     async def _send_message(
         cls, copilot_client: CopilotClient, prompt: str, model: str, resolved_reasoning_effort: ReasoningEffort | None
-    ) -> SessionEvent | None:
+    ) -> tuple[str, SessionEvent | None]:
+        """The session's id and its final event; a failed or cancelled request disconnects and deletes its session before its
+        own failure or cancellation propagates, so the user's expense lines do not stay in the user's Copilot history."""
         copilot_session: CopilotSession = await copilot_client.create_session(
             model=model,
             reasoning_effort=resolved_reasoning_effort,
             available_tools=[],
         )
         try:
-            async with copilot_session:
-                session_event: SessionEvent | None = await copilot_session.send_and_wait(prompt, timeout=cls._SESSION_TIMEOUT_SECONDS)
-        except Exception as request_error:
+            session_event: SessionEvent | None = await copilot_session.send_and_wait(prompt, timeout=cls._SESSION_TIMEOUT_SECONDS)
+        except (Exception, asyncio.CancelledError) as request_error:
+            await cls._disconnect_session_keeping_request_error(copilot_session, request_error)
             await cls._delete_session_keeping_request_error(copilot_client, copilot_session.session_id, request_error)
             raise
-        # Disconnecting keeps the session, and so the user's expense lines, in the user's Copilot history; a session that
-        # cannot be deleted fails the request so that the leftover history does not go unnoticed.
-        await copilot_client.delete_session(copilot_session.session_id)
-        return session_event
+        try:
+            await copilot_session.disconnect()
+        except (Exception, asyncio.CancelledError) as disconnect_error:
+            # A session that answered but cannot be disconnected fails the request; its session is still deleted.
+            await cls._delete_session_keeping_request_error(copilot_client, copilot_session.session_id, disconnect_error)
+            raise
+        return copilot_session.session_id, session_event
 
     @classmethod
-    async def _delete_session_keeping_request_error(cls, copilot_client: CopilotClient, session_id: str, request_error: Exception) -> None:
-        """The request's own failure is the one to report; a deletion failure after it is recorded on it as a note."""
+    async def _disconnect_session_keeping_request_error(
+        cls, copilot_session: CopilotSession, request_error: Exception | asyncio.CancelledError
+    ) -> None:
+        """The request's own failure or cancellation is the one to report; a disconnect failure after it is recorded on it as a note."""
+        try:
+            await copilot_session.disconnect()
+        except Exception as disconnect_error:
+            if not cls._is_sdk_failure(disconnect_error):
+                raise
+            request_error.add_note(
+                f"The Copilot session {copilot_session.session_id} could not be disconnected: {cls._provider_failure_message(disconnect_error)}"
+            )
+
+    @classmethod
+    async def _delete_completed_session(cls, copilot_client: CopilotClient, session_id: str, model: str) -> None:
         try:
             await copilot_client.delete_session(session_id)
         except Exception as delete_error:
             if not cls._is_sdk_failure(delete_error):
                 raise
-            request_error.add_note(f"The Copilot session {session_id} could not be deleted from the user's history: {delete_error}")
+            copilot_failure_message: str = cls._provider_failure_message(delete_error)
+            raise LlmSessionDeleteFailedException(
+                f"Copilot CLI session {session_id} could not be deleted from the user's history: {copilot_failure_message}",
+                {
+                    cls._OPERATION_CONTEXT_FIELD_NAME: "session_delete",
+                    cls._MODEL_CONTEXT_FIELD_NAME: model,
+                    "SessionId": session_id,
+                    cls._PROVIDER_ERROR_CONTEXT_FIELD_NAME: copilot_failure_message,
+                },
+            ) from delete_error
+
+    @classmethod
+    async def _delete_session_keeping_request_error(
+        cls, copilot_client: CopilotClient, session_id: str, request_error: Exception | asyncio.CancelledError
+    ) -> None:
+        """The request's own failure or cancellation is the one to report; a deletion failure after it is recorded on it as a note."""
+        try:
+            await copilot_client.delete_session(session_id)
+        except Exception as delete_error:
+            if not cls._is_sdk_failure(delete_error):
+                raise
+            request_error.add_note(
+                f"The Copilot session {session_id} could not be deleted from the user's history: {cls._provider_failure_message(delete_error)}"
+            )
 
     @staticmethod
     def _response_text(session_event: SessionEvent | None) -> str:
         if session_event is None or not isinstance(session_event.data, AssistantMessageData) or not session_event.data.content:
             event_data_type: str = type(session_event.data).__name__ if session_event is not None else "None"
-            raise LlmResponseInvalidException(
-                "Copilot subscription request returned no message",
+            raise LlmResponseEmptyException(
+                "Copilot CLI returned no message",
                 {LlmGatewayCopilotSubscription._OPERATION_CONTEXT_FIELD_NAME: "response_validation", "EventDataType": event_data_type},
             )
         return session_event.data.content
@@ -127,9 +184,11 @@ class LlmGatewayCopilotSubscription:
         if not self._closed:
             try:
                 await self._copilot_client.stop()
-            except (JsonRpcError, ProcessExitedError, StopError, RuntimeError, OSError, TimeoutError, ExceptionGroup) as close_error:
+            except Exception as close_error:
+                if not self._is_sdk_failure(close_error) and not isinstance(close_error, ExceptionGroup):
+                    raise
                 raise LlmClientCleanupFailedException(
-                    "Copilot subscription cleanup failed", {self._OPERATION_CONTEXT_FIELD_NAME: "client_stop"}
+                    "Copilot CLI client cleanup failed", {self._OPERATION_CONTEXT_FIELD_NAME: "client_stop"}
                 ) from close_error
             self._closed = True
 

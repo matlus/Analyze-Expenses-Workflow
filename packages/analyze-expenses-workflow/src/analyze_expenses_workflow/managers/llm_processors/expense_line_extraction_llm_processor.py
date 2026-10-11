@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -13,7 +14,11 @@ from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception im
     ExceptionContextInput,
     ExpenseLogEvent,
 )
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmRequestFailedException
+from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
+    LlmCliExitedException,
+    LlmRequestFailedException,
+    LlmRequestTimedOutException,
+)
 from analyze_expenses_workflow.managers.gateways.llm_gateway_protocol import LlmGatewayProtocol
 from analyze_expenses_workflow.managers.llm_processors.clients.llm_request_client import (
     LlmRequestClient,
@@ -38,6 +43,17 @@ class _ExtractedLine(BaseModel):
     amount: str | None = Field(pattern=r"^-?\d+\.\d{2}$")
     amount_evidence: str | None
     amount_evidence_index: int | None = Field(default=None, ge=0)
+
+
+class _PromptExpenseLine(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+
+    line_number: int
+    source_text: str
+    occurred_on: date | None
+    description: str | None
+    amount: str | None
+    issues: tuple[str, ...]
 
 
 class _ExtractionResponse(BaseModel):
@@ -95,8 +111,7 @@ class _LineMergeFailure:
 type _LineMergeOutcome = _LineMergeSuccess | _LineMergeFailure
 
 
-@final
-class _ExtractionValidationError(AnalyzeExpensesTechnicalBaseException):
+class _ExtractionResponseInvalidBaseException(AnalyzeExpensesTechnicalBaseException):
     def __init__(self, message: str, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         super().__init__(message, ExpenseLogEvent.LLM_RESPONSE_VALIDATION, contextual_data_by_name)
 
@@ -105,16 +120,95 @@ class _ExtractionValidationError(AnalyzeExpensesTechnicalBaseException):
     def action(self) -> ExceptionAction:
         return ExceptionAction.RETRY_ACTION_NEEDED
 
+
+@final
+class _ExtractedLineNumbersMismatchException(_ExtractionResponseInvalidBaseException):
     @property
     @override
     def reason(self) -> str:
-        return "Extracted expense line failed evidence validation"
+        return "Extracted line numbers do not match the requested lines"
+
+
+@final
+class _ExtractedSourceTextChangedException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted line changed its source text"
+
+
+@final
+class _ExtractedKnownDateChangedException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted line changed a known date"
+
+
+@final
+class _ExtractedDateLacksEvidenceException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted date lacks source evidence"
+
+
+@final
+class _ExtractedDateEvidenceMismatchException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted date does not match its source evidence"
+
+
+@final
+class _ExtractedKnownAmountChangedException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted line changed a known amount"
+
+
+@final
+class _ExtractedAmountLacksEvidenceException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted amount lacks source evidence"
+
+
+@final
+class _ExtractedAmountEvidenceMismatchException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted amount does not match its source evidence"
+
+
+@final
+class _ExtractedKnownDescriptionChangedException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted line changed a known description"
+
+
+@final
+class _ExtractedDescriptionLacksEvidenceException(_ExtractionResponseInvalidBaseException):
+    @property
+    @override
+    def reason(self) -> str:
+        return "Extracted description lacks source evidence"
 
 
 @final
 # code-review: override[pwi.llm-based-processor-design.base-class-inheritance] - Composes LlmRequestClient; empty base adds no polymorphic contract.
 class ExpenseLineExtractionLlmProcessor:
     _MAX_SEMANTIC_ATTEMPTS: ClassVar[int] = 2
+    _VALIDATION_STAGE_CONTEXT_FIELD_NAME: ClassVar[str] = "ValidationStage"
+    _LINE_NUMBER_CONTEXT_FIELD_NAME: ClassVar[str] = "LineNumber"
+    _EXTRACTED_DATE_CONTEXT_FIELD_NAME: ClassVar[str] = "ExtractedDate"
+    _EXTRACTED_AMOUNT_CONTEXT_FIELD_NAME: ClassVar[str] = "ExtractedAmount"
 
     def __init__(
         self,
@@ -148,7 +242,7 @@ class ExpenseLineExtractionLlmProcessor:
         return self._reconstruct_uncertain_lines(uncertain_lines, resolved_parsed_expense_line_by_line_number)
 
     def _reconstruct_uncertain_lines(
-        self, uncertain_lines: tuple[ParsedExpenseLine, ...], resolved_parsed_expense_line_by_line_number: dict[int, ParsedExpenseLine]
+        self, uncertain_lines: tuple[ParsedExpenseLine, ...], resolved_parsed_expense_line_by_line_number: Mapping[int, ParsedExpenseLine]
     ) -> tuple[ParsedExpenseLine, ...]:
         return tuple(
             resolved_parsed_expense_line_by_line_number[parsed_expense_line.line_number]
@@ -158,30 +252,30 @@ class ExpenseLineExtractionLlmProcessor:
         )
 
     async def _retry_uncertain_lines(self, uncertain_lines: tuple[ParsedExpenseLine, ...], inferred_year: int | None) -> dict[int, ParsedExpenseLine]:
-        retry_state: _ExtractionRetryState = _ExtractionRetryState(uncertain_lines, (), None, finished=False)
+        extraction_retry_state: _ExtractionRetryState = _ExtractionRetryState(uncertain_lines, (), None, finished=False)
         for _attempt in range(self._MAX_SEMANTIC_ATTEMPTS):
             extraction_attempt: _ExtractionAttempt = await self._attempt_pending_lines(
-                retry_state.pending_parsed_expense_lines, inferred_year, retry_state.retry_problem
+                extraction_retry_state.pending_parsed_expense_lines, inferred_year, extraction_retry_state.retry_problem
             )
-            retry_state = self._advance_retry_state(retry_state, extraction_attempt)
-            if retry_state.finished:
+            extraction_retry_state = self._advance_retry_state(extraction_retry_state, extraction_attempt)
+            if extraction_retry_state.finished:
                 break
-        return self._resolved_lines_by_number(retry_state)
+        return self._resolved_lines_by_number(extraction_retry_state)
 
-    def _resolved_lines_by_number(self, retry_state: _ExtractionRetryState) -> dict[int, ParsedExpenseLine]:
+    def _resolved_lines_by_number(self, extraction_retry_state: _ExtractionRetryState) -> dict[int, ParsedExpenseLine]:
         return {
             parsed_expense_line.line_number: parsed_expense_line
             for parsed_expense_line in (
-                *retry_state.resolved_parsed_expense_lines,
-                *(self._mark_failed(parsed_expense_line) for parsed_expense_line in retry_state.pending_parsed_expense_lines),
+                *extraction_retry_state.resolved_parsed_expense_lines,
+                *(self._mark_failed(parsed_expense_line) for parsed_expense_line in extraction_retry_state.pending_parsed_expense_lines),
             )
         }
 
     @staticmethod
-    def _advance_retry_state(retry_state: _ExtractionRetryState, extraction_attempt: _ExtractionAttempt) -> _ExtractionRetryState:
+    def _advance_retry_state(extraction_retry_state: _ExtractionRetryState, extraction_attempt: _ExtractionAttempt) -> _ExtractionRetryState:
         return _ExtractionRetryState(
             pending_parsed_expense_lines=extraction_attempt.pending_parsed_expense_lines,
-            resolved_parsed_expense_lines=(*retry_state.resolved_parsed_expense_lines, *extraction_attempt.resolved_parsed_expense_lines),
+            resolved_parsed_expense_lines=(*extraction_retry_state.resolved_parsed_expense_lines, *extraction_attempt.resolved_parsed_expense_lines),
             retry_problem=extraction_attempt.retry_problem,
             finished=extraction_attempt.gateway_failed or not extraction_attempt.pending_parsed_expense_lines,
         )
@@ -198,9 +292,9 @@ class ExpenseLineExtractionLlmProcessor:
                 pending_parsed_expense_lines, extraction_response, inferred_year
             )
             return _ExtractionAttempt(merged_lines[0], merged_lines[1], merged_lines[2])
-        except (ValidationError, _ExtractionValidationError) as exc:
-            return _ExtractionAttempt((), pending_parsed_expense_lines, str(exc))
-        except LlmRequestFailedException:
+        except (ValidationError, _ExtractionResponseInvalidBaseException) as extraction_response_validation_error:
+            return _ExtractionAttempt((), pending_parsed_expense_lines, str(extraction_response_validation_error))
+        except LlmRequestFailedException, LlmRequestTimedOutException, LlmCliExitedException:
             return _ExtractionAttempt((), pending_parsed_expense_lines, retry_problem, gateway_failed=True)
 
     async def _attempt_extraction(self, prompt: str) -> _ExtractionResponse:
@@ -219,17 +313,17 @@ class ExpenseLineExtractionLlmProcessor:
         )
 
     def _build_prompt(self, parsed_expense_lines: tuple[ParsedExpenseLine, ...], inferred_year: int | None) -> str:
-        input_lines: list[dict[str, object]] = [
-            {
-                "line_number": parsed_expense_line.line_number,
-                "source_text": parsed_expense_line.source_text,
-                "occurred_on": parsed_expense_line.occurred_on.isoformat() if parsed_expense_line.occurred_on is not None else None,
-                "description": parsed_expense_line.description,
-                "amount": str(parsed_expense_line.amount) if parsed_expense_line.amount is not None else None,
-                "issues": parsed_expense_line.issues,
-            }
+        prompt_expense_lines: tuple[_PromptExpenseLine, ...] = tuple(
+            _PromptExpenseLine(
+                line_number=parsed_expense_line.line_number,
+                source_text=parsed_expense_line.source_text,
+                occurred_on=parsed_expense_line.occurred_on,
+                description=parsed_expense_line.description,
+                amount=str(parsed_expense_line.amount) if parsed_expense_line.amount is not None else None,
+                issues=parsed_expense_line.issues,
+            )
             for parsed_expense_line in parsed_expense_lines
-        ]
+        )
         return (
             "Extract expense fields only from the supplied source lines. Return one JSON object matching the schema, with one entry "
             "for every input line, in the same order. Copy line_number and source_text exactly. "
@@ -243,7 +337,7 @@ class ExpenseLineExtractionLlmProcessor:
             "A refund must have a negative amount when the source amount is negative. Return JSON only.\n"
             f"inferred_year: {json.dumps(inferred_year)}\n"
             f"schema: {json.dumps(_ExtractionResponse.model_json_schema())}\n"
-            f"input_lines: {json.dumps(input_lines)}"
+            f"input_lines: {json.dumps([prompt_expense_line.model_dump(mode='json') for prompt_expense_line in prompt_expense_lines])}"
         )
 
     def _build_retry_prompt(self, original_prompt: str, response_validation_problem: str) -> str:
@@ -259,15 +353,15 @@ class ExpenseLineExtractionLlmProcessor:
         return self._collect_merged_lines(uncertain_lines, extraction_response, inferred_year)
 
     def _verify_response_line_numbers(self, uncertain_lines: tuple[ParsedExpenseLine, ...], extraction_response: _ExtractionResponse) -> None:
-        expected_numbers: tuple[int, ...] = tuple(parsed_expense_line.line_number for parsed_expense_line in uncertain_lines)
-        received_numbers: tuple[int, ...] = tuple(extracted_line.line_number for extracted_line in extraction_response.extracted_lines)
-        if received_numbers != expected_numbers:
-            raise _ExtractionValidationError(
-                f"Response line numbers {received_numbers} must match requested lines {expected_numbers} in order",
+        expected_line_numbers: tuple[int, ...] = tuple(parsed_expense_line.line_number for parsed_expense_line in uncertain_lines)
+        received_line_numbers: tuple[int, ...] = tuple(extracted_line.line_number for extracted_line in extraction_response.extracted_lines)
+        if received_line_numbers != expected_line_numbers:
+            raise _ExtractedLineNumbersMismatchException(
+                f"Response line numbers {received_line_numbers} must match requested lines {expected_line_numbers} in order",
                 {
-                    "ValidationStage": "response_line_numbers",
-                    "ExpectedLineNumbers": str(expected_numbers),
-                    "ReceivedLineNumbers": str(received_numbers),
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "response_line_numbers",
+                    "ExpectedLineNumbers": str(expected_line_numbers),
+                    "ReceivedLineNumbers": str(received_line_numbers),
                 },
             )
 
@@ -303,8 +397,8 @@ class ExpenseLineExtractionLlmProcessor:
     ) -> _LineMergeOutcome:
         try:
             return _LineMergeSuccess(original_parsed_expense_line, self._merge_line(original_parsed_expense_line, extracted_line, inferred_year))
-        except _ExtractionValidationError as exc:
-            return _LineMergeFailure(original_parsed_expense_line, str(exc))
+        except _ExtractionResponseInvalidBaseException as extraction_response_invalid_exception:
+            return _LineMergeFailure(original_parsed_expense_line, str(extraction_response_invalid_exception))
 
     def _merge_line(
         self, original_parsed_expense_line: ParsedExpenseLine, extracted_line: _ExtractedLine, inferred_year: int | None
@@ -331,8 +425,12 @@ class ExpenseLineExtractionLlmProcessor:
 
     def _require_matching_source(self, line_number: int, source_text: str, extracted_source_text: str) -> None:
         if extracted_source_text != source_text:
-            raise _ExtractionValidationError(
-                f"Line {line_number} source_text differs from input", {"LineNumber": line_number, "ValidationStage": "source_copy"}
+            raise _ExtractedSourceTextChangedException(
+                f"Line {line_number} source_text differs from input",
+                {
+                    ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: line_number,
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "source_copy",
+                },
             )
 
     def _remaining_issues(
@@ -364,13 +462,13 @@ class ExpenseLineExtractionLlmProcessor:
     @staticmethod
     def _validated_known_date(line_number: int, known_date: date, extracted_date: date | None) -> date:
         if extracted_date is not None and extracted_date != known_date:
-            raise _ExtractionValidationError(
+            raise _ExtractedKnownDateChangedException(
                 f"Line {line_number} changed a known date",
                 {
-                    "LineNumber": line_number,
-                    "ValidationStage": "known_date",
+                    ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: line_number,
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "known_date",
                     "KnownDate": known_date.isoformat(),
-                    "ExtractedDate": extracted_date.isoformat(),
+                    ExpenseLineExtractionLlmProcessor._EXTRACTED_DATE_CONTEXT_FIELD_NAME: extracted_date.isoformat(),
                 },
             )
         return known_date
@@ -385,12 +483,12 @@ class ExpenseLineExtractionLlmProcessor:
     def _required_date_evidence(new_date_evidence: _NewDateEvidence) -> str:
         date_evidence: str | None = new_date_evidence.date_evidence
         if date_evidence is None or date_evidence not in ExpenseLineEvidenceParser.date_candidates(new_date_evidence.source_text):
-            raise _ExtractionValidationError(
+            raise _ExtractedDateLacksEvidenceException(
                 f"Line {new_date_evidence.line_number} extracted date {new_date_evidence.extracted_date.isoformat()} lacks source evidence",
                 {
-                    "LineNumber": new_date_evidence.line_number,
-                    "ValidationStage": "date_source_evidence",
-                    "ExtractedDate": new_date_evidence.extracted_date.isoformat(),
+                    ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: new_date_evidence.line_number,
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "date_source_evidence",
+                    ExpenseLineExtractionLlmProcessor._EXTRACTED_DATE_CONTEXT_FIELD_NAME: new_date_evidence.extracted_date.isoformat(),
                 },
             )
         return date_evidence
@@ -398,12 +496,12 @@ class ExpenseLineExtractionLlmProcessor:
     @staticmethod
     def _require_matching_date_evidence(new_date_evidence: _NewDateEvidence, evidence_date: date | None) -> None:
         if evidence_date != new_date_evidence.extracted_date:
-            raise _ExtractionValidationError(
+            raise _ExtractedDateEvidenceMismatchException(
                 f"Line {new_date_evidence.line_number} date does not match source evidence",
                 {
-                    "LineNumber": new_date_evidence.line_number,
-                    "ValidationStage": "date_evidence_comparison",
-                    "ExtractedDate": new_date_evidence.extracted_date.isoformat(),
+                    ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: new_date_evidence.line_number,
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "date_evidence_comparison",
+                    ExpenseLineExtractionLlmProcessor._EXTRACTED_DATE_CONTEXT_FIELD_NAME: new_date_evidence.extracted_date.isoformat(),
                     "EvidenceDate": evidence_date.isoformat() if evidence_date is not None else "unavailable",
                 },
             )
@@ -434,13 +532,13 @@ class ExpenseLineExtractionLlmProcessor:
     @staticmethod
     def _validated_known_amount(line_number: int, known_amount: Decimal, extracted_amount: str | None) -> Decimal:
         if extracted_amount is not None and Decimal(extracted_amount) != known_amount:
-            raise _ExtractionValidationError(
+            raise _ExtractedKnownAmountChangedException(
                 f"Line {line_number} changed a known amount",
                 {
-                    "LineNumber": line_number,
-                    "ValidationStage": "known_amount",
+                    ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: line_number,
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "known_amount",
                     "KnownAmount": str(known_amount),
-                    "ExtractedAmount": extracted_amount,
+                    ExpenseLineExtractionLlmProcessor._EXTRACTED_AMOUNT_CONTEXT_FIELD_NAME: extracted_amount,
                 },
             )
         return known_amount
@@ -460,12 +558,12 @@ class ExpenseLineExtractionLlmProcessor:
         if amount_evidence_occurrence is None or ExpenseLineEvidenceParser.amount_occurrence_is_balance(
             amount_validation_evidence.source_text, amount_evidence_occurrence.amount_start_index
         ):
-            raise _ExtractionValidationError(
+            raise _ExtractedAmountLacksEvidenceException(
                 f"Line {amount_validation_evidence.line_number} extracted amount {amount_validation_evidence.extracted_amount} lacks source evidence",
                 {
-                    "LineNumber": amount_validation_evidence.line_number,
-                    "ValidationStage": "amount_source_evidence",
-                    "ExtractedAmount": amount_validation_evidence.extracted_amount,
+                    ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: amount_validation_evidence.line_number,
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "amount_source_evidence",
+                    ExpenseLineExtractionLlmProcessor._EXTRACTED_AMOUNT_CONTEXT_FIELD_NAME: amount_validation_evidence.extracted_amount,
                 },
             )
         return amount_evidence_occurrence
@@ -481,12 +579,12 @@ class ExpenseLineExtractionLlmProcessor:
     @staticmethod
     def _require_matching_amount_evidence(line_number: int, extracted_amount: str, evidence_amount: Decimal) -> None:
         if evidence_amount != Decimal(extracted_amount):
-            raise _ExtractionValidationError(
+            raise _ExtractedAmountEvidenceMismatchException(
                 f"Line {line_number} amount does not match source evidence",
                 {
-                    "LineNumber": line_number,
-                    "ValidationStage": "amount_evidence_comparison",
-                    "ExtractedAmount": extracted_amount,
+                    ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: line_number,
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "amount_evidence_comparison",
+                    ExpenseLineExtractionLlmProcessor._EXTRACTED_AMOUNT_CONTEXT_FIELD_NAME: extracted_amount,
                     "EvidenceAmount": str(evidence_amount),
                 },
             )
@@ -527,9 +625,12 @@ class ExpenseLineExtractionLlmProcessor:
     ) -> str | None:
         if original_parsed_expense_line.description is not None:
             if extracted_description is not None and extracted_description != original_parsed_expense_line.description:
-                raise _ExtractionValidationError(
+                raise _ExtractedKnownDescriptionChangedException(
                     f"Line {original_parsed_expense_line.line_number} changed a known description",
-                    {"LineNumber": original_parsed_expense_line.line_number, "ValidationStage": "known_description"},
+                    {
+                        ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: original_parsed_expense_line.line_number,
+                        ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "known_description",
+                    },
                 )
             return original_parsed_expense_line.description
         if extracted_description is None:
@@ -541,9 +642,12 @@ class ExpenseLineExtractionLlmProcessor:
             or description_evidence.strip() != extracted_description
             or not ExpenseLineEvidenceParser.has_descriptive_text(description_evidence)
         ):
-            raise _ExtractionValidationError(
+            raise _ExtractedDescriptionLacksEvidenceException(
                 f"Line {original_parsed_expense_line.line_number} description lacks source evidence",
-                {"LineNumber": original_parsed_expense_line.line_number, "ValidationStage": "description_source_evidence"},
+                {
+                    ExpenseLineExtractionLlmProcessor._LINE_NUMBER_CONTEXT_FIELD_NAME: original_parsed_expense_line.line_number,
+                    ExpenseLineExtractionLlmProcessor._VALIDATION_STAGE_CONTEXT_FIELD_NAME: "description_source_evidence",
+                },
             )
         return extracted_description
 
