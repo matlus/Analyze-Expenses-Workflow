@@ -7,8 +7,10 @@ from copilot.client import StopError
 from copilot.session import CopilotSession, ReasoningEffort
 from copilot.session_events import AssistantMessageData, SessionEvent
 
+from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionContext
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
     LlmClientCleanupFailedException,
+    LlmGatewayBaseException,
     LlmGatewayClosedException,
     LlmRequestFailedException,
     LlmResponseInvalidException,
@@ -56,17 +58,19 @@ class LlmGatewayCopilotSubscription:
         return isinstance(request_error, cls._SDK_FAILURE_TYPES) or type(request_error) is Exception
 
     @classmethod
-    def _request_failure(cls, request_error: Exception, model: str, reasoning_effort: ReasoningEffort | None) -> LlmRequestFailedException:
+    def _request_failure(cls, request_error: Exception, model: str, reasoning_effort: ReasoningEffort | None) -> LlmGatewayBaseException:
+        """An unreadable JSON-RPC response (the SDK's bare ValueError) fails the same way when resent; every other SDK
+        failure, such as a lost connection or a session error, may succeed on another attempt."""
         copilot_failure_message: str = (str(request_error) or type(request_error).__name__)[: cls._PROVIDER_ERROR_MESSAGE_LIMIT]
-        return LlmRequestFailedException(
-            f"Copilot subscription request failed: {copilot_failure_message}",
-            {
-                cls._OPERATION_CONTEXT_FIELD_NAME: "session_request",
-                cls._MODEL_CONTEXT_FIELD_NAME: model,
-                "ReasoningEffort": reasoning_effort if reasoning_effort is not None else "default",
-                "ProviderError": copilot_failure_message,
-            },
-        )
+        contextual_data_by_name: ExceptionContext = {
+            cls._OPERATION_CONTEXT_FIELD_NAME: "session_request",
+            cls._MODEL_CONTEXT_FIELD_NAME: model,
+            "ReasoningEffort": reasoning_effort if reasoning_effort is not None else "default",
+            "ProviderError": copilot_failure_message,
+        }
+        if type(request_error) is ValueError:
+            return LlmResponseInvalidException(f"Copilot returned an unreadable response: {copilot_failure_message}", contextual_data_by_name)
+        return LlmRequestFailedException(f"Copilot subscription request failed: {copilot_failure_message}", contextual_data_by_name)
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -90,10 +94,24 @@ class LlmGatewayCopilotSubscription:
         )
         try:
             async with copilot_session:
-                return await copilot_session.send_and_wait(prompt, timeout=cls._SESSION_TIMEOUT_SECONDS)
-        finally:
-            # Disconnecting keeps the session, and so the user's expense lines, in the user's Copilot history.
-            await copilot_client.delete_session(copilot_session.session_id)
+                session_event: SessionEvent | None = await copilot_session.send_and_wait(prompt, timeout=cls._SESSION_TIMEOUT_SECONDS)
+        except Exception as request_error:
+            await cls._delete_session_keeping_request_error(copilot_client, copilot_session.session_id, request_error)
+            raise
+        # Disconnecting keeps the session, and so the user's expense lines, in the user's Copilot history; a session that
+        # cannot be deleted fails the request so that the leftover history does not go unnoticed.
+        await copilot_client.delete_session(copilot_session.session_id)
+        return session_event
+
+    @classmethod
+    async def _delete_session_keeping_request_error(cls, copilot_client: CopilotClient, session_id: str, request_error: Exception) -> None:
+        """The request's own failure is the one to report; a deletion failure after it is recorded on it as a note."""
+        try:
+            await copilot_client.delete_session(session_id)
+        except Exception as delete_error:
+            if not cls._is_sdk_failure(delete_error):
+                raise
+            request_error.add_note(f"The Copilot session {session_id} could not be deleted from the user's history: {delete_error}")
 
     @staticmethod
     def _response_text(session_event: SessionEvent | None) -> str:

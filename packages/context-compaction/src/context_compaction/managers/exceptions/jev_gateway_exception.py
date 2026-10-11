@@ -5,14 +5,15 @@ from context_compaction.managers.exceptions.context_compaction_exception import 
 
 
 class JevGatewayBaseException(ContextCompactionTechnicalBaseException):
-    """Base class for distinct Jev gateway failures."""
-
     def __init__(self, message: str, *, operation: str, model: str, detail_value_by_name: Mapping[str, str] | None = None) -> None:
         self.operation: str = operation
         self.model: str = model
         self.detail_value_by_name: dict[str, str] = dict(detail_value_by_name or {})
-        context: str = ", ".join(f"{name}={self.detail_value_by_name[name]}" for name in self.detail_value_by_name)
-        super().__init__(f"{message} operation={operation}, model={model}" + (f", {context}" if context else ""))
+        super().__init__(self._message_with_context(message))
+
+    def _message_with_context(self, message: str) -> str:
+        detail_text: str = ", ".join(f"{name}={self.detail_value_by_name[name]}" for name in self.detail_value_by_name)
+        return f"{message} operation={self.operation}, model={self.model}" + (f", {detail_text}" if detail_text else "")
 
 
 @final
