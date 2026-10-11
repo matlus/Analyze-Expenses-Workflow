@@ -15,7 +15,9 @@ import pytest
 from context_compaction import (
     Compaction,
     CompactionDecisionException,
+    ContextCompactionConfigurationException,
     ContextCompactionConfigurationReadException,
+    ContextCompactionTechnicalBaseException,
     DomainFacade,
     JevCleanupException,
     JevDecisionBatch,
@@ -32,6 +34,7 @@ from context_compaction import (
 )
 from context_compaction.cli import main
 from context_compaction.managers.configuration_providers import configuration_provider as compaction_configuration
+from context_compaction.managers.configuration_providers.validators.validator_jev_configuration import ValidatorJevConfiguration
 from context_compaction.managers.gateways.jev_gateway import JevGateway
 from context_compaction.managers.models.context_models import Variant
 from context_compaction.managers.models.records import JevState, TrialManifest
@@ -754,6 +757,17 @@ def test_Configuration_WhenFileReaderFails_ThenTechnicalErrorPreservesSourceAndC
         configuration_provider.get_jev_settings()
 
     assert (exception_info.value.operation, exception_info.value.env_file, exception_info.value.__cause__) == expected_diagnostic
+
+
+def test_Configuration_WhenJevSettingsAreMissing_ThenReportsATechnicalFailureForTheSystemOwner() -> None:
+    expected_message_phrase: str = "Set OPEN_ROUTER_KEY"
+    expected_is_technical: bool = True
+
+    with pytest.raises(ContextCompactionConfigurationException, match=expected_message_phrase) as exception_info:
+        ValidatorJevConfiguration.validate(None, None, None)
+
+    actual_is_technical: bool = isinstance(exception_info.value, ContextCompactionTechnicalBaseException)
+    assert actual_is_technical == expected_is_technical, "missing configuration is ours to fix, so it must be a technical exception"
 
 
 @dataclass(frozen=True)
