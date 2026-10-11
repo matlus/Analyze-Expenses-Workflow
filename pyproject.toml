@@ -117,10 +117,11 @@ ignore = [
     "PLR0911",
     "PLR0912",
     "PLR0915",
+    # Exception types end in "Exception" (abstract bases in "BaseException"), not the "Error" that N818 expects.
+    "N818",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"**/exceptions/*.py" = ["N818"]
 "**/tests/**/*.py" = [
     "S101",
     "ARG",
@@ -136,11 +137,12 @@ ignore = [
     "PT004",
     "PT023",
 ]
+"evals/**/*.py" = ["S101", "INP001", "PLR2004", "N802"]
 "**/entry_point.py" = ["I001"]
 "__init__.py" = ["F401"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["analyze_expenses_workflow", "analyze_expenses_workflow_app"]
+known-first-party = ["analyze_expenses_workflow", "analyze_expenses_workflow_app", "expense_analysis_workflow_eval"]
 force-single-line = false
 combine-as-imports = true
 
@@ -164,10 +166,11 @@ pythonPlatform = "All"
 typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
-include = ["packages/*/src", "apps/*/src"]
+include = ["packages/*/src", "apps/*/src", "evals"]
 extraPaths = [
     "packages/analyze-expenses-workflow/src",
     "apps/analyze-expenses-workflow-app/src",
+    "evals/workflow",
 ]
 exclude = ["**/tests", "**/__pycache__", "**/old/**", "build", "dist"]
 reportMissingImports = "error"
@@ -223,12 +226,15 @@ reportInvalidTypeForm = "warning"
 # ============================================================================
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["packages", "apps"]
+testpaths = ["packages", "apps", "evals/workflow/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
-markers = ["live_jev: calls the real Jev service through OpenRouter"]
+markers = [
+    "live_jev: calls the real Jev service through OpenRouter",
+    "workflow_eval: real eval of the workflow against real models (slow, uses your subscriptions); run with `pytest evals/workflow`",
+]
 addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
 norecursedirs = [
     ".git",
@@ -245,6 +251,7 @@ pythonpath = [
     "packages/analyze-expenses-workflow/src",
     "packages/analyze-expenses-workflow/tests",
     "apps/analyze-expenses-workflow-app/src",
+    "evals/workflow",
 ]
 
 # ============================================================================

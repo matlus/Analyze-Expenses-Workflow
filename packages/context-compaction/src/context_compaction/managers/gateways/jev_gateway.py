@@ -11,12 +11,12 @@ import httpx2
 from pydantic import ValidationError
 from typesafe_sdk import AsyncTypeSafeClient, Noul, SystemOneResponse, TypeSafeAPIResponseValidationError
 
-from context_compaction.managers.exceptions.jev_gateway_error import (
-    JevCleanupError,
-    JevGatewayClosedError,
-    JevGatewayError,
-    JevRequestError,
-    JevResponseError,
+from context_compaction.managers.exceptions.jev_gateway_exception import (
+    JevCleanupException,
+    JevGatewayBaseException,
+    JevGatewayClosedException,
+    JevRequestException,
+    JevResponseException,
 )
 from context_compaction.managers.models.context_models import JevDecisionBatch, JevSettings, RetentionQuestion
 from context_compaction.managers.models.records import JevState
@@ -51,14 +51,14 @@ class JevGateway:
     def _sdk_questions(self, questions: Mapping[str, RetentionQuestion]) -> Mapping[str, Noul]:
         return {question_id: Noul(instructions=questions[question_id].instructions) for question_id in questions}
 
-    def _provider_failure(self, operation: str) -> JevGatewayError:
+    def _provider_failure(self, operation: str) -> JevGatewayBaseException:
         if operation == "aclose":
-            return JevCleanupError("Jev gateway cleanup failed.", operation=operation, model=self._model)
-        return JevRequestError("Jev context-retention request failed.", operation=operation, model=self._model)
+            return JevCleanupException("Jev gateway cleanup failed.", operation=operation, model=self._model)
+        return JevRequestException("Jev context-retention request failed.", operation=operation, model=self._model)
 
     async def _request(self, jev_state: JevState, questions: Mapping[str, RetentionQuestion]) -> SystemOneResponse:
         if self._closed:
-            raise JevGatewayClosedError("Jev gateway is closed.", operation="system_one", model=self._model)
+            raise JevGatewayClosedException("Jev gateway is closed.", operation="system_one", model=self._model)
         sdk_questions: Mapping[str, Noul] = self._sdk_questions(questions)
         return await self._request_system_one(jev_state, sdk_questions)
 
@@ -71,7 +71,7 @@ class JevGateway:
                 model=self._model,
             )
         except (ValidationError, TypeSafeAPIResponseValidationError) as error:
-            raise JevResponseError("Jev returned an invalid structured response.", operation="validate_response", model=self._model) from error
+            raise JevResponseException("Jev returned an invalid structured response.", operation="validate_response", model=self._model) from error
         except Exception as error:
             raise self._provider_failure("system_one") from error
         return system_one_response
@@ -80,7 +80,7 @@ class JevGateway:
         answer_ids: set[str] = set(system_one_response.answers)
         noul_ids: set[str] = set(system_one_response.nouls)
         if answer_ids != expected_question_ids or noul_ids != expected_question_ids:
-            raise JevResponseError(
+            raise JevResponseException(
                 "Jev returned a missing or unexpected retention answer.",
                 operation="validate_response",
                 model=self._model,
@@ -93,7 +93,7 @@ class JevGateway:
         probabilities: dict[str, float] = {name: system_one_response.nouls[name].noul for name in system_one_response.nouls}
         rejected_probabilities: dict[str, float] = {name: probabilities[name] for name in probabilities if not 0 <= probabilities[name] <= 1}
         if rejected_probabilities:
-            raise JevResponseError(
+            raise JevResponseException(
                 "Jev returned a probability outside zero to one.",
                 operation="validate_response",
                 model=self._model,

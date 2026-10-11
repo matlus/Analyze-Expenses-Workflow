@@ -10,7 +10,7 @@ from acceptance_support.asserter_jev import (
     assert_jev_gateway_failure,
     assert_jev_requests,
 )
-from acceptance_support.mediator_jev import JevTransportCloseError, TestMediatorJev
+from acceptance_support.mediator_jev import JevTransportCloseException, TestMediatorJev
 from acceptance_support.service_locator_testing import create_domain_facade
 
 from analyze_expenses_workflow.domain_facades import (
@@ -74,8 +74,10 @@ async def test_analyze_expenses_WhenJevServiceRejectsRequest_ThenReportsGatewayF
         with pytest.RaisesGroup(JevRequestFailedException) as raised_exception_group:
             await domain_facade.analyze_expenses([expected_expense_line])
 
-    actual_system_one_gateway_exception: JevRequestFailedException = cast("JevRequestFailedException", raised_exception_group.value.exceptions[0])
-    assert_jev_gateway_failure(actual_system_one_gateway_exception, expected_jev_gateway_failure)
+    actual_system_one_gateway_base_exception: JevRequestFailedException = cast(
+        "JevRequestFailedException", raised_exception_group.value.exceptions[0]
+    )
+    assert_jev_gateway_failure(actual_system_one_gateway_base_exception, expected_jev_gateway_failure)
     assert_jev_requests(test_mediator_jev.captured_jev_requests, expected_jev_request_method, expected_jev_request_path, expected_expense_line)
 
 
@@ -94,7 +96,7 @@ async def test_close_WhenJevTransportCloseFailsOnce_ThenFacadeCanRetryCleanup() 
         message_phrases=("Jev", "client cleanup failed"),
         contextual_fields=(("Operation", "client_close"), ("Model", expected_jev_model)),
         forbidden_message_phrases=(test_open_router_key,),
-        cause_exception_type=JevTransportCloseError,
+        cause_exception_type=JevTransportCloseException,
     )
     test_mediator_jev: TestMediatorJev = TestMediatorJev(scripted_status_code=401, close_failures_before_success=1)
     override_by_environment_variable_name: dict[str, str] = {
@@ -110,8 +112,8 @@ async def test_close_WhenJevTransportCloseFailsOnce_ThenFacadeCanRetryCleanup() 
 
     with pytest.raises(JevResourceCleanupFailedException) as raised_exception:
         await domain_facade.close()
-    actual_system_one_gateway_exception: JevResourceCleanupFailedException = raised_exception.value
-    assert_jev_gateway_failure(actual_system_one_gateway_exception, expected_jev_gateway_failure)
+    actual_system_one_gateway_base_exception: JevResourceCleanupFailedException = raised_exception.value
+    assert_jev_gateway_failure(actual_system_one_gateway_base_exception, expected_jev_gateway_failure)
 
     await domain_facade.close()
     await domain_facade.close()
@@ -133,7 +135,7 @@ async def test_close_WhenJevClientAndPendingTransportCloseFail_ThenFacadeRetries
         message_phrases=("Jev", "transport cleanup failed"),
         contextual_fields=(("Operation", "transport_close"), ("Model", expected_jev_model)),
         forbidden_message_phrases=(test_open_router_key,),
-        cause_exception_type=JevTransportCloseError,
+        cause_exception_type=JevTransportCloseException,
     )
     test_mediator_jev: TestMediatorJev = TestMediatorJev(scripted_status_code=401, close_failures_before_success=2)
     override_by_environment_variable_name: dict[str, str] = {

@@ -11,13 +11,13 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx2
 import pytest
 from context_compaction import (
-    CompactionDecisionError,
+    CompactionDecisionException,
     CompactionResult,
     DomainFacade,
-    JevCleanupError,
-    JevGatewayClosedError,
-    JevGatewayError,
-    JevResponseError,
+    JevCleanupException,
+    JevGatewayBaseException,
+    JevGatewayClosedException,
+    JevResponseException,
     PreparedCompaction,
     TrialCase,
 )
@@ -146,16 +146,20 @@ def assert_facade_trial_matches(
     assert not mismatches, f"Facade trial {expected_facade_trial.model}: {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
 
 
-def assert_gateway_failure_matches(actual_jev_gateway_error: JevGatewayError, expected_gateway_failure: ExpectedGatewayFailure) -> None:
+def assert_gateway_failure_matches(
+    actual_jev_gateway_base_exception: JevGatewayBaseException, expected_gateway_failure: ExpectedGatewayFailure
+) -> None:
     mismatches: list[str] = []
-    if expected_gateway_failure.message_phrase not in str(actual_jev_gateway_error):
-        mismatches.append(f"message: expected phrase {expected_gateway_failure.message_phrase!r}; got {str(actual_jev_gateway_error)!r}")
-    if actual_jev_gateway_error.operation != expected_gateway_failure.operation:
-        mismatches.append(f"operation: expected {expected_gateway_failure.operation}; got {actual_jev_gateway_error.operation}")
-    if actual_jev_gateway_error.model != expected_gateway_failure.model:
-        mismatches.append(f"model: expected {expected_gateway_failure.model}; got {actual_jev_gateway_error.model}")
-    if actual_jev_gateway_error.detail_value_by_name != expected_gateway_failure.detail_value_by_name:
-        mismatches.append(f"details: expected {expected_gateway_failure.detail_value_by_name}; got {actual_jev_gateway_error.detail_value_by_name}")
+    if expected_gateway_failure.message_phrase not in str(actual_jev_gateway_base_exception):
+        mismatches.append(f"message: expected phrase {expected_gateway_failure.message_phrase!r}; got {str(actual_jev_gateway_base_exception)!r}")
+    if actual_jev_gateway_base_exception.operation != expected_gateway_failure.operation:
+        mismatches.append(f"operation: expected {expected_gateway_failure.operation}; got {actual_jev_gateway_base_exception.operation}")
+    if actual_jev_gateway_base_exception.model != expected_gateway_failure.model:
+        mismatches.append(f"model: expected {expected_gateway_failure.model}; got {actual_jev_gateway_base_exception.model}")
+    if actual_jev_gateway_base_exception.detail_value_by_name != expected_gateway_failure.detail_value_by_name:
+        mismatches.append(
+            f"details: expected {expected_gateway_failure.detail_value_by_name}; got {actual_jev_gateway_base_exception.detail_value_by_name}"
+        )
     assert not mismatches, f"Gateway failure {expected_gateway_failure.model}: {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
 
 
@@ -180,7 +184,7 @@ async def test_Compact_WhenTransportReturnsValidDecisions_ThenRetainsUniqueEvide
         prepared_compaction: PreparedCompaction = domain_facade.prepare(trial_case)
         compaction_result: CompactionResult = await domain_facade.compact(prepared_compaction)
     await domain_facade.close()
-    with pytest.raises(JevGatewayClosedError) as exception_info:
+    with pytest.raises(JevGatewayClosedException) as exception_info:
         await domain_facade.compact(prepared_compaction)
     assert_facade_trial_matches(compaction_result, test_mediator_jev, expected_facade_trial)
     assert_gateway_failure_matches(exception_info.value, expected_gateway_failure)
@@ -194,7 +198,7 @@ async def test_Compact_WhenThresholdIsInvalid_ThenRejectsBeforeTransportRequest(
     test_mediator_jev: TestMediatorJev = TestMediatorJev({}, model)
     async with _create_domain_facade(test_mediator_jev) as domain_facade:
         prepared_compaction: PreparedCompaction = domain_facade.prepare(domain_facade.load_context(example_context_path(), 1, 10))
-        with pytest.raises(CompactionDecisionError, match=expected_message_phrase):
+        with pytest.raises(CompactionDecisionException, match=expected_message_phrase):
             await domain_facade.compact(prepared_compaction, threshold)
     assert test_mediator_jev.compact_requests == expected_requests
 
@@ -229,7 +233,7 @@ async def test_Compact_WhenProviderAnswerIsInvalid_ThenGatewayRaisesDomainRespon
     )
     async with _create_domain_facade(test_mediator_jev) as domain_facade:
         prepared_compaction: PreparedCompaction = domain_facade.prepare(domain_facade.load_context(example_context_path(), 1, 10))
-        with pytest.raises(JevResponseError) as exception_info:
+        with pytest.raises(JevResponseException) as exception_info:
             await domain_facade.compact(prepared_compaction)
     assert_gateway_failure_matches(exception_info.value, expected_gateway_failure)
     assert len(test_mediator_jev.compact_requests) == expected_request_count
@@ -246,7 +250,7 @@ async def test_Compact_WhenPreparedStateIsChanged_ThenRejectsBeforeTransportRequ
         changed_prepared_compaction: PreparedCompaction = replace(
             prepared_compaction, jev_state=replace(prepared_compaction.jev_state, current_goal=changed_goal)
         )
-        with pytest.raises(CompactionDecisionError, match=expected_message_phrase):
+        with pytest.raises(CompactionDecisionException, match=expected_message_phrase):
             await domain_facade.compact(changed_prepared_compaction)
     assert test_mediator_jev.compact_requests == expected_requests
 
@@ -257,7 +261,7 @@ async def test_Close_WhenTransportCleanupFails_ThenRetryClosesTheRemainingTransp
     expected_close_attempts: int = 2
     test_mediator_jev: TestMediatorJev = TestMediatorJev({}, model, close_failures=1)
     domain_facade: DomainFacade = _create_domain_facade(test_mediator_jev)
-    with pytest.raises(JevCleanupError) as exception_info:
+    with pytest.raises(JevCleanupException) as exception_info:
         await domain_facade.close()
     await domain_facade.close()
     await domain_facade.close()
@@ -270,7 +274,7 @@ def test_Prepare_WhenStateIsOversized_ThenValidatorRejectsItBeforeLiveWork() -> 
     domain_facade: DomainFacade = DomainFacade()
     trial_case: TrialCase = domain_facade.load_context(example_context_path(), 1, 10)
     oversized_trial_case: TrialCase = replace(trial_case, current_goal="x" * 90_001)
-    with pytest.raises(CompactionDecisionError, match=expected_message_phrase):
+    with pytest.raises(CompactionDecisionException, match=expected_message_phrase):
         domain_facade.prepare(oversized_trial_case)
 
 
@@ -298,9 +302,9 @@ async def test_ManagerClose_WhenCalledAfterContextExit_ThenDelegatesOwnedRelease
 async def test_ManagerClose_WhenOwnedReleaseFails_ThenRetriesBeforeMarkingItReleased() -> None:
     model: str = f"jev-{secrets.token_hex(8)}"
     expected_release_calls: int = 2
-    expected_jev_cleanup_error: JevCleanupError = JevCleanupError("Scripted cleanup failure", operation="aclose", model=model)
+    expected_jev_cleanup_exception: JevCleanupException = JevCleanupException("Scripted cleanup failure", operation="aclose", model=model)
     jev_gateway_mock: MagicMock = MagicMock(spec=JevGatewayProtocol)
-    jev_gateway_mock.close = AsyncMock(side_effect=[expected_jev_cleanup_error, None])
+    jev_gateway_mock.close = AsyncMock(side_effect=[expected_jev_cleanup_exception, None])
     service_locator_mock: MagicMock = MagicMock(spec=ServiceLocatorProtocol)
     service_locator_mock.get_configuration_provider.return_value = ConfigurationProvider(
         Path(".env"), {"OPEN_ROUTER_KEY": secrets.token_hex(16), "OPEN_ROUTER_BASE_URL": "https://jev.invalid/api", "JEV_MODEL": model}
@@ -310,10 +314,10 @@ async def test_ManagerClose_WhenOwnedReleaseFails_ThenRetriesBeforeMarkingItRele
         cast(ServiceLocatorProtocol, service_locator_mock), enable_jev=True
     )
 
-    with pytest.raises(JevCleanupError) as exception_info:
+    with pytest.raises(JevCleanupException) as exception_info:
         await manager_context_compaction.close()
     await manager_context_compaction.close()
     await manager_context_compaction.close()
 
-    assert exception_info.value is expected_jev_cleanup_error
+    assert exception_info.value is expected_jev_cleanup_exception
     assert jev_gateway_mock.close.await_count == expected_release_calls

@@ -56,27 +56,21 @@ async def test_when_year_is_not_unique_then_undated_year_is_not_guessed() -> Non
 
 
 async def test_when_amount_grouping_is_malformed_then_it_is_not_partially_parsed() -> None:
-    parsed_lines: tuple[ParsedExpenseLine, ...] = await ExpenseLineParsingProcessor().parse(
-        ["2026-06-01 | Market | $1,23.45"]
-    )
+    parsed_lines: tuple[ParsedExpenseLine, ...] = await ExpenseLineParsingProcessor().parse(["2026-06-01 | Market | $1,23.45"])
 
     assert parsed_lines[0].amount is None
     assert "missing_amount" in parsed_lines[0].issues
 
 
 async def test_when_only_money_is_an_available_balance_then_it_is_not_a_transaction_amount() -> None:
-    parsed_lines: tuple[ParsedExpenseLine, ...] = await ExpenseLineParsingProcessor().parse(
-        ["2026-08-16 | available balance $102.00"]
-    )
+    parsed_lines: tuple[ParsedExpenseLine, ...] = await ExpenseLineParsingProcessor().parse(["2026-08-16 | available balance $102.00"])
 
     assert parsed_lines[0].amount is None
     assert parsed_lines[0].issues == ("nontransaction_amount",)
 
 
 async def test_when_refund_is_negated_then_charge_keeps_positive_sign() -> None:
-    parsed_lines: tuple[ParsedExpenseLine, ...] = await ExpenseLineParsingProcessor().parse(
-        ["2026-08-16 | No refund; charge $10.00"]
-    )
+    parsed_lines: tuple[ParsedExpenseLine, ...] = await ExpenseLineParsingProcessor().parse(["2026-08-16 | No refund; charge $10.00"])
 
     assert parsed_lines[0].amount == Decimal("10.00")
     assert parsed_lines[0].issues == ()
@@ -104,9 +98,7 @@ async def test_when_numeric_date_token_has_an_invalid_year_then_it_is_not_partia
 
 @pytest.mark.parametrize("malformed_amount", ["123.45,67", "$1,234.56,78"])
 async def test_when_amount_has_a_numeric_comma_suffix_then_it_is_not_partially_parsed(malformed_amount: str) -> None:
-    parsed_lines: tuple[ParsedExpenseLine, ...] = await ExpenseLineParsingProcessor().parse(
-        [f"2026-06-01 Market {malformed_amount}"]
-    )
+    parsed_lines: tuple[ParsedExpenseLine, ...] = await ExpenseLineParsingProcessor().parse([f"2026-06-01 Market {malformed_amount}"])
 
     assert parsed_lines[0].amount is None
     assert "missing_amount" in parsed_lines[0].issues

@@ -310,7 +310,7 @@ async def test_CodexExtraction_WhenLiveJevAbstains_ThenResolvesAmount(expense_pa
     recording_llm_gateway: _RecordingLlmGateway = _RecordingLlmGateway(LlmGatewayCodexSubscription(service_locator_production.create_codex_client()))
     try:
         expense_line_extraction_llm_processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
-            recording_llm_gateway, configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_LINE_EXTRACTION)
+            recording_llm_gateway, configuration_provider.retrieve_llm_operation_settings(LlmOperation.EXPENSE_LINE_EXTRACTION)
         )
         resolved_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_extraction_llm_processor.extract_uncertain_lines(
             (parsed_expense_line,), 2026
@@ -341,7 +341,7 @@ async def test_CopilotExtraction_WhenLiveOpenAiModelRuns_ThenResolvesAmount(expe
     async with LlmGatewayCopilotSubscription(service_locator_production.create_copilot_client()) as copilot_gateway:
         recording_llm_gateway: _RecordingLlmGateway = _RecordingLlmGateway(copilot_gateway)
         expense_line_extraction_llm_processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
-            recording_llm_gateway, configuration_provider.get_llm_operation_settings(LlmOperation.EXPENSE_LINE_EXTRACTION)
+            recording_llm_gateway, configuration_provider.retrieve_llm_operation_settings(LlmOperation.EXPENSE_LINE_EXTRACTION)
         )
         resolved_parsed_expense_lines: tuple[ParsedExpenseLine, ...] = await expense_line_extraction_llm_processor.extract_uncertain_lines(
             (parsed_expense_line,), 2026

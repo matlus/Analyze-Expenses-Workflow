@@ -14,19 +14,19 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from context_compaction import (
     Compaction,
-    CompactionDecisionError,
-    ContextCompactionConfigurationReadError,
+    CompactionDecisionException,
+    ContextCompactionConfigurationReadException,
     DomainFacade,
-    JevCleanupError,
+    JevCleanupException,
     JevDecisionBatch,
-    JevGatewayError,
-    JevRequestError,
-    JevResponseError,
+    JevGatewayBaseException,
+    JevRequestException,
+    JevResponseException,
     JevSettings,
     MessageSegment,
     PreparedCompaction,
     RetentionQuestion,
-    RolloutError,
+    RolloutException,
     ToolSegment,
     TrialCase,
 )
@@ -172,21 +172,23 @@ def assert_secret_is_redacted(actual_text: str, expected_secret_key: str, expect
     assert not mismatches, f"Redaction of secret length {len(expected_secret_key)}: {len(mismatches)} property mismatches:\n" + "\n".join(mismatches)
 
 
-def assert_jev_failure_matches(actual_jev_gateway_error: JevGatewayError, expected_jev_failure_expectation: JevFailureExpectation) -> None:
+def assert_jev_failure_matches(
+    actual_jev_gateway_base_exception: JevGatewayBaseException, expected_jev_failure_expectation: JevFailureExpectation
+) -> None:
     mismatches: list[str] = []
-    if expected_jev_failure_expectation.message_phrase not in str(actual_jev_gateway_error):
+    if expected_jev_failure_expectation.message_phrase not in str(actual_jev_gateway_base_exception):
         mismatches.append(f"expected message phrase {expected_jev_failure_expectation.message_phrase!r}; got no matching phrase")
-    if actual_jev_gateway_error.operation != expected_jev_failure_expectation.operation:
-        mismatches.append(f"expected operation {expected_jev_failure_expectation.operation}; got {actual_jev_gateway_error.operation}")
-    if actual_jev_gateway_error.model != expected_jev_failure_expectation.model:
-        mismatches.append(f"expected model {expected_jev_failure_expectation.model}; got {actual_jev_gateway_error.model}")
-    if actual_jev_gateway_error.detail_value_by_name != expected_jev_failure_expectation.detail_value_by_name:
+    if actual_jev_gateway_base_exception.operation != expected_jev_failure_expectation.operation:
+        mismatches.append(f"expected operation {expected_jev_failure_expectation.operation}; got {actual_jev_gateway_base_exception.operation}")
+    if actual_jev_gateway_base_exception.model != expected_jev_failure_expectation.model:
+        mismatches.append(f"expected model {expected_jev_failure_expectation.model}; got {actual_jev_gateway_base_exception.model}")
+    if actual_jev_gateway_base_exception.detail_value_by_name != expected_jev_failure_expectation.detail_value_by_name:
         mismatches.append(
-            f"expected details {expected_jev_failure_expectation.detail_value_by_name}; got {actual_jev_gateway_error.detail_value_by_name}"
+            f"expected details {expected_jev_failure_expectation.detail_value_by_name}; got {actual_jev_gateway_base_exception.detail_value_by_name}"
         )
-    if expected_jev_failure_expectation.secret_key in str(actual_jev_gateway_error):
+    if expected_jev_failure_expectation.secret_key in str(actual_jev_gateway_base_exception):
         mismatches.append("secret absent: expected True; got False")
-    if actual_jev_gateway_error.__cause__ is not expected_jev_failure_expectation.cause:
+    if actual_jev_gateway_base_exception.__cause__ is not expected_jev_failure_expectation.cause:
         mismatches.append("expected cause identity preserved; got a different cause")
     failure_summary: str = f"Jev failure for {expected_jev_failure_expectation.model}: {len(mismatches)} property mismatches:\n"
     assert not mismatches, failure_summary + "\n".join(mismatches)
@@ -231,7 +233,7 @@ def test_Compaction_WhenToolDecisionIsMissing_ThenDomainErrorNamesExpectedTool(t
     trial_case: TrialCase = load_case(source, 1, 6)
     expected_message_phrase: str = "complete tool-event"
 
-    with pytest.raises(CompactionDecisionError, match=expected_message_phrase) as error:
+    with pytest.raises(CompactionDecisionException, match=expected_message_phrase) as error:
         apply_decisions(trial_case.segments, {}, 0.5)
 
     assert rollout_scenario.tool_id in str(error.value)
@@ -245,7 +247,7 @@ def test_Compaction_WhenProbabilityIsInvalid_ThenDiagnosticNamesRejectedValue(tm
     expected_diagnostic: str = repr({rollout_scenario.tool_id: invalid_probability})
     expected_message_phrase: str = "probabilities do not match"
 
-    with pytest.raises(CompactionDecisionError, match=expected_message_phrase) as error:
+    with pytest.raises(CompactionDecisionException, match=expected_message_phrase) as error:
         apply_decisions(trial_case.segments, {rollout_scenario.tool_id: invalid_probability}, 0.5)
 
     assert expected_diagnostic in str(error.value)
@@ -355,7 +357,7 @@ def test_Rollout_WhenImageIsSelected_ThenItRaisesRolloutError(tmp_path: Path) ->
     source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding=FILE_ENCODING)
     expected_message_phrase: str = "unsupported nontext content"
 
-    with pytest.raises(RolloutError, match=expected_message_phrase):
+    with pytest.raises(RolloutException, match=expected_message_phrase):
         load_case(source, 1, 6)
 
 
@@ -370,7 +372,7 @@ def test_Rollout_WhenToolCallFieldsAreMalformed_ThenItRejectsTheRecord(tmp_path:
     source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding=FILE_ENCODING)
     expected_message_phrase: str = "needs string name and input"
 
-    with pytest.raises(RolloutError, match=expected_message_phrase):
+    with pytest.raises(RolloutException, match=expected_message_phrase):
         load_case(source, 1, 6)
 
 
@@ -468,7 +470,7 @@ async def test_JevGateway_WhenAnswerIsMissing_ThenItRaisesDomainError() -> None:
     )
 
     async with JevGateway(jev_settings, cast("AsyncTypeSafeClient", client)) as jev_gateway:
-        with pytest.raises(JevResponseError) as error:
+        with pytest.raises(JevResponseException) as error:
             await jev_gateway.decide(jev_state, {requested_question_id: RetentionQuestion(instructions)})
 
     assert_jev_failure_matches(error.value, expected_jev_failure_expectation)
@@ -491,7 +493,7 @@ async def test_JevGateway_WhenProviderRequestFails_ThenItRaisesRequestErrorWithS
     )
 
     async with JevGateway(jev_settings, cast("AsyncTypeSafeClient", client)) as jev_gateway:
-        with pytest.raises(JevRequestError) as error:
+        with pytest.raises(JevRequestException) as error:
             await jev_gateway.decide(jev_state, retention_questions)
 
     assert_jev_failure_matches(error.value, expected_jev_failure_expectation)
@@ -553,7 +555,7 @@ async def test_JevGateway_WhenCleanupFails_ThenDomainErrorIsRaisedAndCloseCanRet
     )
     jev_gateway: JevGateway = JevGateway(jev_settings, cast("AsyncTypeSafeClient", client))
 
-    with pytest.raises(JevCleanupError) as error:
+    with pytest.raises(JevCleanupException) as error:
         await jev_gateway.close()
     await jev_gateway.close()
 
@@ -730,7 +732,7 @@ def test_Rollout_WhenMessageSchemaIsInvalid_ThenRejectsBeforeReturningDomainCont
     source.write_text("\n".join(json.dumps(record) for record in rollout_records) + "\n", encoding=FILE_ENCODING)
     expected_message_phrase: str = "invalid message shape"
 
-    with pytest.raises(RolloutError, match=expected_message_phrase):
+    with pytest.raises(RolloutException, match=expected_message_phrase):
         load_case(source, 1, 6)
 
 
@@ -748,7 +750,7 @@ def test_Configuration_WhenFileReaderFails_ThenTechnicalErrorPreservesSourceAndC
 
     monkeypatch.setattr(compaction_configuration, "dotenv_values", fail_to_read)
 
-    with pytest.raises(ContextCompactionConfigurationReadError, match=expected_message_phrase) as exception_info:
+    with pytest.raises(ContextCompactionConfigurationReadException, match=expected_message_phrase) as exception_info:
         configuration_provider.get_jev_settings()
 
     assert (exception_info.value.operation, exception_info.value.env_file, exception_info.value.__cause__) == expected_diagnostic
@@ -843,7 +845,7 @@ def test_Preparation_WhenContextHasZeroCharacters_ThenRejectsWithDomainDiagnosti
     domain_facade: DomainFacade = DomainFacade()
     trial_case: TrialCase = replace(domain_facade.load_context(source, 1, 6), segments=(ToolSegment(tool_id, "", ""),))
     preparation_operation: Callable[[TrialCase], object] = domain_facade.prepare if operation_name == "prepare" else domain_facade.describe_context
-    with pytest.raises(CompactionDecisionError, match=expected_message_phrase):
+    with pytest.raises(CompactionDecisionException, match=expected_message_phrase):
         preparation_operation(trial_case)
 
 

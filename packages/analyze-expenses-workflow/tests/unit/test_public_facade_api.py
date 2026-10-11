@@ -33,3 +33,15 @@ def test_facade_namespace_exports_the_result_graph_without_implementation_types(
     assert set(compatibility_api.__all__) == set(public_api.__all__)
     assert compatibility_api.DomainFacade is public_api.DomainFacade
     assert compatibility_api.ExpenseInputException is public_api.ExpenseInputException
+
+
+def test_compatibility_namespace_resolves_every_exported_name_to_the_facade_object() -> None:
+    expected_missing_names: list[str] = []
+
+    actual_missing_names: list[str] = [
+        exported_name
+        for exported_name in public_api.__all__
+        if getattr(compatibility_api, exported_name, None) is not getattr(public_api, exported_name)
+    ]
+
+    assert actual_missing_names == expected_missing_names, f"expected every exported name to resolve; missing {actual_missing_names}"

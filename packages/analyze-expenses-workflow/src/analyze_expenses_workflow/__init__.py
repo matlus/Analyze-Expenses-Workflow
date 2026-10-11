@@ -4,9 +4,9 @@ New callers should import from ``analyze_expenses_workflow.domain_facades``.
 """
 
 from analyze_expenses_workflow.domain_facades import (
-    AnalyzeExpensesBusinessException,
-    AnalyzeExpensesException,
-    AnalyzeExpensesTechnicalException,
+    AnalyzeExpensesBaseException,
+    AnalyzeExpensesBusinessBaseException,
+    AnalyzeExpensesTechnicalBaseException,
     BudgetComparison,
     CalculationReconciliation,
     CategoryProbability,
@@ -25,16 +25,17 @@ from analyze_expenses_workflow.domain_facades import (
     JevResourceCleanupFailedException,
     JevResponseInvalidException,
     LlmClientCleanupFailedException,
+    LlmCliUnavailableException,
+    LlmGatewayBaseException,
     LlmGatewayClosedException,
-    LlmGatewayException,
     LlmRequestFailedException,
+    LlmRequestRejectedException,
     LlmResponseInvalidException,
-    LlmUnsupportedReasoningEffortException,
     MonthCategoryDelta,
     MonthlyCategoryTotal,
     MonthlyTotal,
     ParsedExpenseLine,
-    SystemOneGatewayException,
+    SystemOneGatewayBaseException,
     TransactionTreatment,
     __all__,
 )

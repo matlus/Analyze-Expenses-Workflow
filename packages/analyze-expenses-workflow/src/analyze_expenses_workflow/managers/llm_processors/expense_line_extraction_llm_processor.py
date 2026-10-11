@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.llm_operation_settings import LlmOperationSettings
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    AnalyzeExpensesTechnicalException,
+    AnalyzeExpensesTechnicalBaseException,
     ExceptionAction,
     ExceptionContextInput,
     ExpenseLogEvent,
@@ -96,7 +96,7 @@ type _LineMergeOutcome = _LineMergeSuccess | _LineMergeFailure
 
 
 @final
-class _ExtractionValidationError(AnalyzeExpensesTechnicalException):
+class _ExtractionValidationError(AnalyzeExpensesTechnicalBaseException):
     def __init__(self, message: str, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         super().__init__(message, ExpenseLogEvent.LLM_RESPONSE_VALIDATION, contextual_data_by_name)
 

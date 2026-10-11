@@ -1,20 +1,20 @@
 from typing import final, override
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    AnalyzeExpensesTechnicalException,
+    AnalyzeExpensesTechnicalBaseException,
     ExceptionAction,
     ExceptionContextInput,
     ExpenseLogEvent,
 )
 
 
-class LlmGatewayException(AnalyzeExpensesTechnicalException):
+class LlmGatewayBaseException(AnalyzeExpensesTechnicalBaseException):
     def __init__(self, message: str, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         super().__init__(message, ExpenseLogEvent.LLM_GATEWAY, contextual_data_by_name)
 
 
 @final
-class LlmRequestFailedException(LlmGatewayException):
+class LlmRequestFailedException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -27,7 +27,7 @@ class LlmRequestFailedException(LlmGatewayException):
 
 
 @final
-class LlmGatewayClosedException(LlmGatewayException):
+class LlmGatewayClosedException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -40,20 +40,7 @@ class LlmGatewayClosedException(LlmGatewayException):
 
 
 @final
-class LlmUnsupportedReasoningEffortException(LlmGatewayException):
-    @property
-    @override
-    def action(self) -> ExceptionAction:
-        return ExceptionAction.INFRA_ACTION_REQUIRED
-
-    @property
-    @override
-    def reason(self) -> str:
-        return "Coding assistant reasoning effort is unsupported"
-
-
-@final
-class LlmResponseInvalidException(LlmGatewayException):
+class LlmResponseInvalidException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -66,7 +53,7 @@ class LlmResponseInvalidException(LlmGatewayException):
 
 
 @final
-class LlmClientCleanupFailedException(LlmGatewayException):
+class LlmClientCleanupFailedException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -76,3 +63,29 @@ class LlmClientCleanupFailedException(LlmGatewayException):
     @override
     def reason(self) -> str:
         return "Coding assistant client cleanup failed"
+
+
+@final
+class LlmRequestRejectedException(LlmGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.DEVELOPER_ACTION_REQUIRED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Coding assistant provider rejected the request"
+
+
+@final
+class LlmCliUnavailableException(LlmGatewayBaseException):
+    @property
+    @override
+    def action(self) -> ExceptionAction:
+        return ExceptionAction.INFRA_ACTION_REQUIRED
+
+    @property
+    @override
+    def reason(self) -> str:
+        return "Coding assistant CLI is not installed or could not be started"

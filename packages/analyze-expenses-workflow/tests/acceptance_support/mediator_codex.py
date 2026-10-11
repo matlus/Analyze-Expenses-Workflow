@@ -8,7 +8,11 @@ from openai_codex.types import TurnStatus
 class TestMediatorCodex:
     __test__: ClassVar[bool] = False
 
-    def __init__(self, close_failures_before_success: int = 0, return_incomplete_turn: bool = False) -> None:
+    SCRIPTED_TURN_FAILURE_MESSAGE: ClassVar[str] = "scripted Codex turn failure"
+
+    def __init__(
+        self, close_failures_before_success: int = 0, return_incomplete_turn: bool = False, turn_failure_message: str = SCRIPTED_TURN_FAILURE_MESSAGE
+    ) -> None:
         self.captured_models: list[str] = []
         self.captured_prompts: list[str] = []
         self.captured_reasoning_efforts: list[ReasoningEffort | None] = []
@@ -17,6 +21,7 @@ class TestMediatorCodex:
         self.close_count: int = 0
         self.close_failures_before_success: int = close_failures_before_success
         self._return_incomplete_turn: bool = return_incomplete_turn
+        self._turn_failure_message: str = turn_failure_message
 
     def create_client(self) -> AsyncCodex:
         return cast("AsyncCodex", self)
@@ -44,7 +49,7 @@ class TestMediatorCodex:
                 items=[],
                 usage=None,
             )
-        raise RuntimeError("scripted Codex turn failure")
+        raise RuntimeError(self._turn_failure_message)
 
     async def close(self) -> None:
         self.close_count += 1

@@ -1,3 +1,4 @@
+import json
 import secrets
 
 import pytest
@@ -10,6 +11,7 @@ from analyze_expenses_workflow.domain_facades import (
     DomainFacade,
     LlmClientCleanupFailedException,
     LlmRequestFailedException,
+    LlmRequestRejectedException,
     LlmResponseInvalidException,
 )
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import (
@@ -28,8 +30,14 @@ async def test_analyze_expenses_WhenCodexTurnFails_ThenReportsGatewayFailureAtBo
         exception_type=LlmRequestFailedException,
         action="RetryActionNeeded",
         reason="Coding assistant request failed",
-        message_phrases=("Codex", "request failed"),
-        contextual_fields=(("Operation", "turn_request"), ("Model", expected_model), ("ReasoningEffort", "medium")),
+        message_phrases=("Codex", "request failed", TestMediatorCodex.SCRIPTED_TURN_FAILURE_MESSAGE),
+        contextual_fields=(
+            ("Operation", "turn_request"),
+            ("Model", expected_model),
+            ("ReasoningEffort", "medium"),
+            ("ProviderStatusCode", "unknown"),
+            ("ProviderError", TestMediatorCodex.SCRIPTED_TURN_FAILURE_MESSAGE),
+        ),
         cause_type="RuntimeError",
         forbidden_message_phrases=(expected_expense_line,),
     )
@@ -45,9 +53,48 @@ async def test_analyze_expenses_WhenCodexTurnFails_ThenReportsGatewayFailureAtBo
         with pytest.raises(LlmRequestFailedException) as raised_exception:
             await domain_facade.analyze_expenses([expected_expense_line])
 
-    actual_llm_gateway_exception: LlmRequestFailedException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
+    actual_llm_request_failed_exception: LlmRequestFailedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_request_failed_exception, expected_llm_gateway_failure)
     assert_codex_requests(test_mediator_codex, test_mediator_jev, expected_model, expected_expense_line, expected_request_count, expected_close_count)
+
+
+async def test_analyze_expenses_WhenCodexRejectsTheRequest_ThenReportsTheProviderReasonAsANonRetryableRejection() -> None:
+    expected_expense_line: str = f"2026-08-14 {secrets.token_hex(8)}"
+    expected_model: str = f"test-model-{secrets.token_hex(8)}"
+    expected_provider_reason: str = f"The {expected_model!r} model is not supported {secrets.token_hex(4)}"
+    provider_error_document: str = json.dumps(
+        {"type": "error", "status": 400, "error": {"type": "invalid_request_error", "message": expected_provider_reason}}
+    )
+    expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
+        exception_type=LlmRequestRejectedException,
+        action="DeveloperActionRequired",
+        reason="Coding assistant provider rejected the request",
+        message_phrases=("Codex rejected the request", expected_provider_reason),
+        contextual_fields=(
+            ("Operation", "turn_request"),
+            ("Model", expected_model),
+            ("ProviderStatusCode", 400),
+            ("ProviderError", expected_provider_reason),
+        ),
+        cause_type="RuntimeError",
+        forbidden_message_phrases=(expected_expense_line,),
+    )
+    test_mediator_codex: TestMediatorCodex = TestMediatorCodex(turn_failure_message=provider_error_document)
+    test_mediator_jev: TestMediatorJev = TestMediatorJev()
+    override_by_environment_variable_name: dict[str, str] = create_subscription_test_configuration(
+        CodingAssistantSubscription.GPT_CODEX, expected_model
+    )
+
+    async with create_domain_facade(
+        test_mediator_jev,
+        override_by_environment_variable_name,
+        async_codex=test_mediator_codex.create_client(),
+    ) as domain_facade:
+        with pytest.raises(LlmRequestRejectedException) as raised_exception:
+            await domain_facade.analyze_expenses([expected_expense_line])
+
+    actual_llm_request_rejected_exception: LlmRequestRejectedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_request_rejected_exception, expected_llm_gateway_failure)
 
 
 async def test_close_WhenCalledTwice_ThenOwnedGatewaysCloseOnce() -> None:
@@ -76,7 +123,9 @@ async def test_close_WhenCalledTwice_ThenOwnedGatewaysCloseOnce() -> None:
 async def test_analyze_expenses_WhenCodexTurnHasNoResponse_ThenReportsInvalidResponseAtBoundary() -> None:
     expected_expense_line: str = f"2026-08-14 {secrets.token_hex(8)}"
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
-    expected_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
+    expected_close_count: int = 1
+    expected_jev_request_count: int = 0
+    expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmResponseInvalidException,
         action="DeveloperActionRequired",
         reason="Coding assistant response violates its contract",
@@ -98,11 +147,12 @@ async def test_analyze_expenses_WhenCodexTurnHasNoResponse_ThenReportsInvalidRes
         with pytest.raises(LlmResponseInvalidException) as raised_exception:
             await domain_facade.analyze_expenses([expected_expense_line])
 
-    assert_llm_gateway_failure(raised_exception.value, expected_failure)
+    actual_llm_response_invalid_exception: LlmResponseInvalidException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_response_invalid_exception, expected_llm_gateway_failure)
     assert (test_mediator_codex.captured_models, test_mediator_codex.close_count, len(test_mediator_jev.captured_jev_requests)) == (
         [expected_model],
-        1,
-        0,
+        expected_close_count,
+        expected_jev_request_count,
     )
 
 
@@ -131,8 +181,8 @@ async def test_close_WhenCodexClientFailsOnce_ThenFacadeCanRetryCleanup() -> Non
 
     with pytest.raises(LlmClientCleanupFailedException) as raised_exception:
         await domain_facade.close()
-    actual_llm_gateway_exception: LlmClientCleanupFailedException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
+    actual_llm_client_cleanup_failed_exception: LlmClientCleanupFailedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_client_cleanup_failed_exception, expected_llm_gateway_failure)
     await domain_facade.close()
     await domain_facade.close()
 

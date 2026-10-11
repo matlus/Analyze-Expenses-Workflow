@@ -112,9 +112,7 @@ async def test_adjacent_identical_charges_remain_included_without_duplicate_conf
         _parsed_line(1, "Market", "20.00", source_text="June 1 Market $20.00"),
         _parsed_line(2, "Market", "20.00", source_text="June 1 Market $20.00"),
     )
-    categorizations: tuple[ExpenseCategorization | None, ...] = tuple(
-        _categorization(line, ExpenseCategory.GROCERIES) for line in parsed_lines
-    )
+    categorizations: tuple[ExpenseCategorization | None, ...] = tuple(_categorization(line, ExpenseCategory.GROCERIES) for line in parsed_lines)
 
     transactions: tuple[ExpenseTransaction, ...] = await ExpenseReconciliationProcessor().reconcile(parsed_lines, categorizations)
 
@@ -129,9 +127,7 @@ async def test_duplicate_confirmation_must_match_an_earlier_identical_line() -> 
         _parsed_line(1, "Market", "20.00"),
         _parsed_line(2, "Cafe", "20.00"),
     )
-    categorizations: tuple[ExpenseCategorization | None, ...] = tuple(
-        _categorization(line, ExpenseCategory.GROCERIES) for line in parsed_lines
-    )
+    categorizations: tuple[ExpenseCategorization | None, ...] = tuple(_categorization(line, ExpenseCategory.GROCERIES) for line in parsed_lines)
 
     with pytest.raises(ValueError, match="must match"):
         await ExpenseReconciliationProcessor().reconcile(parsed_lines, categorizations, (2,))

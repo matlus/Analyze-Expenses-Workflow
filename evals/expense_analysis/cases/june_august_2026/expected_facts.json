@@ -1,0 +1,40 @@
+{
+  "source": "expense_reference_key.md (the author's reference key, revised 2026-10-10 to accept Steam in Shopping; this workspace's copy revised 2026-10-11 to accept merchant-only Amazon, Target and Costco charges in Other), recomputed independently from personal_expenses.txt (SHA-256 23f06bd1f2a7206c65aea4ee4bb7debb7e5b2a146e9ec8cd135c80ca61a23833). Only facts that hold under every category policy the key accepts are listed; where a disclosed policy choice changes a value, every accepted value is listed. reference_ledger.json holds the same key entry by entry; loading the suite checks that the two agree.",
+  "expected_facts": {
+    "dining_june_total": [
+      "212.74"
+    ],
+    "dining_july_total": [
+      "165.14"
+    ],
+    "dining_august_total": [
+      "398.69"
+    ],
+    "dining_august_budget_status": [
+      "over"
+    ],
+    "shopping_july_total": [
+      "756.72",
+      "526.62"
+    ],
+    "refund_treatment": [
+      "netted_against_spending"
+    ],
+    "duplicate_flagged": [
+      "true"
+    ],
+    "both_delta_charges_kept": [
+      "true"
+    ],
+    "travel_august_total": [
+      "1655.92",
+      "1631.82"
+    ],
+    "uncategorized_entry_count": [
+      "8"
+    ],
+    "largest_july_to_august_increase_category": [
+      "travel"
+    ]
+  }
+}

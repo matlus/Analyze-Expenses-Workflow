@@ -14,9 +14,9 @@ from typing import cast
 from context_compaction import (
     Compaction,
     CompactionResult,
-    ContextCompactionBusinessError,
-    ContextCompactionInputError,
-    ContextCompactionTechnicalError,
+    ContextCompactionBusinessBaseException,
+    ContextCompactionInputException,
+    ContextCompactionTechnicalBaseException,
     ContextEntry,
     DecisionRecord,
     DomainFacade,
@@ -62,7 +62,7 @@ class ValidatorTrialOutputPaths:
         output_artifact_paths: tuple[Path, ...] = ValidatorTrialOutputPaths._planned_paths(output_dir)
         for output_artifact_path in output_artifact_paths:
             if source.resolve() == output_artifact_path.resolve() or (output_artifact_path.exists() and source.samefile(output_artifact_path)):
-                raise ContextCompactionInputError(
+                raise ContextCompactionInputException(
                     f"Trial output would overwrite or delete the original rollout; source={source}, output={output_artifact_path}."
                 )
 
@@ -210,7 +210,7 @@ def main() -> int:
         trial_options: TrialOptions = TrialOptions(trial_case, mode, namespace.runs, namespace.threshold, frozenset(required_tool_ids), output_dir)
         asyncio.run(_execute_trial(trial_options, namespace.env_file, request_records))
         return 0
-    except ContextCompactionBusinessError as error:
+    except ContextCompactionBusinessBaseException as error:
         diagnostic_context: str = (
             f"rollout={namespace.rollout}, lines={namespace.start_line}:{namespace.cutoff_line}, "
             f"mode={namespace.evidence_mode}, runs={namespace.runs}, output_dir={namespace.output_dir}"
@@ -218,7 +218,7 @@ def main() -> int:
         )
         sys.stderr.write(f"Context compaction stopped: {error}; {diagnostic_context}\n")
         return 1
-    except (ContextCompactionTechnicalError, OSError, TypeError, ValueError) as error:
+    except (ContextCompactionTechnicalBaseException, OSError, TypeError, ValueError) as error:
         diagnostic_context: str = (
             f"rollout={namespace.rollout}, lines={namespace.start_line}:{namespace.cutoff_line}, "
             f"mode={namespace.evidence_mode}, runs={namespace.runs}, output_dir={namespace.output_dir}"

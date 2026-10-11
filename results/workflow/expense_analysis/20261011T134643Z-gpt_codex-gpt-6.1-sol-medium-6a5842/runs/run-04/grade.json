@@ -1,0 +1,72 @@
+{
+  "dining-june-total": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "dining-july-total": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "dining-august-total": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "dining-august-over-budget": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "refund-netted": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "shopping-july-total": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "duplicate-flagged": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "both-delta-charges-kept": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "travel-august-total": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "uncategorized-entry-count": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "largest-increase-is-travel": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "ambiguous-entries-not-forced": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "three-supported-findings": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  },
+  "no-invented-budgets": {
+    "check_status": "errored",
+    "reason": "the workflow did not complete: LlmRequestFailedException: Codex subscription request failed",
+    "causes": []
+  }
+}

@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from acceptance_support.mediator_jev import CapturedJevRequest
-from analyze_expenses_workflow.domain_facades import ExpenseAnalysisResult, ExpenseCategorization, ExpenseCategory, SystemOneGatewayException
+from analyze_expenses_workflow.domain_facades import ExpenseAnalysisResult, ExpenseCategorization, ExpenseCategory, SystemOneGatewayBaseException
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,7 +17,7 @@ class ExpectedJevCategorization:
 
 @dataclass(frozen=True, slots=True)
 class ExpectedJevGatewayFailure:
-    exception_type: type[SystemOneGatewayException]
+    exception_type: type[SystemOneGatewayBaseException]
     action: str
     reason: str
     log_event: str
@@ -106,53 +106,52 @@ def assert_jev_requests(
 
 
 def assert_jev_gateway_failure(
-    actual_system_one_gateway_exception: SystemOneGatewayException,
+    actual_system_one_gateway_base_exception: SystemOneGatewayBaseException,
     expected_jev_gateway_failure: ExpectedJevGatewayFailure,
 ) -> None:
     mismatches: list[str] = []
-    if type(actual_system_one_gateway_exception) is not expected_jev_gateway_failure.exception_type:
+    if type(actual_system_one_gateway_base_exception) is not expected_jev_gateway_failure.exception_type:
+        actual_exception_type_name: str = type(actual_system_one_gateway_base_exception).__name__
+        mismatches.append(f"Expected exception {expected_jev_gateway_failure.exception_type.__name__}, got {actual_exception_type_name}")
+    if actual_system_one_gateway_base_exception.action.value != expected_jev_gateway_failure.action:
+        mismatches.append(f"Expected action {expected_jev_gateway_failure.action}, got {actual_system_one_gateway_base_exception.action}")
+    if actual_system_one_gateway_base_exception.reason != expected_jev_gateway_failure.reason:
+        mismatches.append(f"Expected reason {expected_jev_gateway_failure.reason!r}, got {actual_system_one_gateway_base_exception.reason!r}")
+    if actual_system_one_gateway_base_exception.log_event.value != expected_jev_gateway_failure.log_event:
+        mismatches.append(f"Expected log event {expected_jev_gateway_failure.log_event}, got {actual_system_one_gateway_base_exception.log_event}")
+    if actual_system_one_gateway_base_exception.severity.name != expected_jev_gateway_failure.severity:
+        mismatches.append(f"Expected severity {expected_jev_gateway_failure.severity}, got {actual_system_one_gateway_base_exception.severity}")
+    if actual_system_one_gateway_base_exception.http_status_code != expected_jev_gateway_failure.http_status_code:
         mismatches.append(
-            f"Expected exception {expected_jev_gateway_failure.exception_type.__name__}, got {type(actual_system_one_gateway_exception).__name__}"
-        )
-    if actual_system_one_gateway_exception.action.value != expected_jev_gateway_failure.action:
-        mismatches.append(f"Expected action {expected_jev_gateway_failure.action}, got {actual_system_one_gateway_exception.action}")
-    if actual_system_one_gateway_exception.reason != expected_jev_gateway_failure.reason:
-        mismatches.append(f"Expected reason {expected_jev_gateway_failure.reason!r}, got {actual_system_one_gateway_exception.reason!r}")
-    if actual_system_one_gateway_exception.log_event.value != expected_jev_gateway_failure.log_event:
-        mismatches.append(f"Expected log event {expected_jev_gateway_failure.log_event}, got {actual_system_one_gateway_exception.log_event}")
-    if actual_system_one_gateway_exception.severity.name != expected_jev_gateway_failure.severity:
-        mismatches.append(f"Expected severity {expected_jev_gateway_failure.severity}, got {actual_system_one_gateway_exception.severity}")
-    if actual_system_one_gateway_exception.http_status_code != expected_jev_gateway_failure.http_status_code:
-        mismatches.append(
-            f"Expected HTTP status {expected_jev_gateway_failure.http_status_code}, got {actual_system_one_gateway_exception.http_status_code}"
+            f"Expected HTTP status {expected_jev_gateway_failure.http_status_code}, got {actual_system_one_gateway_base_exception.http_status_code}"
         )
     if expected_jev_gateway_failure.cause_exception_type is not None and not isinstance(
-        actual_system_one_gateway_exception.__cause__, expected_jev_gateway_failure.cause_exception_type
+        actual_system_one_gateway_base_exception.__cause__, expected_jev_gateway_failure.cause_exception_type
     ):
         mismatches.append(
             f"Expected cause {expected_jev_gateway_failure.cause_exception_type.__name__}, "
-            f"got {type(actual_system_one_gateway_exception.__cause__).__name__}"
+            f"got {type(actual_system_one_gateway_base_exception.__cause__).__name__}"
         )
-    actual_contextual_field_value_by_name: dict[str, object] = dict(actual_system_one_gateway_exception.diagnostics.additional_fields)
+    actual_contextual_field_value_by_name: dict[str, object] = dict(actual_system_one_gateway_base_exception.diagnostics.additional_fields)
     mismatches.extend(
         f"Expected context {expected_contextual_field[0]}={expected_contextual_field[1]!r}, "
         f"got {actual_contextual_field_value_by_name.get(expected_contextual_field[0])!r}"
         for expected_contextual_field in expected_jev_gateway_failure.contextual_fields
         if actual_contextual_field_value_by_name.get(expected_contextual_field[0]) != expected_contextual_field[1]
     )
-    redacted_actual_gateway_message: str = actual_system_one_gateway_exception.message
+    redacted_actual_gateway_message: str = actual_system_one_gateway_base_exception.message
     forbidden_phrase: str
     for forbidden_phrase in expected_jev_gateway_failure.forbidden_message_phrases:
         redacted_actual_gateway_message = redacted_actual_gateway_message.replace(forbidden_phrase, "<redacted>")
     mismatches.extend(
         f"Expected message phrase {expected_phrase!r} in gateway message {redacted_actual_gateway_message!r}"
         for expected_phrase in expected_jev_gateway_failure.message_phrases
-        if expected_phrase.casefold() not in actual_system_one_gateway_exception.message.casefold()
+        if expected_phrase.casefold() not in actual_system_one_gateway_base_exception.message.casefold()
     )
     mismatches.extend(
         "Configured credential appeared in gateway message"
         for forbidden_phrase in expected_jev_gateway_failure.forbidden_message_phrases
-        if forbidden_phrase in actual_system_one_gateway_exception.message
+        if forbidden_phrase in actual_system_one_gateway_base_exception.message
     )
     assert not mismatches, (
         f"Jev gateway failure for reason {expected_jev_gateway_failure.reason!r} and context "

@@ -35,9 +35,7 @@ class FailingLlmGateway:
 
 
 async def test_gateway_failure_leaves_uncertain_line_unparsed_and_preserves_complete_line() -> None:
-    complete_line: ParsedExpenseLine = ParsedExpenseLine(
-        1, "2026-06-01 | Market | $10.00", date(2026, 6, 1), "Market", Decimal("10.00"), ()
-    )
+    complete_line: ParsedExpenseLine = ParsedExpenseLine(1, "2026-06-01 | Market | $10.00", date(2026, 6, 1), "Market", Decimal("10.00"), ())
     uncertain_line: ParsedExpenseLine = ParsedExpenseLine(2, "unreadable entry", None, "unreadable entry", None, ("missing_date", "missing_amount"))
     processor: ExpenseLineExtractionLlmProcessor = ExpenseLineExtractionLlmProcessor(
         FailingLlmGateway(), LlmOperationSettings(model="test-model", reasoning_effort=None)

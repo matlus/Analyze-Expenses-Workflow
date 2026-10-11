@@ -46,11 +46,12 @@ from verified spending. Merchant-only Target, Amazon, and Costco entries are
 the worked example. Every calculation and finding retains source-line
 references so a caller can inspect the decision.
 
-The `.env` file selects `CODING_ASSISTANT_SUBSCRIPTION` as `GPT_CODEX` or
-`GITHUB_COPILOT`; both select the OpenAI family. Each LLM operation has its own
-model and reasoning effort, such as `EXPENSE_LINE_EXTRACTION_OPENAI_MODEL` and
+The `.env` file selects `CODING_ASSISTANT_SUBSCRIPTION` as `GPT_CODEX`,
+`GITHUB_COPILOT` (both the OpenAI family) or `CLAUDE_CODE` (the Anthropic family).
+Each LLM operation has its own model and reasoning effort, such as
+`EXPENSE_LINE_EXTRACTION_OPENAI_MODEL` and
 `EXPENSE_LINE_EXTRACTION_OPENAI_REASONING_EFFORT`. Family override keys are
-rejected. The legacy unqualified operation keys remain supported for OpenAI.
+rejected, and only the family-qualified operation keys are read.
 Jev uses
 `OPEN_ROUTER_KEY`, `OPEN_ROUTER_BASE_URL`, and `JEV_MODEL`. Monthly target
 settings are `DINING_COFFEE_MONTHLY_BUDGET` and `SHOPPING_MONTHLY_BUDGET`.

@@ -25,24 +25,29 @@ the [implementation plan](docs/implementation-plan.md), and the
 ## Setup
 
 Copy `.env.example` to `.env` and provide `OPEN_ROUTER_KEY`. Select
-`CODING_ASSISTANT_SUBSCRIPTION` as `GPT_CODEX` or `GITHUB_COPILOT`. The example
-file includes the OpenRouter endpoint, Jev model, per-operation model and
-reasoning settings, and monthly budget targets. The selected SDK determines the
-model family: Codex and GitHub Copilot use OpenAI. Claude Code maps to Anthropic
-but its SDK gateway is not yet implemented, so selecting it fails at startup.
+`CODING_ASSISTANT_SUBSCRIPTION` as `GPT_CODEX`, `GITHUB_COPILOT` or `CLAUDE_CODE`.
+The example file includes the OpenRouter endpoint, Jev model, per-operation model
+and reasoning settings, and monthly budget targets. The selected subscription
+determines the model family: Codex and GitHub Copilot use OpenAI, and Claude Code
+uses Anthropic through an isolated `claude -p` process per request (no tools,
+MCP servers, skills, user settings or session history). With Claude Code, every
+operation needs an `<OPERATION>_ANTHROPIC_MODEL`, and efforts are `low` through `max`.
 `CODING_ASSISTANT_MODEL_FAMILY` and per-operation `<OPERATION>_MODEL_FAMILY`
 overrides are rejected; family-specific model and effort values remain available
-for the family chosen by the SDK. Authentication to
-the chosen coding assistant subscription must also be available locally.
+for the family chosen by the SDK. Every subscription runs the CLI you installed
+and signed in to, found on PATH (`codex`, `copilot` or `claude`), never a copy bundled
+with an SDK, so there is nothing else to configure and the models are the ones your CLI
+offers. A missing CLI fails at startup with an error that names it.
 
 Code parses clear date and amount fields. When it finds multiple candidates,
 Jev selects a source span if its chosen-option probability meets the provisional
 `JEV_PARSING_MINIMUM_CHOICE_PROBABILITY` setting. Remaining uncertain lines go
 to the configured LLM extraction operation. Jev still handles expense
 categorization; the family-specific categorization settings reserve a future LLM
-fallback and are not invoked by the current pipeline. Legacy
-`EXPENSE_LINE_EXTRACTION_MODEL` and `EXPENSE_FINDINGS_MODEL` settings remain
-supported for the OpenAI family.
+fallback and are not invoked by the current pipeline. Model and effort settings
+are read only under their family-qualified names, such as
+`EXPENSE_LINE_EXTRACTION_OPENAI_MODEL`; the unqualified `EXPENSE_LINE_EXTRACTION_MODEL`
+form is no longer read.
 
 From the workspace root:
 
@@ -59,7 +64,7 @@ for file handling and report details.
 ## Verification
 
 ```powershell
-uv run --all-packages --all-groups ruff check .
+uv run --all-packages --all-groups ruff check packages apps evals
 uv run --all-packages --all-groups pyright
 uv run --all-packages --all-groups pytest -q
 
@@ -94,9 +99,60 @@ uv run --all-packages --all-groups pytest -q -o junit_family=legacy --junitxml=.
 Remove-Item Env:RUN_LIVE_JEV_REPEATABILITY_TESTS
 ```
 
+## Eval
+
+`evals/workflow` runs the real workflow end to end, several times in isolation,
+and grades every run with the expectations of the Part Three prompt eval
+([Skills and Evals](https://github.com/matlus/Skills-and-Evals), `evals/expense_analysis`).
+The case files in `evals/expense_analysis/cases` are copied with one deliberate
+difference: this copy of the reference ledger also accepts Jev's policy of putting
+merchant-only Amazon, Target and Costco charges in Other, because the log does not
+say what was bought (see the revision note in `expense_reference_key.md`). The
+Skills and Evals ledger does not accept this policy. Facts are
+read from the workflow's structured result instead of extracted from prose; only
+"three supported findings" uses a judge (`sonnet` at `low` effort, as in Part Three).
+`evals/expense_analysis/eval_suite.json` maps all 16 Part Three checks, marks
+the two that cannot apply to a code-controlled graph, and states each adaptation.
+A failed total is traced line by line against the reference ledger.
+
+Each run of the eval writes a timestamped folder under `results/workflow/expense_analysis`
+with `scorecard.md`, `scorecard.json`, and per-run `answer.md` (the production
+report), `outcome.json`, `activity.json` and `grade.json`. The Windows user name
+is scrubbed from every recorded file.
+
+```powershell
+uv run --all-packages --all-groups pytest evals/workflow -s --eval-repetitions 5 --workflow-subscription CLAUDE_CODE --workflow-model claude-opus-5-5 --workflow-effort medium
+```
+
+`--workflow-subscription`, `--workflow-model` and `--workflow-effort` set every
+LLM step; `--workflow-setting NAME=VALUE` (repeatable) sets any single setting,
+such as `EXPENSE_FINDINGS_OPENAI_REASONING_EFFORT=high` or `JEV_MODEL=jev-1.13`.
+Settings not given keep their `.env` values. The eval's own tests run with the
+ordinary test suite.
+
+`scorecard.md` times every run in three columns: **Answer time (workflow run)**,
+the workflow run that produced the result, before any grading started;
+**Grading time (eval analysis)**, composing the report the judge reads, reading
+every fact, the judge, and the code checks; and **Total time**, the two added
+together. Each cell is the median across runs, then the shortest to the longest
+run. `scorecard.json` holds every run's three times.
+
+To compare configurations, build one table from every run folder's `scorecard.json`:
+
+```powershell
+uv run python evals/workflow/compare_scorecards.py
+```
+
+It writes `results/workflow/expense_analysis/scorecard_comparison.md`: one row per
+configuration of LLM steps and Jev model (the newest run of each), with the gate,
+the checks below their minimum, and the three times. Runs recorded before grading
+was timed show their answer time only.
+
 ## Layout
 
 - `packages/analyze-expenses-workflow`: domain library and tests.
 - `apps/analyze-expenses-workflow-app`: console entry point and report renderer.
+- `evals/`: the workflow eval, its case files, and the harness tests.
+- `results/workflow/`: recorded eval runs and scorecards.
 - `examples/expense-analysis.md`: saved full report for the original expense log.
 - `docs/`: implementation plan and experiment notes.

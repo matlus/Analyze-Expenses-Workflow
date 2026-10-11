@@ -72,9 +72,7 @@ async def test_cash_movement_with_a_stated_purpose_keeps_the_model_category(desc
     ("description", "category"),
     [("Zelle Payment - rent", ExpenseCategory.HOUSING), ("PayPal Transfer - groceries", ExpenseCategory.GROCERIES)],
 )
-async def test_transfer_with_named_purchase_purpose_keeps_the_model_category(
-    description: str, category: ExpenseCategory
-) -> None:
+async def test_transfer_with_named_purchase_purpose_keeps_the_model_category(description: str, category: ExpenseCategory) -> None:
     processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(category))
 
     result: ExpenseCategorization = await processor.categorize(1, f"June 1 {description} $25.00", description)
@@ -97,9 +95,7 @@ async def test_transfer_with_named_purchase_purpose_keeps_the_model_category(
     ],
 )
 async def test_cash_movement_with_no_purchase_purpose_remains_uncategorized(description: str) -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
-        StubSystemOneGateway(ExpenseCategory.DINING_COFFEE)
-    )
+    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.DINING_COFFEE))
 
     result: ExpenseCategorization = await processor.categorize(1, f"June 1 {description} $25.00", description)
 
@@ -116,13 +112,9 @@ async def test_specific_subscription_description_remains_specific() -> None:
 
 
 async def test_return_from_a_merchant_only_mixed_retailer_remains_other() -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
-        StubSystemOneGateway(ExpenseCategory.SHOPPING)
-    )
+    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.SHOPPING))
 
-    result: ExpenseCategorization = await processor.categorize(
-        1, "June 1 Return processed - Amazon -$25.00", "Return processed - Amazon"
-    )
+    result: ExpenseCategorization = await processor.categorize(1, "June 1 Return processed - Amazon -$25.00", "Return processed - Amazon")
 
     assert result.category is ExpenseCategory.OTHER
     assert result.policy_note is not None

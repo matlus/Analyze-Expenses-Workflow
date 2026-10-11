@@ -5,7 +5,11 @@ from collections.abc import Mapping, Set as AbstractSet
 from dataclasses import asdict
 from pathlib import Path
 
-from context_compaction.managers.exceptions.context_compaction_error import CompactionDecisionError, ContextCompactionInputError, RolloutError
+from context_compaction.managers.exceptions.context_compaction_exception import (
+    CompactionDecisionException,
+    ContextCompactionInputException,
+    RolloutException,
+)
 from context_compaction.managers.models.context_models import (
     EvidenceMode,
     PreparedCompaction,
@@ -28,9 +32,9 @@ class ValidatorRolloutWindow:
     @staticmethod
     def validate(source: Path, start_line: int, cutoff_line: int) -> None:
         if start_line < 1 or cutoff_line <= start_line:
-            raise RolloutError(f"The start line must be positive and precede the held-out answer; start={start_line}, cutoff={cutoff_line}.")
+            raise RolloutException(f"The start line must be positive and precede the held-out answer; start={start_line}, cutoff={cutoff_line}.")
         if not source.is_file():
-            raise RolloutError(f"Codex rollout does not exist: {source}")
+            raise RolloutException(f"Codex rollout does not exist: {source}")
 
 
 class ValidatorContextPreparation:
@@ -39,7 +43,7 @@ class ValidatorContextPreparation:
         problems: list[str] = ValidatorContextPreparation._option_problems(mode, variant)
         problems.extend(ValidatorContextPreparation._context_problems(trial_case))
         if problems:
-            raise CompactionDecisionError("; ".join(problems))
+            raise CompactionDecisionException("; ".join(problems))
         ValidatorContextPreparation._validate_request_size(trial_case, mode)
 
     @staticmethod
@@ -69,7 +73,7 @@ class ValidatorContextPreparation:
     def _validate_request_size(trial_case: TrialCase, mode: EvidenceMode) -> None:
         state_characters: int = ValidatorContextPreparation._request_size(trial_case, mode)
         if state_characters > MAX_STATE_CHARACTERS_BY_EVIDENCE_MODE[mode]:
-            raise CompactionDecisionError(
+            raise CompactionDecisionException(
                 f"Jev state has {state_characters} characters; {mode} trial limit is {MAX_STATE_CHARACTERS_BY_EVIDENCE_MODE[mode]}."
             )
 
@@ -93,12 +97,12 @@ class ValidatorContextSelection:
     @staticmethod
     def validate_threshold(threshold: float) -> None:
         if ValidatorProbability.collect_problems(threshold):
-            raise CompactionDecisionError(f"Threshold must be between zero and one; received {threshold}.")
+            raise CompactionDecisionException(f"Threshold must be between zero and one; received {threshold}.")
 
     @staticmethod
     def _validate_segments(segments: tuple[Segment, ...]) -> None:
         if not segments or not sum(segment.characters for segment in segments):
-            raise CompactionDecisionError("Context must contain nonempty segment text.")
+            raise CompactionDecisionException("Context must contain nonempty segment text.")
 
     @staticmethod
     def _validate_probabilities(segments: tuple[Segment, ...], probability_by_tool_id: Mapping[str, float]) -> None:
@@ -109,7 +113,7 @@ class ValidatorContextSelection:
             if ValidatorProbability.collect_problems(probability_by_tool_id[tool_id])
         }
         if set(probability_by_tool_id) != expected_tool_ids or invalid_probability_by_tool_id:
-            raise CompactionDecisionError(
+            raise CompactionDecisionException(
                 "".join(
                     (
                         "Jev probabilities do not match the complete tool-event set; ",
@@ -129,7 +133,7 @@ class ValidatorPreparedCompaction:
     def _validate_questions(prepared_compaction: PreparedCompaction) -> None:
         problem: str | None = ValidatorPreparedCompaction._question_problem(prepared_compaction)
         if problem is not None:
-            raise CompactionDecisionError(problem)
+            raise CompactionDecisionException(problem)
 
     @staticmethod
     def _question_problem(prepared_compaction: PreparedCompaction) -> str | None:
@@ -151,7 +155,7 @@ class ValidatorPreparedCompaction:
     @staticmethod
     def _validate_state(prepared_compaction: PreparedCompaction) -> None:
         if not ValidatorPreparedCompaction._state_matches_source(prepared_compaction):
-            raise CompactionDecisionError("Prepared state must match the redacted source context and current goal.")
+            raise CompactionDecisionException("Prepared state must match the redacted source context and current goal.")
 
     @staticmethod
     def _state_matches_source(prepared_compaction: PreparedCompaction) -> bool:
@@ -165,8 +169,8 @@ class ValidatorTrialOptions:
     @staticmethod
     def validate(runs: int, threshold: float, required_tool_ids: AbstractSet[str], available_tool_ids: AbstractSet[str]) -> None:
         if ValidatorRepeatCount.collect_problems(runs, MAXIMUM_RUNS) or ValidatorProbability.collect_problems(threshold):
-            raise ContextCompactionInputError(f"Use 0-5 runs and a threshold from zero to one; received runs={runs}, threshold={threshold}.")
+            raise ContextCompactionInputException(f"Use 0-5 runs and a threshold from zero to one; received runs={runs}, threshold={threshold}.")
         if not required_tool_ids <= available_tool_ids:
-            raise ContextCompactionInputError(
+            raise ContextCompactionInputException(
                 f"Required tool IDs must belong to the selected context window; absent={sorted(required_tool_ids - available_tool_ids)}."
             )

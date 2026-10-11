@@ -6,7 +6,7 @@ from typing import ClassVar, cast, override
 import httpx2
 
 
-class JevTransportCloseError(OSError):
+class JevTransportCloseException(OSError):
     pass
 
 
@@ -53,7 +53,7 @@ class JevTransportSpy(httpx2.AsyncBaseTransport):
         self._test_mediator_jev.captured_close_attempt_count += 1
         if self._test_mediator_jev.close_failures_before_success > 0:
             self._test_mediator_jev.close_failures_before_success -= 1
-            raise JevTransportCloseError("Jev transport close failed")
+            raise JevTransportCloseException("Jev transport close failed")
         if self._async_client is not None:
             await self._async_client.aclose()
             self._async_client = None

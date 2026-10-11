@@ -1,3 +1,4 @@
+import asyncio
 import re
 from typing import ClassVar
 
@@ -5,6 +6,7 @@ from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception 
 from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol import ChoiceDecision, ChoiceQuestion, SystemOneGatewayProtocol
 from analyze_expenses_workflow.models.expense_analysis_result import CategoryProbability, ExpenseCategorization
 from analyze_expenses_workflow.models.expense_category_catalog import STANDARD_EXPENSE_CATEGORY_CATALOG, ExpenseCategory, ExpenseCategoryCatalog
+from analyze_expenses_workflow.models.parsed_expense_line import ParsedExpenseLine
 
 
 class TransactionCategorizationProcessor:
@@ -12,6 +14,7 @@ class TransactionCategorizationProcessor:
         r"\b(?:rent|mortgage|grocer(?:y|ies)|dinner|lunch|breakfast|meal|utility|utilities|electric|"
         r"internet|phone|gas|fuel|parking|flight|hotel|lodging|medical|pharmacy|tuition|childcare|gift|donation)\b"
     )
+    _MAXIMUM_CONCURRENT_CATEGORIZATIONS: ClassVar[int] = 8
     _CASH_MOVEMENT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
         r"^(?:zelle\b|venmo\b|"
         r"atm (?:cash )?withdrawal|cash withdrawal|paypal (?:transfer|payment)|bank transfer|ach transfer|wire transfer)"
@@ -20,6 +23,21 @@ class TransactionCategorizationProcessor:
     def __init__(self, gateway: SystemOneGatewayProtocol, catalog: ExpenseCategoryCatalog = STANDARD_EXPENSE_CATEGORY_CATALOG) -> None:
         self._gateway: SystemOneGatewayProtocol = gateway
         self._catalog: ExpenseCategoryCatalog = catalog
+
+    async def categorize_lines(self, parsed_expense_lines: tuple[ParsedExpenseLine, ...]) -> tuple[ExpenseCategorization | None, ...]:
+        """One slot per parsed line, aligned by position; a line without a date, amount and description has no category."""
+        semaphore: asyncio.Semaphore = asyncio.Semaphore(self._MAXIMUM_CONCURRENT_CATEGORIZATIONS)
+        async with asyncio.TaskGroup() as task_group:
+            tasks: tuple[asyncio.Task[ExpenseCategorization | None], ...] = tuple(
+                task_group.create_task(self._categorize_complete_line(parsed_expense_line, semaphore)) for parsed_expense_line in parsed_expense_lines
+            )
+        return tuple(task.result() for task in tasks)
+
+    async def _categorize_complete_line(self, parsed_expense_line: ParsedExpenseLine, semaphore: asyncio.Semaphore) -> ExpenseCategorization | None:
+        if parsed_expense_line.occurred_on is None or parsed_expense_line.amount is None or parsed_expense_line.description is None:
+            return None
+        async with semaphore:
+            return await self.categorize(parsed_expense_line.line_number, parsed_expense_line.source_text, parsed_expense_line.description)
 
     async def categorize(self, source_line_number: int, source_text: str, description: str | None = None) -> ExpenseCategorization:
         decision: ChoiceDecision = await self._gateway.choose(source_text, self._choice_question())

@@ -24,9 +24,7 @@ class DomainFacade:
     ) -> None:
         await self.close()
 
-    async def analyze_expenses(
-        self, expense_lines: list[str], *, confirmed_duplicate_line_numbers: tuple[int, ...] = ()
-    ) -> ExpenseAnalysisResult:
+    async def analyze_expenses(self, expense_lines: list[str], *, confirmed_duplicate_line_numbers: tuple[int, ...] = ()) -> ExpenseAnalysisResult:
         return await self._manager_expense_analysis.analyze_expenses(expense_lines, confirmed_duplicate_line_numbers)
 
     async def close(self) -> None:

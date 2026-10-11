@@ -44,6 +44,10 @@ class ExceptionCause:
 
 @dataclass(frozen=True, slots=True)
 class ExceptionDiagnostics:
+    CAUSED_BY_FIELD_NAME: ClassVar[str] = "CausedBy"
+    CAUSE_FIELD_NAME: ClassVar[str] = "Cause"
+    TRACEBACK_FIELD_NAME: ClassVar[str] = "Traceback"
+
     application_name: str
     exception_type: str
     action: ExceptionAction
@@ -77,32 +81,38 @@ class ExceptionDiagnostics:
 
     def _unreserved_additional_fields(self, standard_fields: tuple[ExceptionField, ...]) -> tuple[ExceptionField, ...]:
         reserved_names: frozenset[str] = frozenset(field[0] for field in standard_fields) | {
-            "CausedBy",
-            "Cause",
-            "Traceback",
+            self.CAUSED_BY_FIELD_NAME,
+            self.CAUSE_FIELD_NAME,
+            self.TRACEBACK_FIELD_NAME,
         }
         return tuple(field for field in self.additional_fields if field[0] not in reserved_names)
 
     def _cause_fields(self) -> tuple[ExceptionField, ...]:
-        return (("CausedBy", self.cause.exception_type), ("Cause", self.cause.message)) if self.cause is not None else ()
+        if self.cause is None:
+            return ()
+        return ((self.CAUSED_BY_FIELD_NAME, self.cause.exception_type), (self.CAUSE_FIELD_NAME, self.cause.message))
 
     def fields_with_traceback(self) -> tuple[ExceptionField, ...]:
-        traceback_fields: tuple[ExceptionField, ...] = (("Traceback", self.traceback_text),) if self.traceback_text is not None else ()
+        traceback_fields: tuple[ExceptionField, ...] = ((self.TRACEBACK_FIELD_NAME, self.traceback_text),) if self.traceback_text is not None else ()
         return (*self.fields(), *traceback_fields)
 
 
-class AnalyzeExpensesExceptionBase(Exception, ABC):
+class AnalyzeExpensesBaseException(Exception, ABC):
     APPLICATION_NAME: ClassVar[str] = "AnalyzeExpensesWorkflow"
 
     def __init__(self, message: str, log_event: ExpenseLogEvent, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
-        abstract_method_names: frozenset[str] = type(self).__abstractmethods__
-        if abstract_method_names:
-            names: str = ", ".join(sorted(abstract_method_names))
-            raise TypeError(f"Cannot instantiate abstract exception {type(self).__name__}; missing {names}")
+        self._raise_if_abstract()
         super().__init__(message)
         self._message: str = message
         self._log_event: ExpenseLogEvent = log_event
         self._additional_fields: tuple[ExceptionField, ...] = tuple((field[0], field[1]) for field in (contextual_data_by_name or {}).items())
+
+    def _raise_if_abstract(self) -> None:
+        # BaseException.__new__ skips the abstract-method check that object.__new__ performs, so it is enforced here.
+        abstract_method_names: frozenset[str] = type(self).__abstractmethods__
+        if abstract_method_names:
+            missing_names: str = ", ".join(sorted(abstract_method_names))
+            raise TypeError(f"Cannot instantiate abstract exception {type(self).__name__}; missing {missing_names}")
 
     @property
     def message(self) -> str:
@@ -159,34 +169,33 @@ class AnalyzeExpensesExceptionBase(Exception, ABC):
 
     @staticmethod
     def _render_fields(fields: tuple[ExceptionField, ...]) -> str:
-        lines: list[str] = [f"{field[0]}: {field[1]}" for field in fields if field[0] != "Traceback"]
-        traceback_text: str | None = next((str(field[1]) for field in fields if field[0] == "Traceback"), None)
+        traceback_field_name: str = ExceptionDiagnostics.TRACEBACK_FIELD_NAME
+        lines: list[str] = [f"{field[0]}: {field[1]}" for field in fields if field[0] != traceback_field_name]
+        traceback_text: str | None = next((str(field[1]) for field in fields if field[0] == traceback_field_name), None)
         if traceback_text is not None:
             lines.extend(("", traceback_text))
         return "\n".join(lines)
 
     def to_json(self) -> str:
-        serializable_diagnostics: dict[str, ExceptionValue] = {
+        return json.dumps(self._json_value_by_field_name(), indent=2, allow_nan=False)
+
+    def _json_value_by_field_name(self) -> dict[str, ExceptionValue]:
+        # JSON has no NaN or infinity, so a non-finite number travels as its text.
+        return {
             field[0]: str(field[1]) if isinstance(field[1], float) and not math.isfinite(field[1]) else field[1]
             for field in self.diagnostics.fields_with_traceback()
         }
-        return json.dumps(serializable_diagnostics, indent=2, allow_nan=False)
 
 
-class AnalyzeExpensesBusinessExceptionBase(AnalyzeExpensesExceptionBase, ABC):
+class AnalyzeExpensesBusinessBaseException(AnalyzeExpensesBaseException, ABC):
     @property
     @override
     def http_status_code(self) -> int:
         return 400
 
 
-class AnalyzeExpensesTechnicalExceptionBase(AnalyzeExpensesExceptionBase, ABC):
+class AnalyzeExpensesTechnicalBaseException(AnalyzeExpensesBaseException, ABC):
     @property
     @override
     def http_status_code(self) -> int:
         return 500
-
-
-AnalyzeExpensesException = AnalyzeExpensesExceptionBase
-AnalyzeExpensesBusinessException = AnalyzeExpensesBusinessExceptionBase
-AnalyzeExpensesTechnicalException = AnalyzeExpensesTechnicalExceptionBase

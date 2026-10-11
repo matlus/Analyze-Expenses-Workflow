@@ -1,20 +1,20 @@
 from typing import final, override
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    AnalyzeExpensesTechnicalException,
+    AnalyzeExpensesTechnicalBaseException,
     ExceptionAction,
     ExceptionContextInput,
     ExpenseLogEvent,
 )
 
 
-class SystemOneGatewayException(AnalyzeExpensesTechnicalException):
+class SystemOneGatewayBaseException(AnalyzeExpensesTechnicalBaseException):
     def __init__(self, message: str, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         super().__init__(message, ExpenseLogEvent.JEV_GATEWAY, contextual_data_by_name)
 
 
 @final
-class JevRequestFailedException(SystemOneGatewayException):
+class JevRequestFailedException(SystemOneGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -27,7 +27,7 @@ class JevRequestFailedException(SystemOneGatewayException):
 
 
 @final
-class JevResponseInvalidException(SystemOneGatewayException):
+class JevResponseInvalidException(SystemOneGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -40,7 +40,7 @@ class JevResponseInvalidException(SystemOneGatewayException):
 
 
 @final
-class JevGatewayClosedException(SystemOneGatewayException):
+class JevGatewayClosedException(SystemOneGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -53,7 +53,7 @@ class JevGatewayClosedException(SystemOneGatewayException):
 
 
 @final
-class JevResourceCleanupFailedException(SystemOneGatewayException):
+class JevResourceCleanupFailedException(SystemOneGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:

@@ -2,27 +2,28 @@
 
 from analyze_expenses_workflow.domain_facade import DomainFacade
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    AnalyzeExpensesBusinessException,
-    AnalyzeExpensesException,
-    AnalyzeExpensesTechnicalException,
+    AnalyzeExpensesBaseException,
+    AnalyzeExpensesBusinessBaseException,
+    AnalyzeExpensesTechnicalBaseException,
 )
 from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import ConfigurationSettingException
 from analyze_expenses_workflow.managers.exceptions.expense_findings_exception import ExpenseFindingsException
 from analyze_expenses_workflow.managers.exceptions.expense_input_exception import ExpenseInputException
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
     LlmClientCleanupFailedException,
+    LlmCliUnavailableException,
+    LlmGatewayBaseException,
     LlmGatewayClosedException,
-    LlmGatewayException,
     LlmRequestFailedException,
+    LlmRequestRejectedException,
     LlmResponseInvalidException,
-    LlmUnsupportedReasoningEffortException,
 )
 from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import (
     JevGatewayClosedException,
     JevRequestFailedException,
     JevResourceCleanupFailedException,
     JevResponseInvalidException,
-    SystemOneGatewayException,
+    SystemOneGatewayBaseException,
 )
 from analyze_expenses_workflow.models.expense_analysis_result import (
     CategoryProbability,
@@ -43,9 +44,9 @@ from analyze_expenses_workflow.models.expense_transaction import ExpenseTransact
 from analyze_expenses_workflow.models.parsed_expense_line import ParsedExpenseLine
 
 __all__ = [
-    "AnalyzeExpensesBusinessException",
-    "AnalyzeExpensesException",
-    "AnalyzeExpensesTechnicalException",
+    "AnalyzeExpensesBaseException",
+    "AnalyzeExpensesBusinessBaseException",
+    "AnalyzeExpensesTechnicalBaseException",
     "BudgetComparison",
     "CalculationReconciliation",
     "CategoryProbability",
@@ -63,16 +64,17 @@ __all__ = [
     "JevRequestFailedException",
     "JevResourceCleanupFailedException",
     "JevResponseInvalidException",
+    "LlmCliUnavailableException",
     "LlmClientCleanupFailedException",
+    "LlmGatewayBaseException",
     "LlmGatewayClosedException",
-    "LlmGatewayException",
     "LlmRequestFailedException",
+    "LlmRequestRejectedException",
     "LlmResponseInvalidException",
-    "LlmUnsupportedReasoningEffortException",
     "MonthCategoryDelta",
     "MonthlyCategoryTotal",
     "MonthlyTotal",
     "ParsedExpenseLine",
-    "SystemOneGatewayException",
+    "SystemOneGatewayBaseException",
     "TransactionTreatment",
 ]
