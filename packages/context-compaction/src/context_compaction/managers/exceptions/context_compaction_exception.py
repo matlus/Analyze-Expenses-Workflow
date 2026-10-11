@@ -7,16 +7,16 @@ from typing import final
 
 
 class ContextCompactionBusinessBaseException(ValueError):
-    """A trial input can be corrected by its caller."""
+    """The caller supplied something wrong; there is nothing for us to fix, so the error goes back to the caller."""
 
 
 class ContextCompactionTechnicalBaseException(RuntimeError):
-    """A trial failure needs system-owner attention."""
+    """We must fix something, such as configuration or the environment, before the trial can run."""
 
 
 @final
-class ContextCompactionConfigurationException(ContextCompactionBusinessBaseException):
-    """Jev settings cannot be read or are invalid."""
+class ContextCompactionConfigurationException(ContextCompactionTechnicalBaseException):
+    """Jev settings are missing or invalid, so the system owner must correct the configuration."""
 
 
 @final
