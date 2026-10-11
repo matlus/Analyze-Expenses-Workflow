@@ -4,7 +4,12 @@ from collections.abc import Mapping
 
 from pydantic import TypeAdapter, ValidationError
 
-from context_compaction.managers.exceptions.context_compaction_exception import RolloutException
+from context_compaction.managers.exceptions.context_compaction_exception import (
+    RolloutMessageInvalidException,
+    RolloutToolCallInvalidException,
+    RolloutToolOutputInvalidException,
+    RolloutToolOutputNonTextContentException,
+)
 from context_compaction.managers.processors.models.rollout_resources import (
     RolloutMessageResource,
     RolloutResponseResource,
@@ -18,19 +23,12 @@ class ValidatorRolloutResponse:
     @staticmethod
     def validate(response_value_by_field_name: Mapping[str, object]) -> RolloutResponseResource | None:
         response_type: object = response_value_by_field_name.get("type")
-        try:
-            return ValidatorRolloutResponse._validate_supported_response(response_type, response_value_by_field_name)
-        except ValidationError as error:
-            raise ValidatorRolloutResponse._rollout_exception(response_type) from error
-
-    @staticmethod
-    def _validate_supported_response(response_type: object, response_value_by_field_name: Mapping[str, object]) -> RolloutResponseResource | None:
         if response_type == "message":
             return ValidatorRolloutResponse._validate_message(response_value_by_field_name)
         if response_type == "custom_tool_call":
-            return RolloutToolCallResource.model_validate(response_value_by_field_name)
+            return ValidatorRolloutResponse._validate_tool_call(response_value_by_field_name)
         if response_type == "custom_tool_call_output":
-            return RolloutToolOutputResource.model_validate(response_value_by_field_name)
+            return ValidatorRolloutResponse._validate_tool_output(response_value_by_field_name)
         return None
 
     @staticmethod
@@ -38,17 +36,28 @@ class ValidatorRolloutResponse:
         role: object = response_value_by_field_name.get("role")
         if isinstance(role, str) and role not in {"user", "assistant"}:
             return None
-        return RolloutMessageResource.model_validate(response_value_by_field_name)
-
-    @staticmethod
-    def _rollout_exception(response_type: object) -> RolloutException:
-        if response_type == "custom_tool_call":
-            return RolloutException("Selected tool call needs string name and input and a nonempty call ID.")
-        return RolloutException(f"Selected rollout contains an invalid {response_type} shape or unsupported nontext content.")
-
-    @staticmethod
-    def validate_text(rollout_message_content: object) -> list[RolloutTextResource]:
         try:
-            return TypeAdapter(list[RolloutTextResource]).validate_python(rollout_message_content)
+            return RolloutMessageResource.model_validate(response_value_by_field_name)
         except ValidationError as error:
-            raise RolloutException("Selected conversation contains unsupported nontext content; supported=text, input_text, output_text.") from error
+            raise RolloutMessageInvalidException from error
+
+    @staticmethod
+    def _validate_tool_call(response_value_by_field_name: Mapping[str, object]) -> RolloutToolCallResource:
+        try:
+            return RolloutToolCallResource.model_validate(response_value_by_field_name)
+        except ValidationError as error:
+            raise RolloutToolCallInvalidException from error
+
+    @staticmethod
+    def _validate_tool_output(response_value_by_field_name: Mapping[str, object]) -> RolloutToolOutputResource:
+        try:
+            return RolloutToolOutputResource.model_validate(response_value_by_field_name)
+        except ValidationError as error:
+            raise RolloutToolOutputInvalidException from error
+
+    @staticmethod
+    def validate_tool_output_text(rollout_tool_output_content: object) -> list[RolloutTextResource]:
+        try:
+            return TypeAdapter(list[RolloutTextResource]).validate_python(rollout_tool_output_content)
+        except ValidationError as error:
+            raise RolloutToolOutputNonTextContentException from error

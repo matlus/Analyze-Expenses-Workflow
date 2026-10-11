@@ -1,12 +1,14 @@
-import math
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from typing import ClassVar
 
-from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import ConfigurationSettingException
-from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import JevRequestFailedException
+from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import (
+    JevRateLimitRetriesExhaustedException,
+    JevRequestFailedException,
+    JevServerRetryRequestedRetriesExhaustedException,
+)
 from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol import ChoiceDecision, ChoiceQuestion, SystemOneGatewayProtocol
 from analyze_expenses_workflow.managers.processors.evidence_parsers.expense_line_evidence_parser import (
     AmountEvidenceOccurrence,
@@ -24,20 +26,12 @@ class ExpenseLineJevExtractionProcessor:
     _NONE_CHOICE: ClassVar[str] = "none"
 
     def __init__(self, system_one_gateway_protocol: SystemOneGatewayProtocol, minimum_choice_probability: float) -> None:
-        if not math.isfinite(minimum_choice_probability) or not 0 <= minimum_choice_probability <= 1:
-            raise ConfigurationSettingException(
-                "Jev minimum choice probability must be between zero and one",
-                {"MinimumChoiceProbability": str(minimum_choice_probability)},
-            )
         self._system_one_gateway_protocol: SystemOneGatewayProtocol = system_one_gateway_protocol
         self._minimum_choice_probability: float = minimum_choice_probability
 
     async def extract_uncertain_lines(
         self, parsed_expense_lines: tuple[ParsedExpenseLine, ...], inferred_year: int | None
     ) -> tuple[ParsedExpenseLine, ...]:
-        return await self._extract_lines(parsed_expense_lines, inferred_year)
-
-    async def _extract_lines(self, parsed_expense_lines: tuple[ParsedExpenseLine, ...], inferred_year: int | None) -> tuple[ParsedExpenseLine, ...]:
         return tuple([await self._extract_line(parsed_expense_line, inferred_year) for parsed_expense_line in parsed_expense_lines])
 
     async def _extract_line(self, parsed_expense_line: ParsedExpenseLine, inferred_year: int | None) -> ParsedExpenseLine:
@@ -83,7 +77,7 @@ class ExpenseLineJevExtractionProcessor:
         amount_evidence_occurrences: tuple[AmountEvidenceOccurrence, ...] = ExpenseLineEvidenceParser.amount_candidate_occurrences(
             parsed_expense_line.source_text
         )
-        candidates: tuple[str, ...] = tuple(occurrence.amount_text for occurrence in amount_evidence_occurrences)
+        candidates: tuple[str, ...] = tuple(amount_evidence_occurrence.amount_text for amount_evidence_occurrence in amount_evidence_occurrences)
         selected_index: int | None = await self._choose_candidate_index(
             parsed_expense_line.source_text,
             candidates,
@@ -127,9 +121,10 @@ class ExpenseLineJevExtractionProcessor:
         candidate_descriptions_by_choice_key: dict[str, str] = self._choice_criteria(candidates)
         try:
             choice_decision: ChoiceDecision = await self._system_one_gateway_protocol.choose(
-                source_text, ChoiceQuestion(instructions=instructions, criteria=candidate_descriptions_by_choice_key)
+                source_text, ChoiceQuestion(instructions=instructions, criterion_by_choice_key=candidate_descriptions_by_choice_key)
             )
-        except JevRequestFailedException:
+        except JevRequestFailedException, JevRateLimitRetriesExhaustedException, JevServerRetryRequestedRetriesExhaustedException:
+            # Jev is temporarily unavailable, so the line keeps its deterministic parse; a rejected request still propagates.
             return None
         return self._accepted_candidate_index(choice_decision, candidate_descriptions_by_choice_key)
 

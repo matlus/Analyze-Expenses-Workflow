@@ -10,7 +10,8 @@ from analyze_expenses_workflow.domain_facades import (
     DomainFacade,
     LlmClientCleanupFailedException,
     LlmRequestFailedException,
-    LlmResponseInvalidException,
+    LlmRequestTimedOutException,
+    LlmResponseEmptyException,
 )
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import (
     CodingAssistantSubscription,
@@ -31,7 +32,7 @@ async def test_analyze_expenses_WhenCopilotSessionFails_ThenReportsGatewayFailur
         exception_type=LlmRequestFailedException,
         action="RetryActionNeeded",
         reason="Coding assistant request failed",
-        message_phrases=("Copilot", "request failed", "scripted Copilot session failure"),
+        message_phrases=("Copilot CLI", "request failed", "scripted Copilot session failure"),
         contextual_fields=(("Operation", "session_request"), ("Model", expected_model), ("ReasoningEffort", "medium")),
         cause_type="RuntimeError",
         forbidden_message_phrases=(expected_expense_line,),
@@ -48,8 +49,8 @@ async def test_analyze_expenses_WhenCopilotSessionFails_ThenReportsGatewayFailur
         with pytest.raises(LlmRequestFailedException) as raised_exception:
             await facade.analyze_expenses([expected_expense_line])
 
-    actual_llm_gateway_exception: LlmRequestFailedException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
+    actual_llm_request_failed_exception: LlmRequestFailedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_request_failed_exception, expected_llm_gateway_failure)
     assert (
         test_mediator_copilot.captured_models,
         test_mediator_copilot.captured_available_tools,
@@ -69,12 +70,12 @@ async def test_analyze_expenses_WhenCopilotSessionEmitsError_ThenReportsGatewayF
     expected_stop_count: int = 1
     expected_jev_request_count: int = 0
     expected_session_timeouts: list[float] = [900.0] * expected_request_count
-    expected_deleted_session_ids: list[str] = [TestMediatorCopilot.SCRIPTED_SESSION_ID] * expected_request_count
+    expected_deleted_session_ids: list[str] = [test_mediator_copilot.session_id] * expected_request_count
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
         action="RetryActionNeeded",
         reason="Coding assistant request failed",
-        message_phrases=("Copilot", "request failed", "scripted Copilot session failure"),
+        message_phrases=("Copilot CLI", "request failed", "scripted Copilot session failure"),
         contextual_fields=(
             ("Operation", "session_request"),
             ("Model", expected_model),
@@ -96,8 +97,8 @@ async def test_analyze_expenses_WhenCopilotSessionEmitsError_ThenReportsGatewayF
         with pytest.raises(LlmRequestFailedException) as raised_exception:
             await facade.analyze_expenses([expected_expense_line])
 
-    actual_llm_gateway_exception: LlmRequestFailedException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
+    actual_llm_request_failed_exception: LlmRequestFailedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_request_failed_exception, expected_llm_gateway_failure)
     assert (
         test_mediator_copilot.captured_models,
         test_mediator_copilot.captured_available_tools,
@@ -115,19 +116,75 @@ async def test_analyze_expenses_WhenCopilotSessionEmitsError_ThenReportsGatewayF
     )
 
 
-async def test_analyze_expenses_WhenCopilotSessionHasNoMessage_ThenReportsInvalidResponseAtBoundary() -> None:
+async def test_analyze_expenses_WhenCopilotSessionTimesOut_ThenReportsATimedOutRequestAtBoundary() -> None:
+    test_mediator_copilot: TestMediatorCopilot = TestMediatorCopilot(time_out_session=True)
+    test_mediator_jev: TestMediatorJev = TestMediatorJev()
     expected_expense_line: str = f"2026-08-14 {secrets.token_hex(8)}"
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
-    expected_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
-        exception_type=LlmResponseInvalidException,
+    expected_request_count: int = 2
+    expected_session_timeouts: list[float] = [900.0] * expected_request_count
+    expected_deleted_session_ids: list[str] = [test_mediator_copilot.session_id] * expected_request_count
+    expected_stop_count: int = 1
+    expected_jev_request_count: int = 0
+    expected_timeout_message: str = "Timeout after 900.0s waiting for session.idle"
+    expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
+        exception_type=LlmRequestTimedOutException,
+        action="RetryActionNeeded",
+        reason="Coding assistant request did not finish within its time limit",
+        message_phrases=("Copilot CLI request timed out", expected_timeout_message),
+        contextual_fields=(
+            ("Operation", "session_request"),
+            ("Model", expected_model),
+            ("ReasoningEffort", "medium"),
+            ("ProviderError", expected_timeout_message),
+        ),
+        cause_type="TimeoutError",
+        forbidden_message_phrases=(expected_expense_line,),
+    )
+    override_by_environment_variable_name: dict[str, str] = create_subscription_test_configuration(
+        CodingAssistantSubscription.GITHUB_COPILOT, expected_model
+    )
+
+    async with create_domain_facade(
+        test_mediator_jev,
+        override_by_environment_variable_name,
+        copilot_client=test_mediator_copilot.create_client(),
+    ) as facade:
+        with pytest.raises(LlmRequestTimedOutException) as raised_exception:
+            await facade.analyze_expenses([expected_expense_line])
+
+    actual_llm_request_timed_out_exception: LlmRequestTimedOutException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_request_timed_out_exception, expected_llm_gateway_failure)
+    assert (
+        test_mediator_copilot.captured_timeouts,
+        test_mediator_copilot.deleted_session_ids,
+        test_mediator_copilot.stop_count,
+        len(test_mediator_jev.captured_jev_requests),
+    ) == (expected_session_timeouts, expected_deleted_session_ids, expected_stop_count, expected_jev_request_count)
+
+
+async def test_analyze_expenses_WhenCopilotSessionHasNoMessage_ThenReportsEmptyResponseAtBoundary() -> None:
+    expected_expense_line: str = f"2026-08-14 {secrets.token_hex(8)}"
+    expected_model: str = f"test-model-{secrets.token_hex(8)}"
+    expected_stop_count: int = 1
+    expected_jev_request_count: int = 0
+    expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
+        exception_type=LlmResponseEmptyException,
         action="DeveloperActionRequired",
-        reason="Coding assistant response violates its contract",
-        message_phrases=("Copilot", "no message"),
+        reason="Coding assistant returned no response text",
+        message_phrases=("Copilot CLI", "no message"),
         contextual_fields=(("Operation", "response_validation"), ("EventDataType", "None")),
         forbidden_message_phrases=(expected_expense_line,),
     )
     test_mediator_copilot: TestMediatorCopilot = TestMediatorCopilot(return_no_message=True)
     test_mediator_jev: TestMediatorJev = TestMediatorJev()
+    # The prompt carrying the expense line was sent, so its session must still be removed from the user's history.
+    expected_copilot_session_outcome: tuple[list[str], list[str], int, int] = (
+        [expected_model],
+        [test_mediator_copilot.session_id],
+        expected_stop_count,
+        expected_jev_request_count,
+    )
     override_by_environment_variable_name: dict[str, str] = create_subscription_test_configuration(
         CodingAssistantSubscription.GITHUB_COPILOT, expected_model
     )
@@ -137,14 +194,21 @@ async def test_analyze_expenses_WhenCopilotSessionHasNoMessage_ThenReportsInvali
         override_by_environment_variable_name,
         copilot_client=test_mediator_copilot.create_client(),
     ) as domain_facade:
-        with pytest.raises(LlmResponseInvalidException) as raised_exception:
+        with pytest.raises(LlmResponseEmptyException) as raised_exception:
             await domain_facade.analyze_expenses([expected_expense_line])
 
-    assert_llm_gateway_failure(raised_exception.value, expected_failure)
-    assert (test_mediator_copilot.captured_models, test_mediator_copilot.stop_count, len(test_mediator_jev.captured_jev_requests)) == (
-        [expected_model],
-        1,
-        0,
+    actual_llm_response_empty_exception: LlmResponseEmptyException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_response_empty_exception, expected_llm_gateway_failure)
+    actual_copilot_session_outcome: tuple[list[str], list[str], int, int] = (
+        test_mediator_copilot.captured_models,
+        test_mediator_copilot.deleted_session_ids,
+        test_mediator_copilot.stop_count,
+        len(test_mediator_jev.captured_jev_requests),
+    )
+    assert actual_copilot_session_outcome == expected_copilot_session_outcome, (
+        f"A Copilot session for model {expected_model!r} that answered with no message must still be deleted from the user's history; "
+        f"expected (models, deleted session ids, client stops, Jev requests) {expected_copilot_session_outcome}; "
+        f"actual {actual_copilot_session_outcome}"
     )
 
 
@@ -156,7 +220,7 @@ async def test_close_WhenCopilotClientFailsOnce_ThenFacadeCanRetryCleanup() -> N
         exception_type=LlmClientCleanupFailedException,
         action="RetryActionNeeded",
         reason="Coding assistant client cleanup failed",
-        message_phrases=("Copilot", "cleanup failed"),
+        message_phrases=("Copilot CLI", "client cleanup failed"),
         contextual_fields=(("Operation", "client_stop"),),
         cause_type="ExceptionGroup",
     )
@@ -173,8 +237,8 @@ async def test_close_WhenCopilotClientFailsOnce_ThenFacadeCanRetryCleanup() -> N
 
     with pytest.raises(LlmClientCleanupFailedException) as raised_exception:
         await domain_facade.close()
-    actual_llm_gateway_exception: LlmClientCleanupFailedException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
+    actual_llm_client_cleanup_failed_exception: LlmClientCleanupFailedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_client_cleanup_failed_exception, expected_llm_gateway_failure)
     await domain_facade.close()
     await domain_facade.close()
 

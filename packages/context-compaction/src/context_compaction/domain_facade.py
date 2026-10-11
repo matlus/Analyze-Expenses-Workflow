@@ -21,9 +21,17 @@ DEFAULT_ENV_FILE = Path(".env")
 
 
 class DomainFacade:
-    def __init__(self, service_locator: ServiceLocatorProtocol | None = None, *, enable_jev: bool = False, env_file: Path = DEFAULT_ENV_FILE) -> None:
-        self._manager_context_compaction: ManagerContextCompaction = ManagerContextCompaction(
-            service_locator if service_locator is not None else ServiceLocatorProduction(env_file), enable_jev=enable_jev
+    """Offline preparation needs no credentials; live Jev evaluation is composed through for_live_evaluation."""
+
+    def __init__(self, manager_context_compaction: ManagerContextCompaction | None = None) -> None:
+        self._manager_context_compaction: ManagerContextCompaction = (
+            manager_context_compaction if manager_context_compaction is not None else ManagerContextCompaction.for_preparation()
+        )
+
+    @classmethod
+    def for_live_evaluation(cls, service_locator: ServiceLocatorProtocol | None = None, *, env_file: Path = DEFAULT_ENV_FILE) -> Self:
+        return cls(
+            ManagerContextCompaction.for_live_evaluation(service_locator if service_locator is not None else ServiceLocatorProduction(env_file))
         )
 
     def load_context(self, source: Path, start_line: int, cutoff_line: int) -> TrialCase:
@@ -38,8 +46,8 @@ class DomainFacade:
     def validate_trial_options(self, runs: int, threshold: float, required_tool_ids: AbstractSet[str], available_tool_ids: AbstractSet[str]) -> None:
         self._manager_context_compaction.validate_trial_options(runs, threshold, required_tool_ids, available_tool_ids)
 
-    def apply_saved_decisions(self, segments: tuple[Segment, ...], probabilities: Mapping[str, float], threshold: float = 0.5) -> Compaction:
-        return self._manager_context_compaction.apply_saved_decisions(segments, probabilities, threshold)
+    def apply_saved_decisions(self, segments: tuple[Segment, ...], probability_by_tool_id: Mapping[str, float], threshold: float = 0.5) -> Compaction:
+        return self._manager_context_compaction.apply_saved_decisions(segments, probability_by_tool_id, threshold)
 
     async def compact(self, prepared_compaction: PreparedCompaction, threshold: float = 0.5) -> CompactionResult:
         return await self._manager_context_compaction.compact(prepared_compaction, threshold)

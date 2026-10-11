@@ -7,7 +7,7 @@ class ChoiceQuestion(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     instructions: str
-    criteria: dict[str, str]
+    criterion_by_choice_key: dict[str, str]
 
 
 class ChoiceDecision(BaseModel):
@@ -26,6 +26,6 @@ class ChoiceDecision(BaseModel):
 
 
 class SystemOneGatewayProtocol(Protocol):
-    async def choose(self, state: str, choice_question: ChoiceQuestion) -> ChoiceDecision: ...
+    async def choose(self, source_text: str, choice_question: ChoiceQuestion) -> ChoiceDecision: ...
 
     async def close(self) -> None: ...

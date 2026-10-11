@@ -24,6 +24,6 @@ The first live results are summarized in [RESULTS.md](RESULTS.md). The raw decis
 
 ## Domain entry point
 
-`DomainFacade()` supports offline preparation without credentials or a client. For live work, use `async with DomainFacade(enable_jev=True)`; its service locator creates the gateway and its transport, and closure follows the facade → manager → gateway → client ownership chain. The manager validates each operation before processing. Jev response validation stays in the gateway.
+`DomainFacade()` supports offline preparation without credentials or a client. For live work, use `async with DomainFacade.for_live_evaluation()`; its service locator creates the gateway and its transport, and closure follows the facade → manager → gateway → client ownership chain. The manager validates each operation before processing. Jev response validation stays in the gateway.
 
 Tests substitute the HTTP transport through a testing service locator, exercising the production gateway and SDK request mapping without live Jev calls. Artifact writes remain in the CLI while that design is deferred.

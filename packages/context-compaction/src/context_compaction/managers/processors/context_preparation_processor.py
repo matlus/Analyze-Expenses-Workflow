@@ -8,7 +8,7 @@ from context_compaction.managers.models.context_models import (
     TrialCase,
     Variant,
 )
-from context_compaction.managers.models.records import ToolEventSummary, TrialBaselines, TrialManifest
+from context_compaction.managers.models.records import JevState, ToolEventSummary, TrialBaselines, TrialManifest
 from context_compaction.managers.processors.extractors.context_baseline_extractor import recency_baseline
 from context_compaction.managers.processors.extractors.context_question_extractor import build_questions
 from context_compaction.managers.processors.extractors.context_state_extractor import build_state, redact
@@ -18,8 +18,12 @@ class ContextPreparationProcessor:
     @staticmethod
     def prepare(trial_case: TrialCase, mode: EvidenceMode, variant: Variant) -> PreparedCompaction:
         return PreparedCompaction(
-            trial_case, mode, variant, build_state(trial_case.segments, trial_case.current_goal, mode), build_questions(trial_case.segments, variant)
+            trial_case, mode, variant, ContextPreparationProcessor.build_jev_state(trial_case, mode), build_questions(trial_case.segments, variant)
         )
+
+    @staticmethod
+    def build_jev_state(trial_case: TrialCase, mode: EvidenceMode) -> JevState:
+        return build_state(trial_case.segments, trial_case.current_goal, mode)
 
     @staticmethod
     def describe_context(trial_case: TrialCase, mode: EvidenceMode) -> TrialManifest:

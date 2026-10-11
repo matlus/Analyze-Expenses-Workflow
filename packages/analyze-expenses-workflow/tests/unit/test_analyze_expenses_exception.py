@@ -15,23 +15,53 @@ from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception im
     ExpenseLogEvent,
     Severity,
 )
-from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import ConfigurationSettingException
-from analyze_expenses_workflow.managers.exceptions.expense_findings_exception import ExpenseFindingsException
-from analyze_expenses_workflow.managers.exceptions.expense_input_exception import ExpenseInputException
+from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import (
+    CodingAssistantSettingsInvalidException,
+    CodingAssistantSubscriptionUnknownException,
+    ConfigurationSettingBlankException,
+    ConfigurationSettingMissingException,
+    JevMinimumChoiceProbabilitySettingInvalidException,
+    LlmModelFamilyMismatchException,
+    LlmModelSettingInvalidException,
+    LlmModelSettingMissingException,
+    LlmOperationNotConfiguredException,
+    ModelFamilyOverrideRejectedException,
+    MonthlyBudgetSettingInvalidException,
+    OpenRouterBaseUrlSettingInvalidException,
+    ReasoningEffortSettingUnknownException,
+    ReasoningEffortUnsupportedException,
+)
+from analyze_expenses_workflow.managers.exceptions.expense_findings_exception import (
+    ExpenseFindingsException,
+)
+from analyze_expenses_workflow.managers.exceptions.expense_input_exception import (
+    ExpenseInputInvalidException,
+)
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
     LlmClientCleanupFailedException,
-    LlmCliUnavailableException,
+    LlmCliExitedException,
+    LlmCliNotFoundException,
+    LlmCliStartFailedException,
     LlmGatewayBaseException,
     LlmGatewayClosedException,
     LlmRequestFailedException,
     LlmRequestRejectedException,
-    LlmResponseInvalidException,
+    LlmRequestTimedOutException,
+    LlmResponseEmptyException,
+    LlmResponseUnreadableException,
+    LlmSessionDeleteFailedException,
 )
 from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import (
+    JevChoiceCategoriesMismatchException,
+    JevChoiceCategoryUnrecognizedException,
+    JevChoiceResponseMalformedException,
+    JevClientCleanupFailedException,
     JevGatewayClosedException,
+    JevRateLimitRetriesExhaustedException,
     JevRequestFailedException,
-    JevResourceCleanupFailedException,
-    JevResponseInvalidException,
+    JevRequestRejectedException,
+    JevServerRetryRequestedRetriesExhaustedException,
+    JevTransportCleanupFailedException,
 )
 from analyze_expenses_workflow.managers.processors.expense_line_parsing_processor import ExpenseLineParsingProcessor
 from analyze_expenses_workflow.managers.processors.expense_reconciliation_processor import ExpenseReconciliationProcessor
@@ -47,9 +77,10 @@ def test_ExpenseInput_WhenSourceLineHasWrongType_ThenReportsLineAndBusinessDiagn
     expected_status_code: int = 400
     expected_message: str = "Expense line 2 must contain text"
     expected_diagnostic_values_by_name: dict[str, str | int | float | bool] = {
-        "LineNumber": expected_line_number,
+        "LineNumbers": str(expected_line_number),
+        "ProblemCount": 1,
         "ApplicationName": "AnalyzeExpensesWorkflow",
-        "ExceptionType": ExpenseInputException.__name__,
+        "ExceptionType": ExpenseInputInvalidException.__name__,
         "HttpStatusCode": expected_status_code,
         "Action": ExceptionAction.USER_ACTION_REQUIRED.value,
         "LogEvent": ExpenseLogEvent.INPUT_VALIDATION.value,
@@ -58,12 +89,12 @@ def test_ExpenseInput_WhenSourceLineHasWrongType_ThenReportsLineAndBusinessDiagn
     }
     valid_expense_line: str = f"6/1/26 | {secrets.token_hex(8)} | $3.00"
     invalid_line_value: int = secrets.randbelow(10_000)
-    with pytest.raises(ExpenseInputException, match=expected_message) as raised:
+    with pytest.raises(ExpenseInputInvalidException, match=expected_message) as raised:
         ValidatorExpenseLines.validate([valid_expense_line, cast("str", invalid_line_value)])
 
-    expense_input_exception: ExpenseInputException = raised.value
+    actual_expense_input_invalid_exception: ExpenseInputInvalidException = raised.value
     _assert_exception_details(
-        expense_input_exception,
+        actual_expense_input_invalid_exception,
         expected_type=AnalyzeExpensesBusinessBaseException,
         expected_diagnostic_values_by_name=expected_diagnostic_values_by_name,
         expected_line_number=expected_line_number,
@@ -106,9 +137,87 @@ async def test_ExpenseParsing_WhenBlankLineFollowsExpense_ThenPreservesUnparsedL
     ("error_type", "expected_action", "expected_reason", "expected_log_event"),
     [
         (
-            ConfigurationSettingException,
+            ConfigurationSettingMissingException,
             ExceptionAction.INFRA_ACTION_REQUIRED,
-            "Configuration is invalid or unavailable",
+            "Required configuration setting is missing",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            ConfigurationSettingBlankException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Configuration setting is set but blank",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            CodingAssistantSubscriptionUnknownException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Coding assistant subscription is not a supported value",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            CodingAssistantSettingsInvalidException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Coding assistant subscription maps to an invalid model family",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            ModelFamilyOverrideRejectedException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Model family setting overrides the family derived from the subscription",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            MonthlyBudgetSettingInvalidException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Monthly budget setting is not a positive amount with at most two decimal places",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            LlmModelSettingMissingException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "LLM operation model setting is required for the model family",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            LlmModelFamilyMismatchException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "LLM operation model belongs to another model family",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            LlmModelSettingInvalidException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "LLM operation model produced invalid operation settings",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            ReasoningEffortSettingUnknownException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Reasoning effort setting is not a known effort",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            ReasoningEffortUnsupportedException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Reasoning effort is not offered by the coding assistant subscription",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            LlmOperationNotConfiguredException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "LLM operation has no loaded settings",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            OpenRouterBaseUrlSettingInvalidException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Open Router base URL setting is not a valid HTTPS URL",
+            ExpenseLogEvent.CONFIGURATION,
+        ),
+        (
+            JevMinimumChoiceProbabilitySettingInvalidException,
+            ExceptionAction.INFRA_ACTION_REQUIRED,
+            "Jev minimum choice probability setting is not between zero and one",
             ExpenseLogEvent.CONFIGURATION,
         ),
         (
@@ -118,6 +227,12 @@ async def test_ExpenseParsing_WhenBlankLineFollowsExpense_ThenPreservesUnparsedL
             ExpenseLogEvent.FINDINGS_SELECTION,
         ),
         (LlmRequestFailedException, ExceptionAction.RETRY_ACTION_NEEDED, "Coding assistant request failed", ExpenseLogEvent.LLM_GATEWAY),
+        (
+            LlmRequestTimedOutException,
+            ExceptionAction.RETRY_ACTION_NEEDED,
+            "Coding assistant request did not finish within its time limit",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
         (
             LlmGatewayClosedException,
             ExceptionAction.DEVELOPER_ACTION_REQUIRED,
@@ -130,43 +245,78 @@ async def test_ExpenseParsing_WhenBlankLineFollowsExpense_ThenPreservesUnparsedL
             "Coding assistant provider rejected the request",
             ExpenseLogEvent.LLM_GATEWAY,
         ),
+        (LlmCliNotFoundException, ExceptionAction.INFRA_ACTION_REQUIRED, "Coding assistant CLI is not installed", ExpenseLogEvent.LLM_GATEWAY),
         (
-            LlmCliUnavailableException,
+            LlmCliStartFailedException,
             ExceptionAction.INFRA_ACTION_REQUIRED,
-            "Coding assistant CLI is not installed or could not be started",
+            "Coding assistant CLI is installed but could not be started",
             ExpenseLogEvent.LLM_GATEWAY,
         ),
         (
-            LlmResponseInvalidException,
-            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
-            "Coding assistant response violates its contract",
-            ExpenseLogEvent.LLM_GATEWAY,
-        ),
-        (
-            LlmClientCleanupFailedException,
+            LlmCliExitedException,
             ExceptionAction.RETRY_ACTION_NEEDED,
-            "Coding assistant client cleanup failed",
+            "Coding assistant CLI exited with an error and no result",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
+        (
+            LlmResponseEmptyException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Coding assistant returned no response text",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
+        (
+            LlmResponseUnreadableException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Coding assistant response could not be read",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
+        (LlmClientCleanupFailedException, ExceptionAction.RETRY_ACTION_NEEDED, "Coding assistant client cleanup failed", ExpenseLogEvent.LLM_GATEWAY),
+        (
+            LlmSessionDeleteFailedException,
+            ExceptionAction.RETRY_ACTION_NEEDED,
+            "Coding assistant session could not be deleted from the user's history",
             ExpenseLogEvent.LLM_GATEWAY,
         ),
         (JevRequestFailedException, ExceptionAction.RETRY_ACTION_NEEDED, "Jev gateway request failed", ExpenseLogEvent.JEV_GATEWAY),
         (
-            JevResponseInvalidException,
+            JevRequestRejectedException,
             ExceptionAction.DEVELOPER_ACTION_REQUIRED,
-            "Jev choice response violates its contract",
+            "Jev rejected the request and will reject it again unless the request changes",
             ExpenseLogEvent.JEV_GATEWAY,
         ),
         (
-            JevGatewayClosedException,
-            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
-            "Jev gateway was used after closing",
-            ExpenseLogEvent.JEV_GATEWAY,
-        ),
-        (
-            JevResourceCleanupFailedException,
+            JevRateLimitRetriesExhaustedException,
             ExceptionAction.RETRY_ACTION_NEEDED,
-            "Jev gateway resource cleanup failed",
+            "Jev kept rate limiting the request through every retry attempt",
             ExpenseLogEvent.JEV_GATEWAY,
         ),
+        (
+            JevServerRetryRequestedRetriesExhaustedException,
+            ExceptionAction.RETRY_ACTION_NEEDED,
+            "Jev kept failing with a server error that asked for a retry through every retry attempt",
+            ExpenseLogEvent.JEV_GATEWAY,
+        ),
+        (
+            JevChoiceResponseMalformedException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Jev choice response does not have the expected shape",
+            ExpenseLogEvent.JEV_GATEWAY,
+        ),
+        (
+            JevChoiceCategoriesMismatchException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Jev returned probabilities for categories other than those asked about",
+            ExpenseLogEvent.JEV_GATEWAY,
+        ),
+        (
+            JevChoiceCategoryUnrecognizedException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Jev selected a category that is not a known expense category",
+            ExpenseLogEvent.JEV_GATEWAY,
+        ),
+        (JevGatewayClosedException, ExceptionAction.DEVELOPER_ACTION_REQUIRED, "Jev gateway was used after closing", ExpenseLogEvent.JEV_GATEWAY),
+        (JevClientCleanupFailedException, ExceptionAction.RETRY_ACTION_NEEDED, "Jev client cleanup failed", ExpenseLogEvent.JEV_GATEWAY),
+        (JevTransportCleanupFailedException, ExceptionAction.RETRY_ACTION_NEEDED, "Jev HTTP transport cleanup failed", ExpenseLogEvent.JEV_GATEWAY),
     ],
 )
 def test_ExpenseException_WhenTechnicalErrorIsConstructed_ThenSharesApplicationBase(
@@ -269,21 +419,25 @@ def test_ExpenseException_WhenTracebackProjectionIsSelected_ThenOnlyThatProjecti
 
 
 def _assert_exception_details(
-    expense_input_exception: ExpenseInputException,
+    actual_expense_input_invalid_exception: ExpenseInputInvalidException,
     *,
     expected_type: type[AnalyzeExpensesBaseException],
     expected_diagnostic_values_by_name: Mapping[str, str | int | float | bool],
     expected_line_number: int,
 ) -> None:
-    diagnostic_values_by_name: dict[str, str | int | float | bool] = json.loads(expense_input_exception.to_json())
+    diagnostic_values_by_name: dict[str, str | int | float | bool] = json.loads(actual_expense_input_invalid_exception.to_json())
     failures: list[str] = []
     for expected_value_item in expected_diagnostic_values_by_name.items():
         diagnostic_name: str = expected_value_item[0]
         expected_value: str | int | float | bool = expected_value_item[1]
         if diagnostic_values_by_name.get(diagnostic_name) != expected_value:
             failures.append(f"{diagnostic_name}: expected {expected_value!r}, got {diagnostic_values_by_name.get(diagnostic_name)!r}")
-    if not isinstance(expense_input_exception, expected_type):
-        failures.append(f"Expected {expected_type.__name__}, got {type(expense_input_exception).__name__}")
-    if expense_input_exception.line_number != expected_line_number:
-        failures.append(f"Expected line {expected_line_number}, got {expense_input_exception.line_number}")
-    assert not failures, f"{len(failures)} exception-property mismatches:\n" + "\n".join(failures)
+    if not isinstance(actual_expense_input_invalid_exception, expected_type):
+        failures.append(f"Expected {expected_type.__name__}, got {type(actual_expense_input_invalid_exception).__name__}")
+    if actual_expense_input_invalid_exception.line_numbers != (expected_line_number,):
+        failures.append(f"Expected lines {(expected_line_number,)}, got {actual_expense_input_invalid_exception.line_numbers}")
+    assert not failures, (
+        "Expense input validation must report the offending expense line with its business diagnostics; "
+        f"{len(failures)} exception-property mismatches for {type(actual_expense_input_invalid_exception).__name__} "
+        f"on expected line numbers {(expected_line_number,)}:\n" + "\n".join(failures)
+    )

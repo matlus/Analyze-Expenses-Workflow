@@ -1,7 +1,7 @@
 import shutil
 from typing import Final, final
 
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmCliUnavailableException
+from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmCliNotFoundException
 
 
 @final
@@ -17,7 +17,7 @@ class CodingAssistantExecutableLocator:
     def locate(cls, executable_name: str) -> str:
         executable_path: str | None = shutil.which(executable_name)
         if executable_path is None:
-            raise LlmCliUnavailableException(
+            raise LlmCliNotFoundException(
                 f"The coding assistant CLI {executable_name!r} was not found on PATH; install it and sign in to use this subscription",
                 {cls._OPERATION_CONTEXT_FIELD_NAME: "executable_resolution", "ExecutableName": executable_name},
             )

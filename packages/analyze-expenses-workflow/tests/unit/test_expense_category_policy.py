@@ -1,21 +1,29 @@
+from secrets import randbelow
+
 import pytest
+from acceptance_support.asserter_expense_categorization import ExpenseCategorizationAsserter
 
 from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol import ChoiceDecision, ChoiceQuestion
 from analyze_expenses_workflow.managers.processors.transaction_categorization_processor import TransactionCategorizationProcessor
-from analyze_expenses_workflow.models.expense_analysis_result import ExpenseCategorization
+from analyze_expenses_workflow.models.expense_analysis_result import CategoryProbability, ExpenseCategorization
 from analyze_expenses_workflow.models.expense_category_catalog import STANDARD_EXPENSE_CATEGORY_CATALOG, ExpenseCategory
+
+STUB_MODEL_CONFIDENCE: float = 1.0
+MAXIMUM_SOURCE_LINE_NUMBER: int = 500
+MIXED_RETAILER_POLICY_NOTE: str = "Merchant-only mixed retailer charge; item type is not stated"
+CASH_MOVEMENT_POLICY_NOTE: str = "Cash movement without an identified spending purpose"
 
 
 class StubSystemOneGateway:
     def __init__(self, model_choice: ExpenseCategory) -> None:
         self._model_choice: ExpenseCategory = model_choice
 
-    async def choose(self, state: str, question: ChoiceQuestion) -> ChoiceDecision:
-        assert state
-        assert set(question.criteria) == {category.value for category in ExpenseCategory}
+    async def choose(self, source_text: str, choice_question: ChoiceQuestion) -> ChoiceDecision:
+        assert source_text
+        assert set(choice_question.criterion_by_choice_key) == {category.value for category in ExpenseCategory}
         return ChoiceDecision(
             choice=self._model_choice.value,
-            confidence=1.0,
+            confidence=STUB_MODEL_CONFIDENCE,
             probabilities={category.value: float(category is self._model_choice) for category in ExpenseCategory},
         )
 
@@ -23,62 +31,151 @@ class StubSystemOneGateway:
         return None
 
 
+def create_source_line_number() -> int:
+    return randbelow(MAXIMUM_SOURCE_LINE_NUMBER) + 1
+
+
+def create_expected_expense_categorization(
+    source_line_number: int,
+    source_text: str,
+    category: ExpenseCategory,
+    model_category: ExpenseCategory,
+    policy_note: str | None,
+) -> ExpenseCategorization:
+    """The stub model is certain of its choice, so the decision drivers follow from the model category alone."""
+    return ExpenseCategorization(
+        source_line_number=source_line_number,
+        source_text=source_text,
+        category=category,
+        model_category=model_category,
+        policy_note=policy_note,
+        confidence=STUB_MODEL_CONFIDENCE,
+        probabilities=tuple(
+            CategoryProbability(category=expense_category, probability=float(expense_category is model_category))
+            for expense_category in ExpenseCategory
+        ),
+    )
+
+
 @pytest.mark.parametrize("merchant", ["Target", "Amazon", "Costco"])
-async def test_merchant_only_mixed_retailer_is_other_even_when_model_guesses_shopping(merchant: str) -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.SHOPPING))
+async def test_Categorize_WhenAMerchantOnlyMixedRetailerIsDescribed_ThenReturnsOtherWithAPolicyNote(merchant: str) -> None:
+    source_line_number: int = create_source_line_number()
+    source_text: str = f"June 1 {merchant} $25.00"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, ExpenseCategory.OTHER, ExpenseCategory.SHOPPING, MIXED_RETAILER_POLICY_NOTE
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(ExpenseCategory.SHOPPING)
+    )
 
-    result: ExpenseCategorization = await processor.categorize(1, f"June 1 {merchant} $25.00", merchant)
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, merchant
+    )
 
-    assert result.category is ExpenseCategory.OTHER
-    assert result.model_category is ExpenseCategory.SHOPPING
-    assert result.policy_note is not None
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A merchant-only mixed retailer charge is Other even when the model guesses Shopping, because the item type is not stated",
+    )
 
 
-async def test_unknown_cash_movement_is_uncategorized_even_when_model_guesses_spending() -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.TRANSPORTATION))
+async def test_Categorize_WhenACashWithdrawalStatesNoPurpose_ThenReturnsUncategorizedAndKeepsTheModelCategory() -> None:
+    source_line_number: int = create_source_line_number()
+    description: str = "ATM Cash Withdrawal"
+    source_text: str = f"{description} $80.00 (Aug. 1)"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, ExpenseCategory.UNCATEGORIZED, ExpenseCategory.TRANSPORTATION, CASH_MOVEMENT_POLICY_NOTE
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(ExpenseCategory.TRANSPORTATION)
+    )
 
-    result: ExpenseCategorization = await processor.categorize(1, "ATM Cash Withdrawal $80.00 (Aug. 1)", "ATM Cash Withdrawal")
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, description
+    )
 
-    assert result.category is ExpenseCategory.UNCATEGORIZED
-    assert result.model_category is ExpenseCategory.TRANSPORTATION
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A cash withdrawal with no stated spending purpose is Uncategorized, while the model's guess is kept as the model category",
+    )
 
 
 @pytest.mark.parametrize(
     "description",
     ["Venmo - Sam", "Zelle Payment", "PayPal Transfer", "ATM Cash Withdrawal"],
 )
-async def test_cash_movement_without_a_stated_purpose_is_uncategorized(description: str) -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.DINING_COFFEE))
+async def test_Categorize_WhenACashMovementStatesNoPurpose_ThenReturnsUncategorized(description: str) -> None:
+    source_line_number: int = create_source_line_number()
+    source_text: str = f"June 1 {description} $25.00"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, ExpenseCategory.UNCATEGORIZED, ExpenseCategory.DINING_COFFEE, CASH_MOVEMENT_POLICY_NOTE
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(ExpenseCategory.DINING_COFFEE)
+    )
 
-    result: ExpenseCategorization = await processor.categorize(1, f"June 1 {description} $25.00", description)
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, description
+    )
 
-    assert result.category is ExpenseCategory.UNCATEGORIZED
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A cash movement that states no spending purpose is Uncategorized",
+    )
 
 
 @pytest.mark.parametrize(
     "description",
     ["Venmo - Sam for dinner", "Venmo - Sam - dinner", "Zelle Payment for dinner", "PayPal Transfer for dinner", "ATM Cash Withdrawal for dinner"],
 )
-async def test_cash_movement_with_a_stated_purpose_keeps_the_model_category(description: str) -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.DINING_COFFEE))
+async def test_Categorize_WhenACashMovementStatesAPurpose_ThenKeepsTheModelCategoryWithoutAPolicyNote(description: str) -> None:
+    source_line_number: int = create_source_line_number()
+    source_text: str = f"June 1 {description} $25.00"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, ExpenseCategory.DINING_COFFEE, ExpenseCategory.DINING_COFFEE, None
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(ExpenseCategory.DINING_COFFEE)
+    )
 
-    result: ExpenseCategorization = await processor.categorize(1, f"June 1 {description} $25.00", description)
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, description
+    )
 
-    assert result.category is ExpenseCategory.DINING_COFFEE
-    assert result.policy_note is None
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A cash movement that states its spending purpose keeps the model category and carries no policy note",
+    )
 
 
 @pytest.mark.parametrize(
-    ("description", "category"),
+    ("description", "expense_category"),
     [("Zelle Payment - rent", ExpenseCategory.HOUSING), ("PayPal Transfer - groceries", ExpenseCategory.GROCERIES)],
 )
-async def test_transfer_with_named_purchase_purpose_keeps_the_model_category(description: str, category: ExpenseCategory) -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(category))
+async def test_Categorize_WhenATransferNamesAPurchasePurpose_ThenKeepsTheModelCategoryWithoutAPolicyNote(
+    description: str, expense_category: ExpenseCategory
+) -> None:
+    source_line_number: int = create_source_line_number()
+    source_text: str = f"June 1 {description} $25.00"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, expense_category, expense_category, None
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(expense_category)
+    )
 
-    result: ExpenseCategorization = await processor.categorize(1, f"June 1 {description} $25.00", description)
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, description
+    )
 
-    assert result.category is category
-    assert result.policy_note is None
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A transfer that names what it paid for keeps the model category and carries no policy note",
+    )
 
 
 @pytest.mark.parametrize(
@@ -94,45 +191,110 @@ async def test_transfer_with_named_purchase_purpose_keeps_the_model_category(des
         "Venmo payment",
     ],
 )
-async def test_cash_movement_with_no_purchase_purpose_remains_uncategorized(description: str) -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.DINING_COFFEE))
+async def test_Categorize_WhenACashMovementNamesNoPurchasePurpose_ThenReturnsUncategorized(description: str) -> None:
+    source_line_number: int = create_source_line_number()
+    source_text: str = f"June 1 {description} $25.00"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, ExpenseCategory.UNCATEGORIZED, ExpenseCategory.DINING_COFFEE, CASH_MOVEMENT_POLICY_NOTE
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(ExpenseCategory.DINING_COFFEE)
+    )
 
-    result: ExpenseCategorization = await processor.categorize(1, f"June 1 {description} $25.00", description)
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, description
+    )
 
-    assert result.category is ExpenseCategory.UNCATEGORIZED
-
-
-async def test_specific_subscription_description_remains_specific() -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.SUBSCRIPTIONS))
-
-    result: ExpenseCategorization = await processor.categorize(1, "June 1 Amazon Prime $14.99", "Amazon Prime")
-
-    assert result.category is ExpenseCategory.SUBSCRIPTIONS
-    assert result.policy_note is None
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A cash movement whose wording names no purchase purpose stays Uncategorized",
+    )
 
 
-async def test_return_from_a_merchant_only_mixed_retailer_remains_other() -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.SHOPPING))
+async def test_Categorize_WhenADescriptionNamesASpecificSubscription_ThenKeepsTheSubscriptionsCategoryWithoutAPolicyNote() -> None:
+    source_line_number: int = create_source_line_number()
+    description: str = "Amazon Prime"
+    source_text: str = f"June 1 {description} $14.99"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, ExpenseCategory.SUBSCRIPTIONS, ExpenseCategory.SUBSCRIPTIONS, None
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(ExpenseCategory.SUBSCRIPTIONS)
+    )
 
-    result: ExpenseCategorization = await processor.categorize(1, "June 1 Return processed - Amazon -$25.00", "Return processed - Amazon")
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, description
+    )
 
-    assert result.category is ExpenseCategory.OTHER
-    assert result.policy_note is not None
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A description naming a specific subscription is not a merchant-only mixed retailer charge, so it keeps its category",
+    )
+
+
+async def test_Categorize_WhenAReturnComesFromAMerchantOnlyMixedRetailer_ThenReturnsOtherWithAPolicyNote() -> None:
+    source_line_number: int = create_source_line_number()
+    description: str = "Return processed - Amazon"
+    source_text: str = f"June 1 {description} -$25.00"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, ExpenseCategory.OTHER, ExpenseCategory.SHOPPING, MIXED_RETAILER_POLICY_NOTE
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(ExpenseCategory.SHOPPING)
+    )
+
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, description
+    )
+
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A return from a merchant-only mixed retailer is Other, like the charge it reverses",
+    )
 
 
 @pytest.mark.parametrize(
-    ("description", "expected"),
-    [("Shell", ExpenseCategory.TRANSPORTATION), ("Best Buy", ExpenseCategory.SHOPPING), ("Return processed - REI", ExpenseCategory.SHOPPING)],
+    ("description", "expected_expense_category", "expected_policy_note"),
+    [
+        ("Shell", ExpenseCategory.TRANSPORTATION, "Known expense merchant: Shell"),
+        ("Best Buy", ExpenseCategory.SHOPPING, "Known expense merchant: Best Buy"),
+        ("Return processed - REI", ExpenseCategory.SHOPPING, "Known expense merchant: REI"),
+    ],
 )
-async def test_known_expense_merchants_keep_their_explicit_catalog_category(description: str, expected: ExpenseCategory) -> None:
-    processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(StubSystemOneGateway(ExpenseCategory.OTHER))
+async def test_Categorize_WhenAKnownExpenseMerchantIsDescribed_ThenReturnsTheCatalogCategoryWithAPolicyNote(
+    description: str, expected_expense_category: ExpenseCategory, expected_policy_note: str
+) -> None:
+    source_line_number: int = create_source_line_number()
+    source_text: str = f"June 1 {description} $25.00"
+    expected_expense_categorization: ExpenseCategorization = create_expected_expense_categorization(
+        source_line_number, source_text, expected_expense_category, ExpenseCategory.OTHER, expected_policy_note
+    )
+    transaction_categorization_processor: TransactionCategorizationProcessor = TransactionCategorizationProcessor(
+        StubSystemOneGateway(ExpenseCategory.OTHER)
+    )
 
-    result: ExpenseCategorization = await processor.categorize(1, f"June 1 {description} $25.00", description)
+    actual_expense_categorization: ExpenseCategorization = await transaction_categorization_processor.categorize(
+        source_line_number, source_text, description
+    )
 
-    assert result.category is expected
-    assert result.model_category is ExpenseCategory.OTHER
-    assert result.policy_note is not None
+    ExpenseCategorizationAsserter.assert_expected_and_actual_are_equal(
+        expected_expense_categorization,
+        actual_expense_categorization,
+        "A known expense merchant takes its catalog category over the model's guess and names the merchant in the policy note",
+    )
 
 
-def test_standard_expense_category_catalog_defines_every_category_once() -> None:
-    assert tuple(definition.category for definition in STANDARD_EXPENSE_CATEGORY_CATALOG.definitions) == tuple(ExpenseCategory)
+def test_ExpenseCategoryCatalog_WhenTheStandardCatalogIsInspected_ThenDefinesEveryCategoryExactlyOnce() -> None:
+    expected_expense_categories: tuple[ExpenseCategory, ...] = tuple(ExpenseCategory)
+
+    actual_expense_categories: tuple[ExpenseCategory, ...] = tuple(
+        definition.category for definition in STANDARD_EXPENSE_CATEGORY_CATALOG.definitions
+    )
+
+    assert actual_expense_categories == expected_expense_categories, (
+        f"The standard catalog should define every expense category once, in declaration order; "
+        f"expected {expected_expense_categories!r}, got {actual_expense_categories!r}"
+    )

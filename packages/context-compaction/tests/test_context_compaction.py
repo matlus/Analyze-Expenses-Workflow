@@ -1,51 +1,69 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import secrets
 import subprocess
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
+from hashlib import sha256
 from pathlib import Path
-from typing import NoReturn, cast
+from typing import NoReturn, cast, final, override
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx2
 import pytest
 from context_compaction import (
+    MAXIMUM_TRIAL_RUNS,
     Compaction,
-    CompactionDecisionException,
+    CompactionContextEmptyException,
+    ContextCompactionBusinessBaseException,
     ContextCompactionConfigurationException,
     ContextCompactionConfigurationReadException,
     ContextCompactionTechnicalBaseException,
+    ContextPreparationInvalidException,
     DomainFacade,
-    JevCleanupException,
+    JevAnswerSetMismatchException,
+    JevClientCleanupException,
     JevDecisionBatch,
     JevGatewayBaseException,
-    JevRequestException,
-    JevResponseException,
+    JevRequestFailedException,
     JevSettings,
     MessageSegment,
     PreparedCompaction,
+    RetentionProbabilitiesInvalidException,
     RetentionQuestion,
-    RolloutException,
+    RolloutFileNotFoundException,
+    RolloutLineRangeInvalidException,
+    RolloutMessageInvalidException,
+    RolloutRecordInvalidJsonException,
+    RolloutResponsePayloadNotObjectException,
+    RolloutToolCallIdDuplicateException,
+    RolloutToolCallInvalidException,
+    RolloutToolOutputInvalidException,
+    RolloutToolOutputNonTextContentException,
+    RolloutWindowIncompleteException,
     ToolSegment,
     TrialCase,
+    TrialOptionsInvalidException,
+    TrialOutputOverwritesRolloutException,
 )
-from context_compaction.cli import main
+from context_compaction.cli import ValidatorTrialOutputPaths, main
+from context_compaction.managers import validators as compaction_validators
 from context_compaction.managers.configuration_providers import configuration_provider as compaction_configuration
 from context_compaction.managers.configuration_providers.validators.validator_jev_configuration import ValidatorJevConfiguration
 from context_compaction.managers.gateways.jev_gateway import JevGateway
 from context_compaction.managers.models.context_models import Variant
 from context_compaction.managers.models.records import JevState, TrialManifest
-from context_compaction.managers.processors.extractors.context_question_extractor import build_questions
-from context_compaction.managers.processors.extractors.context_state_extractor import build_state, redact
+from context_compaction.managers.processors.extractors.context_state_extractor import build_state
 from context_compaction.managers.service_locators.service_locator_production import ServiceLocatorProduction
 from pydantic import SecretStr
-from typesafe_sdk import AsyncTypeSafeClient, Noul, SystemOneResponse
+from typesafe_sdk import AsyncTypeSafeClient, Noul, SystemOneResponse, TypeSafeAPIConnectionError, TypeSafeError
 
-load_case = DomainFacade().load_context
-apply_decisions = DomainFacade().apply_saved_decisions
+load_context = DomainFacade().load_context
+apply_saved_decisions = DomainFacade().apply_saved_decisions
 
 
 @dataclass(frozen=True)
@@ -75,13 +93,90 @@ class ExpectedCompaction:
     probability_by_tool_id: Mapping[str, float]
 
 
-def assert_cli_diagnostic_matches(actual_text: str, expected_phrases: tuple[str, ...], expected_forbidden_phrases: tuple[str, ...]) -> None:
-    mismatches: list[str] = [f"missing expected phrase {phrase!r}" for phrase in expected_phrases if phrase not in actual_text]
-    mismatches.extend(f"forbidden phrase disclosed: length={len(phrase)}" for phrase in expected_forbidden_phrases if phrase in actual_text)
+@dataclass(frozen=True)
+class PreparedTrialObservation:
+    exit_code: int
+    live_results: list[object]
+    stale_compacted_file_exists: bool
+
+
+@dataclass(frozen=True)
+class RejectedTrialObservation:
+    exit_code: int
+    diagnostic: str
+    artifact_text_by_name: Mapping[str, str]
+
+
+@dataclass(frozen=True)
+class ExpectedRejectedTrial:
+    exit_code: int
+    diagnostic_phrases: tuple[str, ...]
+    forbidden_diagnostic_phrases: tuple[str, ...]
+    artifact_text_by_name: Mapping[str, str]
+
+
+def _diagnostic_mismatches(actual_diagnostic_text: str, expected_phrases: tuple[str, ...], expected_forbidden_phrases: tuple[str, ...]) -> list[str]:
+    mismatches: list[str] = [f"missing expected phrase {phrase!r}" for phrase in expected_phrases if phrase not in actual_diagnostic_text]
+    mismatches.extend(
+        f"forbidden phrase disclosed: length={len(phrase)}" for phrase in expected_forbidden_phrases if phrase in actual_diagnostic_text
+    )
+    return mismatches
+
+
+def assert_cli_diagnostic_matches(
+    actual_diagnostic_text: str, expected_phrases: tuple[str, ...], expected_forbidden_phrases: tuple[str, ...]
+) -> None:
+    mismatches: list[str] = _diagnostic_mismatches(actual_diagnostic_text, expected_phrases, expected_forbidden_phrases)
     assert not mismatches, f"CLI diagnostic: {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
 
 
-def _write_case(path: Path) -> RolloutScenario:
+def assert_prepared_trial_matches(
+    actual_prepared_trial_observation: PreparedTrialObservation,
+    expected_prepared_trial_observation: PreparedTrialObservation,
+    expected_scenario_name: str,
+) -> None:
+    mismatches: list[str] = []
+    if actual_prepared_trial_observation.exit_code != expected_prepared_trial_observation.exit_code:
+        mismatches.append(f"exit code: expected {expected_prepared_trial_observation.exit_code}; got {actual_prepared_trial_observation.exit_code}")
+    if actual_prepared_trial_observation.live_results != expected_prepared_trial_observation.live_results:
+        mismatches.append(
+            f"live results: expected {expected_prepared_trial_observation.live_results}; got {actual_prepared_trial_observation.live_results}"
+        )
+    if actual_prepared_trial_observation.stale_compacted_file_exists != expected_prepared_trial_observation.stale_compacted_file_exists:
+        mismatches.append(
+            f"stale compacted file exists: expected {expected_prepared_trial_observation.stale_compacted_file_exists}; "
+            f"got {actual_prepared_trial_observation.stale_compacted_file_exists}"
+        )
+    assert not mismatches, (
+        f"Preparing trial {expected_scenario_name} must exit cleanly, write no live results and remove stale compacted artifacts: "
+        f"{len(mismatches)} property mismatches:\n" + "\n".join(mismatches)
+    )
+
+
+def assert_rejected_trial_matches(
+    actual_rejected_trial_observation: RejectedTrialObservation, expected_rejected_trial: ExpectedRejectedTrial, expected_scenario_name: str
+) -> None:
+    mismatches: list[str] = []
+    if actual_rejected_trial_observation.exit_code != expected_rejected_trial.exit_code:
+        mismatches.append(f"exit code: expected {expected_rejected_trial.exit_code}; got {actual_rejected_trial_observation.exit_code}")
+    diagnostic_mismatches: list[str] = _diagnostic_mismatches(
+        actual_rejected_trial_observation.diagnostic,
+        expected_rejected_trial.diagnostic_phrases,
+        expected_rejected_trial.forbidden_diagnostic_phrases,
+    )
+    if diagnostic_mismatches:
+        mismatches.append("diagnostic: " + "; ".join(diagnostic_mismatches))
+    if actual_rejected_trial_observation.artifact_text_by_name != expected_rejected_trial.artifact_text_by_name:
+        mismatches.append(
+            f"artifacts: expected {expected_rejected_trial.artifact_text_by_name}; got {actual_rejected_trial_observation.artifact_text_by_name}"
+        )
+    assert not mismatches, (
+        f"Rejecting trial {expected_scenario_name} must fail with a safe diagnostic and leave earlier artifacts intact: "
+        f"{len(mismatches)} property mismatches:\n" + "\n".join(mismatches)
+    )
+
+
+def _write_case(source: Path) -> RolloutScenario:
     scenario_suffix: str = secrets.token_hex(4)
     session_id: int = secrets.randbelow(900_000) + 100_000
     first_call_id: str = secrets.token_hex(5)
@@ -112,7 +207,7 @@ def _write_case(path: Path) -> RolloutScenario:
         {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": poll_call_id, "output": continued_result}},
         {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"text": answer_text}]}},
     ]
-    path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+    _write_records(source, records)
     return RolloutScenario(user_text, first_result, continued_result, answer_text, "tool_2")
 
 
@@ -129,11 +224,13 @@ def assert_trial_case_matches(
             mismatches.append(f"user text: expected {expected_rollout_scenario.user_text!r}; got {actual_message_segment.text!r}")
         if actual_tool_segment.id != expected_rollout_scenario.tool_id:
             mismatches.append(f"expected tool ID {expected_rollout_scenario.tool_id}; got {actual_tool_segment.id}")
-        mismatches.extend(
-            f"tool result: expected phrase {expected_phrase!r}; got {actual_tool_segment.result!r}"
+        missing_result_phrases: list[str] = [
+            expected_phrase
             for expected_phrase in (expected_rollout_scenario.first_result, expected_rollout_scenario.continued_result)
             if expected_phrase not in actual_tool_segment.result
-        )
+        ]
+        if missing_result_phrases:
+            mismatches.append(f"tool result: expected phrases {missing_result_phrases}; got {actual_tool_segment.result!r}")
     if actual_held_out_answer != expected_rollout_scenario.answer_text:
         mismatches.append(f"held-out answer: expected {expected_rollout_scenario.answer_text!r}; got {actual_held_out_answer!r}")
     assert not mismatches, f"Trial case {expected_rollout_scenario.tool_id}: {len(mismatches)} property mismatches:\n" + "\n".join(mismatches)
@@ -166,11 +263,11 @@ def assert_jev_decision_batch_matches(
     )
 
 
-def assert_secret_is_redacted(actual_text: str, expected_secret_key: str, expected_redaction_marker: str) -> None:
+def assert_secret_is_redacted(actual_rendered_json: str, expected_secret_key: str, expected_redaction_marker: str) -> None:
     mismatches: list[str] = []
-    if expected_secret_key in actual_text:
+    if expected_secret_key in actual_rendered_json:
         mismatches.append("secret absent: expected True; got False")
-    if expected_redaction_marker not in actual_text:
+    if expected_redaction_marker not in actual_rendered_json:
         mismatches.append(f"marker {expected_redaction_marker!r} present: expected True; got False")
     assert not mismatches, f"Redaction of secret length {len(expected_secret_key)}: {len(mismatches)} property mismatches:\n" + "\n".join(mismatches)
 
@@ -200,21 +297,25 @@ def assert_jev_failure_matches(
 def test_Rollout_WhenQuotedPollCompletes_ThenResultJoinsAndAnswerIsHeldOut(tmp_path: Path) -> None:
     source: Path = tmp_path / "rollout.jsonl"
     expected_rollout_scenario: RolloutScenario = _write_case(source)
-    expected_question_ids: set[str] = {expected_rollout_scenario.tool_id}
+    expected_preparation_view: tuple[bool, set[str]] = (False, {expected_rollout_scenario.tool_id})
+    domain_facade: DomainFacade = DomainFacade()
 
-    actual_trial_case: TrialCase = load_case(source, 1, 6)
-    jev_state: JevState = build_state(actual_trial_case.segments, actual_trial_case.current_goal, "full")
-    retention_questions_by_tool_id: Mapping[str, RetentionQuestion] = build_questions(actual_trial_case.segments, "current")
+    actual_trial_case: TrialCase = domain_facade.load_context(source, 1, 6)
+    prepared_compaction: PreparedCompaction = domain_facade.prepare(actual_trial_case, "full", "current")
+    retention_question_by_tool_id: Mapping[str, RetentionQuestion] = prepared_compaction.questions
+    actual_preparation_view: tuple[bool, set[str]] = (
+        expected_rollout_scenario.answer_text in json.dumps(asdict(prepared_compaction.jev_state)),
+        set(retention_question_by_tool_id),
+    )
 
     assert_trial_case_matches(actual_trial_case.segments, actual_trial_case.held_out_answer, expected_rollout_scenario)
-    assert expected_rollout_scenario.answer_text not in json.dumps(asdict(jev_state))
-    assert set(retention_questions_by_tool_id) == expected_question_ids
+    assert actual_preparation_view == expected_preparation_view, "the held-out answer must stay out of the state; one question per tool"
 
 
 def test_Compaction_WhenToolIsDropped_ThenUserRequestRemainsAndReductionIsMeasured(tmp_path: Path) -> None:
     source: Path = tmp_path / "rollout.jsonl"
     rollout_scenario: RolloutScenario = _write_case(source)
-    trial_case: TrialCase = load_case(source, 1, 6)
+    trial_case: TrialCase = load_context(source, 1, 6)
     expected_retained_ids: list[str] = [trial_case.segments[0].id]
     expected_retained_characters: int = len(rollout_scenario.user_text)
     original_characters: int = sum(segment.characters for segment in trial_case.segments)
@@ -225,7 +326,7 @@ def test_Compaction_WhenToolIsDropped_ThenUserRequestRemainsAndReductionIsMeasur
         tuple(expected_retained_ids), expected_retained_characters, expected_reduction_percent, expected_probability_by_tool_id
     )
 
-    actual_compaction: Compaction = apply_decisions(trial_case.segments, {rollout_scenario.tool_id: 0.1}, 0.5)
+    actual_compaction: Compaction = apply_saved_decisions(trial_case.segments, {rollout_scenario.tool_id: 0.1}, 0.5)
 
     assert_compaction_matches(actual_compaction, expected_compaction)
 
@@ -233,11 +334,11 @@ def test_Compaction_WhenToolIsDropped_ThenUserRequestRemainsAndReductionIsMeasur
 def test_Compaction_WhenToolDecisionIsMissing_ThenDomainErrorNamesExpectedTool(tmp_path: Path) -> None:
     source: Path = tmp_path / "rollout.jsonl"
     rollout_scenario: RolloutScenario = _write_case(source)
-    trial_case: TrialCase = load_case(source, 1, 6)
+    trial_case: TrialCase = load_context(source, 1, 6)
     expected_message_phrase: str = "complete tool-event"
 
-    with pytest.raises(CompactionDecisionException, match=expected_message_phrase) as error:
-        apply_decisions(trial_case.segments, {}, 0.5)
+    with pytest.raises(RetentionProbabilitiesInvalidException, match=expected_message_phrase) as error:
+        apply_saved_decisions(trial_case.segments, {}, 0.5)
 
     assert rollout_scenario.tool_id in str(error.value)
 
@@ -245,13 +346,13 @@ def test_Compaction_WhenToolDecisionIsMissing_ThenDomainErrorNamesExpectedTool(t
 def test_Compaction_WhenProbabilityIsInvalid_ThenDiagnosticNamesRejectedValue(tmp_path: Path) -> None:
     source: Path = tmp_path / "rollout.jsonl"
     rollout_scenario: RolloutScenario = _write_case(source)
-    trial_case: TrialCase = load_case(source, 1, 6)
+    trial_case: TrialCase = load_context(source, 1, 6)
     invalid_probability: float = 1.2
     expected_diagnostic: str = repr({rollout_scenario.tool_id: invalid_probability})
     expected_message_phrase: str = "probabilities do not match"
 
-    with pytest.raises(CompactionDecisionException, match=expected_message_phrase) as error:
-        apply_decisions(trial_case.segments, {rollout_scenario.tool_id: invalid_probability}, 0.5)
+    with pytest.raises(RetentionProbabilitiesInvalidException, match=expected_message_phrase) as error:
+        apply_saved_decisions(trial_case.segments, {rollout_scenario.tool_id: invalid_probability}, 0.5)
 
     assert expected_diagnostic in str(error.value)
 
@@ -294,7 +395,7 @@ def test_Rollout_WhenPollIsInterleaved_ThenItDoesNotAttachToWrongCommand(tmp_pat
     ]
     source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
 
-    trial_case: TrialCase = load_case(source, 1, 8)
+    trial_case: TrialCase = load_context(source, 1, 8)
     actual_tool_events: list[tuple[str, str]] = [(segment.id, segment.result) for segment in trial_case.segments if isinstance(segment, ToolSegment)]
 
     assert actual_tool_events == expected_tool_events
@@ -303,7 +404,7 @@ def test_Rollout_WhenPollIsInterleaved_ThenItDoesNotAttachToWrongCommand(tmp_pat
 def test_Redaction_WhenOpenRouterKeyAppears_ThenJevStateHidesIt(tmp_path: Path) -> None:
     source: Path = tmp_path / "rollout.jsonl"
     _write_case(source)
-    trial_case: TrialCase = load_case(source, 1, 6)
+    trial_case: TrialCase = load_context(source, 1, 6)
     secret_key: str = "sk-or-v1-" + secrets.token_hex(12)
     expected_redaction_marker: str = "[REDACTED]"
     changed_trial_case: TrialCase = replace(
@@ -311,7 +412,7 @@ def test_Redaction_WhenOpenRouterKeyAppears_ThenJevStateHidesIt(tmp_path: Path) 
         segments=(replace(trial_case.segments[0], text=f"OPEN_ROUTER_KEY={secret_key}"), trial_case.segments[1]),
     )
 
-    rendered_state: str = json.dumps(asdict(build_state(changed_trial_case.segments, changed_trial_case.current_goal, "full")))
+    rendered_state: str = json.dumps(asdict(DomainFacade().prepare(changed_trial_case, "full").jev_state))
 
     assert_secret_is_redacted(rendered_state, secret_key, expected_redaction_marker)
 
@@ -333,35 +434,35 @@ def test_Redaction_WhenExcerptCutsCredentialLabel_ThenTheValueIsStillHidden() ->
 def test_Redaction_WhenBareKeyAppears_ThenRequestAndContextHideIt(tmp_path: Path, prefix: str) -> None:
     source: Path = tmp_path / "rollout.jsonl"
     _write_case(source)
-    trial_case: TrialCase = load_case(source, 1, 6)
+    trial_case: TrialCase = load_context(source, 1, 6)
     secret_key: str = prefix + secrets.token_hex(12)
+    expected_redaction_marker: str = "[REDACTED]"
     changed_trial_case: TrialCase = replace(
         trial_case,
         segments=(replace(trial_case.segments[0], text=f"Check {secret_key}"), replace(trial_case.segments[1], result=f"Result {secret_key}")),
     )
+    domain_facade: DomainFacade = DomainFacade()
 
-    rendered_request: str = json.dumps(asdict(build_state(changed_trial_case.segments, changed_trial_case.current_goal, "full")))
-    compaction: Compaction = apply_decisions(changed_trial_case.segments, {"tool_2": 0.9}, 0.5)
-    saved_text: str = json.dumps(
-        [redact(segment.text) + (redact(segment.result) if isinstance(segment, ToolSegment) else "") for segment in compaction.retained]
-    )
+    rendered_request: str = json.dumps(asdict(domain_facade.prepare(changed_trial_case, "full").jev_state))
+    compaction: Compaction = domain_facade.apply_saved_decisions(changed_trial_case.segments, {"tool_2": 0.9}, 0.5)
+    saved_context_json: str = json.dumps([asdict(entry) for entry in compaction.context])
 
-    assert secret_key not in rendered_request
-    assert secret_key not in saved_text
+    assert_secret_is_redacted(rendered_request, secret_key, expected_redaction_marker)
+    assert_secret_is_redacted(saved_context_json, secret_key, expected_redaction_marker)
 
 
-def test_Rollout_WhenImageIsSelected_ThenItRaisesRolloutError(tmp_path: Path) -> None:
+def test_Rollout_WhenImageIsSelected_ThenItRaisesMessageInvalidError(tmp_path: Path) -> None:
     FILE_ENCODING: str = "utf-8"
     source: Path = tmp_path / "rollout.jsonl"
     _write_case(source)
     records: list[dict[str, object]] = [json.loads(line) for line in source.read_text(encoding=FILE_ENCODING).splitlines()]
-    first: dict[str, object] = cast(dict[str, object], records[0]["payload"])
-    first["content"] = [{"type": "input_text", "text": "Does HTTPS work?"}, {"type": "input_image", "image_url": "data:ignored"}]
+    message_payload: dict[str, object] = cast(dict[str, object], records[0]["payload"])
+    message_payload["content"] = [{"type": "input_text", "text": "Does HTTPS work?"}, {"type": "input_image", "image_url": "data:ignored"}]
     source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding=FILE_ENCODING)
     expected_message_phrase: str = "unsupported nontext content"
 
-    with pytest.raises(RolloutException, match=expected_message_phrase):
-        load_case(source, 1, 6)
+    with pytest.raises(RolloutMessageInvalidException, match=expected_message_phrase):
+        load_context(source, 1, 6)
 
 
 @pytest.mark.parametrize(("field_name", "invalid_field"), [("name", None), ("input", 7)])
@@ -375,8 +476,8 @@ def test_Rollout_WhenToolCallFieldsAreMalformed_ThenItRejectsTheRecord(tmp_path:
     source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding=FILE_ENCODING)
     expected_message_phrase: str = "needs string name and input"
 
-    with pytest.raises(RolloutException, match=expected_message_phrase):
-        load_case(source, 1, 6)
+    with pytest.raises(RolloutToolCallInvalidException, match=expected_message_phrase):
+        load_context(source, 1, 6)
 
 
 def test_Excerpt_WhenGoalTermsTie_ThenDifferentHashSeedsProduceTheSameState() -> None:
@@ -473,33 +574,52 @@ async def test_JevGateway_WhenAnswerIsMissing_ThenItRaisesDomainError() -> None:
     )
 
     async with JevGateway(jev_settings, cast("AsyncTypeSafeClient", client)) as jev_gateway:
-        with pytest.raises(JevResponseException) as error:
+        with pytest.raises(JevAnswerSetMismatchException) as error:
             await jev_gateway.decide(jev_state, {requested_question_id: RetentionQuestion(instructions)})
 
     assert_jev_failure_matches(error.value, expected_jev_failure_expectation)
 
 
 @pytest.mark.asyncio
-async def test_JevGateway_WhenProviderRequestFails_ThenItRaisesRequestErrorWithSafeContext() -> None:
+async def test_JevGateway_WhenProviderCannotBeReached_ThenItRaisesRequestErrorWithSafeContext() -> None:
     api_key: str = f"test-only-{secrets.token_hex(8)}"
     model: str = f"jev-{secrets.token_hex(4)}"
     question_id: str = f"tool_{secrets.token_hex(4)}"
-    runtime_error: RuntimeError = RuntimeError(f"provider failure containing {api_key}")
+    connection_error: TypeSafeAPIConnectionError = TypeSafeAPIConnectionError(f"Connection error containing {api_key}")
     client: MagicMock = MagicMock()
-    client.system_one = AsyncMock(side_effect=runtime_error)
+    client.system_one = AsyncMock(side_effect=connection_error)
     client.aclose = AsyncMock()
     jev_settings: JevSettings = JevSettings(SecretStr(api_key), f"https://{secrets.token_hex(4)}.invalid", model)
     jev_state: JevState = JevState(current_goal=secrets.token_hex(4), timeline=())
     retention_questions: dict[str, RetentionQuestion] = {question_id: RetentionQuestion(secrets.token_hex(4))}
     expected_jev_failure_expectation: JevFailureExpectation = JevFailureExpectation(
-        operation="system_one", model=model, detail_value_by_name={}, message_phrase="request failed", secret_key=api_key, cause=runtime_error
+        operation="system_one", model=model, detail_value_by_name={}, message_phrase="request failed", secret_key=api_key, cause=connection_error
     )
 
     async with JevGateway(jev_settings, cast("AsyncTypeSafeClient", client)) as jev_gateway:
-        with pytest.raises(JevRequestException) as error:
+        with pytest.raises(JevRequestFailedException) as error:
             await jev_gateway.decide(jev_state, retention_questions)
 
     assert_jev_failure_matches(error.value, expected_jev_failure_expectation)
+
+
+@pytest.mark.asyncio
+async def test_JevGateway_WhenRequestCannotBeEncodedLocally_ThenTheSdkErrorIsNotReportedAsAProviderFailure() -> None:
+    model: str = f"jev-{secrets.token_hex(4)}"
+    question_id: str = f"tool_{secrets.token_hex(4)}"
+    expected_type_safe_error: TypeSafeError = TypeSafeError("The request body could not be encoded as JSON")
+    client: MagicMock = MagicMock()
+    client.system_one = AsyncMock(side_effect=expected_type_safe_error)
+    client.aclose = AsyncMock()
+    jev_settings: JevSettings = JevSettings(SecretStr(f"test-only-{secrets.token_hex(8)}"), f"https://{secrets.token_hex(4)}.invalid", model)
+    jev_state: JevState = JevState(current_goal=secrets.token_hex(4), timeline=())
+    retention_questions: dict[str, RetentionQuestion] = {question_id: RetentionQuestion(secrets.token_hex(4))}
+
+    async with JevGateway(jev_settings, cast("AsyncTypeSafeClient", client)) as jev_gateway:
+        with pytest.raises(TypeSafeError) as exception_info:
+            await jev_gateway.decide(jev_state, retention_questions)
+
+    assert exception_info.value is expected_type_safe_error, "a local encoding defect must surface unchanged, not as a provider failure"
 
 
 def test_Rollout_WhenOutputsArriveOutOfOrder_ThenTimelineTracksCompletion(tmp_path: Path) -> None:
@@ -523,7 +643,7 @@ def test_Rollout_WhenOutputsArriveOutOfOrder_ThenTimelineTracksCompletion(tmp_pa
     ]
     source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
 
-    trial_case: TrialCase = load_case(source, 1, 6)
+    trial_case: TrialCase = load_context(source, 1, 6)
     actual_tool_events: list[tuple[str, str]] = [(segment.id, segment.result) for segment in trial_case.segments if isinstance(segment, ToolSegment)]
 
     assert actual_tool_events == expected_tool_events
@@ -558,7 +678,7 @@ async def test_JevGateway_WhenCleanupFails_ThenDomainErrorIsRaisedAndCloseCanRet
     )
     jev_gateway: JevGateway = JevGateway(jev_settings, cast("AsyncTypeSafeClient", client))
 
-    with pytest.raises(JevCleanupException) as error:
+    with pytest.raises(JevClientCleanupException) as error:
         await jev_gateway.close()
     await jev_gateway.close()
 
@@ -576,8 +696,8 @@ def test_Cli_WhenPreparingExistingDirectory_ThenStaleLiveArtifactsAreRemoved(tmp
     live_results_file: Path = output_dir / "live_results.json"
     stale_compacted_file.write_text(secrets.token_hex(6), encoding=FILE_ENCODING)
     live_results_file.write_text(secrets.token_hex(6), encoding=FILE_ENCODING)
-    expected_live_results: list[object] = []
-    expected_exit_code: int = 0
+    expected_prepared_trial_observation: PreparedTrialObservation = PreparedTrialObservation(0, [], False)
+    expected_scenario_name: str = "preparing into a directory with stale live artifacts"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -586,10 +706,11 @@ def test_Cli_WhenPreparingExistingDirectory_ThenStaleLiveArtifactsAreRemoved(tmp
 
     actual_exit_code: int = main()
     actual_live_results: list[object] = json.loads(live_results_file.read_text(encoding=FILE_ENCODING))
+    actual_prepared_trial_observation: PreparedTrialObservation = PreparedTrialObservation(
+        actual_exit_code, actual_live_results, stale_compacted_file.exists()
+    )
 
-    assert actual_exit_code == expected_exit_code
-    assert actual_live_results == expected_live_results
-    assert not stale_compacted_file.exists()
+    assert_prepared_trial_matches(actual_prepared_trial_observation, expected_prepared_trial_observation, expected_scenario_name)
 
 
 def test_Cli_WhenSettingsParserFails_ThenDomainErrorLeavesEarlierTrialFilesIntact(
@@ -602,14 +723,18 @@ def test_Cli_WhenSettingsParserFails_ThenDomainErrorLeavesEarlierTrialFilesIntac
     env_file.write_text(secrets.token_hex(6), encoding=FILE_ENCODING)
     output_dir: Path = tmp_path / "trial"
     output_dir.mkdir()
-    prior_results_file: Path = output_dir / "live_results.json"
+    LIVE_RESULTS_ARTIFACT_NAME: str = "live_results.json"
+    prior_results_file: Path = output_dir / LIVE_RESULTS_ARTIFACT_NAME
     prior_result_text: str = f"prior result {secrets.token_hex(4)}"
     prior_results_file.write_text(prior_result_text, encoding=FILE_ENCODING)
-    expected_exit_code: int = 1
-    expected_diagnostic: str = "Could not read Jev settings"
-    expected_diagnostic_phrases: tuple[str, ...] = (expected_diagnostic, str(env_file))
     parser_failure_detail: str = secrets.token_hex(8)
-    forbidden_diagnostic_phrases: tuple[str, ...] = (parser_failure_detail,)
+    expected_rejected_trial: ExpectedRejectedTrial = ExpectedRejectedTrial(
+        1,
+        ("Could not read Jev settings", str(env_file), "caused by builtins.ValueError"),
+        (parser_failure_detail,),
+        {LIVE_RESULTS_ARTIFACT_NAME: prior_result_text},
+    )
+    expected_scenario_name: str = "with an unreadable Jev settings file"
 
     def fail_to_parse(_: Path) -> NoReturn:
         raise ValueError(parser_failure_detail)
@@ -635,40 +760,41 @@ def test_Cli_WhenSettingsParserFails_ThenDomainErrorLeavesEarlierTrialFilesIntac
     )
 
     actual_exit_code: int = main()
-    error_text: str = capsys.readouterr().err
+    actual_rejected_trial_observation: RejectedTrialObservation = RejectedTrialObservation(
+        actual_exit_code, capsys.readouterr().err, {LIVE_RESULTS_ARTIFACT_NAME: prior_results_file.read_text(encoding=FILE_ENCODING)}
+    )
 
-    assert actual_exit_code == expected_exit_code
-    assert_cli_diagnostic_matches(error_text, expected_diagnostic_phrases, forbidden_diagnostic_phrases)
-    assert prior_results_file.read_text(encoding=FILE_ENCODING) == prior_result_text
+    assert_rejected_trial_matches(actual_rejected_trial_observation, expected_rejected_trial, expected_scenario_name)
 
 
 @pytest.mark.parametrize("artifact_name", ["manifest.json", "live_results.json", "compacted_current_1.json"])
 def test_Cli_WhenSourceIsAnOutputPath_ThenRejectsBeforeChangingTheSource(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], artifact_name: str
 ) -> None:
+    FILE_ENCODING: str = "utf-8"
     source: Path = tmp_path / artifact_name
     _write_case(source)
-    expected_source_bytes: bytes = source.read_bytes()
-    expected_exit_code: int = 1
-    expected_phrases: tuple[str, ...] = ("original rollout", str(source))
-    forbidden_phrases: tuple[str, ...] = ()
+    expected_rejected_trial: ExpectedRejectedTrial = ExpectedRejectedTrial(
+        1, ("original rollout", str(source)), (), {source.name: source.read_text(encoding=FILE_ENCODING)}
+    )
+    expected_scenario_name: str = f"whose source is the planned output {artifact_name}"
     monkeypatch.setattr(
         sys, "argv", ["context-compaction", str(source), "--start-line", "1", "--cutoff-line", "6", "--output-dir", str(tmp_path), "--runs", "0"]
     )
 
     actual_exit_code: int = main()
-    actual_source_bytes: bytes = source.read_bytes()
-    actual_diagnostic: str = capsys.readouterr().err
+    actual_rejected_trial_observation: RejectedTrialObservation = RejectedTrialObservation(
+        actual_exit_code, capsys.readouterr().err, {source.name: source.read_text(encoding=FILE_ENCODING)}
+    )
 
-    assert actual_exit_code == expected_exit_code
-    assert actual_source_bytes == expected_source_bytes
-    assert_cli_diagnostic_matches(actual_diagnostic, expected_phrases, forbidden_phrases)
+    assert_rejected_trial_matches(actual_rejected_trial_observation, expected_rejected_trial, expected_scenario_name)
 
 
 @pytest.mark.parametrize("link_kind", ["hard", "symbolic"])
 def test_Cli_WhenAnOutputAliasesTheSource_ThenRejectsBeforeChangingTheSource(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], link_kind: str
 ) -> None:
+    FILE_ENCODING: str = "utf-8"
     source: Path = tmp_path / "rollout.jsonl"
     _write_case(source)
     aliased_output: Path = tmp_path / "manifest.json"
@@ -679,27 +805,27 @@ def test_Cli_WhenAnOutputAliasesTheSource_ThenRejectsBeforeChangingTheSource(
             aliased_output.symlink_to(source)
         except OSError:
             pytest.skip("This Windows host does not permit creating symbolic links.")
-    expected_source_bytes: bytes = source.read_bytes()
-    expected_exit_code: int = 1
-    expected_phrases: tuple[str, ...] = ("original rollout", str(aliased_output))
-    forbidden_phrases: tuple[str, ...] = ()
+    expected_rejected_trial: ExpectedRejectedTrial = ExpectedRejectedTrial(
+        1, ("original rollout", str(aliased_output)), (), {source.name: source.read_text(encoding=FILE_ENCODING)}
+    )
+    expected_scenario_name: str = f"whose planned output is a {link_kind} link to the source"
     monkeypatch.setattr(
         sys, "argv", ["context-compaction", str(source), "--start-line", "1", "--cutoff-line", "6", "--output-dir", str(tmp_path), "--runs", "0"]
     )
 
     actual_exit_code: int = main()
-    actual_diagnostic: str = capsys.readouterr().err
+    actual_rejected_trial_observation: RejectedTrialObservation = RejectedTrialObservation(
+        actual_exit_code, capsys.readouterr().err, {source.name: source.read_text(encoding=FILE_ENCODING)}
+    )
 
-    assert actual_exit_code == expected_exit_code
-    assert source.read_bytes() == expected_source_bytes
-    assert_cli_diagnostic_matches(actual_diagnostic, expected_phrases, forbidden_phrases)
+    assert_rejected_trial_matches(actual_rejected_trial_observation, expected_rejected_trial, expected_scenario_name)
 
 
 @pytest.mark.parametrize("embedded_json", [False, True])
 def test_Compaction_WhenToolContainsAQuotedCredential_ThenRequestAndRetainedContextAreRedacted(tmp_path: Path, embedded_json: bool) -> None:
     source: Path = tmp_path / "rollout.jsonl"
     rollout_scenario: RolloutScenario = _write_case(source)
-    trial_case: TrialCase = load_case(source, 1, 6)
+    trial_case: TrialCase = load_context(source, 1, 6)
     secret_key: str = f"opaque-{secrets.token_hex(16)}"
     credential_json: str = json.dumps({"TYPESAFE_API_KEY": secret_key})
     credential_text: str = json.dumps(credential_json) if embedded_json else credential_json
@@ -735,8 +861,8 @@ def test_Rollout_WhenMessageSchemaIsInvalid_ThenRejectsBeforeReturningDomainCont
     source.write_text("\n".join(json.dumps(record) for record in rollout_records) + "\n", encoding=FILE_ENCODING)
     expected_message_phrase: str = "invalid message shape"
 
-    with pytest.raises(RolloutException, match=expected_message_phrase):
-        load_case(source, 1, 6)
+    with pytest.raises(RolloutMessageInvalidException, match=expected_message_phrase):
+        load_context(source, 1, 6)
 
 
 def test_Configuration_WhenFileReaderFails_ThenTechnicalErrorPreservesSourceAndCause(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -770,28 +896,6 @@ def test_Configuration_WhenJevSettingsAreMissing_ThenReportsATechnicalFailureFor
     assert actual_is_technical == expected_is_technical, "missing configuration is ours to fix, so it must be a technical exception"
 
 
-@dataclass(frozen=True)
-class RejectedTrialObservation:
-    exit_code: int
-    diagnostic: str
-    artifact_text_by_name: Mapping[str, str]
-
-
-def assert_rejected_trial_matches(
-    actual_rejected_trial_observation: RejectedTrialObservation, expected_rejected_trial_observation: RejectedTrialObservation
-) -> None:
-    mismatches: list[str] = []
-    if actual_rejected_trial_observation.exit_code != expected_rejected_trial_observation.exit_code:
-        mismatches.append(f"exit code: expected {expected_rejected_trial_observation.exit_code}; got {actual_rejected_trial_observation.exit_code}")
-    if expected_rejected_trial_observation.diagnostic not in actual_rejected_trial_observation.diagnostic:
-        mismatches.append(
-            f"diagnostic: expected phrase {expected_rejected_trial_observation.diagnostic!r}; got {actual_rejected_trial_observation.diagnostic!r}"
-        )
-    if actual_rejected_trial_observation.artifact_text_by_name != expected_rejected_trial_observation.artifact_text_by_name:
-        mismatches.append("previous artifacts must retain their complete original content")
-    assert not mismatches, "Rejected trial: " + "\n".join(mismatches)
-
-
 @pytest.mark.parametrize("port_text", ["garbage", "65536"])
 def test_Cli_WhenUrlPortIsInvalid_ThenRejectsBeforeTransportCreationAndPreservesArtifacts(
     port_text: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -815,7 +919,8 @@ def test_Cli_WhenUrlPortIsInvalid_ThenRejectsBeforeTransportCreationAndPreserves
     expected_artifact_text: str
     for artifact_name, expected_artifact_text in expected_artifact_text_by_name.items():
         (output_dir / artifact_name).write_text(expected_artifact_text, encoding=FILE_ENCODING)
-    expected_rejected_trial_observation: RejectedTrialObservation = RejectedTrialObservation(1, "valid HTTP(S) URL", expected_artifact_text_by_name)
+    expected_rejected_trial: ExpectedRejectedTrial = ExpectedRejectedTrial(1, ("valid HTTP(S) URL",), (api_key,), expected_artifact_text_by_name)
+    expected_scenario_name: str = f"with Jev URL port {port_text!r}"
 
     def reject_transport_creation(_: ServiceLocatorProduction) -> NoReturn:
         raise AssertionError("Invalid configuration must be rejected before transport creation")
@@ -847,7 +952,76 @@ def test_Cli_WhenUrlPortIsInvalid_ThenRejectsBeforeTransportCreationAndPreserves
     actual_rejected_trial_observation: RejectedTrialObservation = RejectedTrialObservation(
         actual_exit_code, actual_diagnostic, actual_artifact_text_by_name
     )
-    assert_rejected_trial_matches(actual_rejected_trial_observation, expected_rejected_trial_observation)
+    assert_rejected_trial_matches(actual_rejected_trial_observation, expected_rejected_trial, expected_scenario_name)
+
+
+@final
+class RejectingJevTransport(httpx2.AsyncBaseTransport):
+    def __init__(self, status_code: int, provider_message: str) -> None:
+        self._status_code: int = status_code
+        self._provider_message: str = provider_message
+
+    @override
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            self._status_code, content=json.dumps({"error": {"message": self._provider_message}}), headers={"content-type": "application/json"}
+        )
+
+
+def test_Cli_WhenJevRejectsTheLiveRequest_ThenDiagnosticNamesTheProviderFailureWithoutTheKey(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source: Path = tmp_path / "rollout.jsonl"
+    _write_case(source)
+    env_file: Path = tmp_path / "jev.env"
+    api_key: str = secrets.token_hex(16)
+    env_file.write_text(
+        f"OPEN_ROUTER_KEY={api_key}\nOPEN_ROUTER_BASE_URL=https://jev.invalid/api\nJEV_MODEL=jev-{secrets.token_hex(4)}\n", encoding="utf-8"
+    )
+    output_dir: Path = tmp_path / "trial"
+    provider_detail: str = f"key not recognised {secrets.token_hex(4)}"
+    rejecting_jev_transport: RejectingJevTransport = RejectingJevTransport(401, f"{provider_detail}: {api_key}")
+    expected_rejected_trial: ExpectedRejectedTrial = ExpectedRejectedTrial(
+        1,
+        (
+            "JevRequestRejectedException",
+            "Jev via OpenRouter rejected",
+            "HTTP 401",
+            provider_detail,
+            "caused by typesafe_sdk._core.errors.TypeSafeAuthenticationError",
+        ),
+        (api_key,),
+        {},
+    )
+    expected_scenario_name: str = "whose live Jev request is rejected with HTTP 401"
+
+    def make_rejecting_transport(_: ServiceLocatorProduction) -> httpx2.AsyncBaseTransport:
+        return rejecting_jev_transport
+
+    monkeypatch.setattr(ServiceLocatorProduction, "make_jev_http_transport", make_rejecting_transport)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "context-compaction",
+            str(source),
+            "--start-line",
+            "1",
+            "--cutoff-line",
+            "6",
+            "--output-dir",
+            str(output_dir),
+            "--env-file",
+            str(env_file),
+            "--runs",
+            "1",
+        ],
+    )
+
+    actual_exit_code: int = main()
+    actual_rejected_trial_observation: RejectedTrialObservation = RejectedTrialObservation(actual_exit_code, capsys.readouterr().err, {})
+
+    assert_rejected_trial_matches(actual_rejected_trial_observation, expected_rejected_trial, expected_scenario_name)
 
 
 @pytest.mark.parametrize("operation_name", ["prepare", "describe_context"])
@@ -859,7 +1033,7 @@ def test_Preparation_WhenContextHasZeroCharacters_ThenRejectsWithDomainDiagnosti
     domain_facade: DomainFacade = DomainFacade()
     trial_case: TrialCase = replace(domain_facade.load_context(source, 1, 6), segments=(ToolSegment(tool_id, "", ""),))
     preparation_operation: Callable[[TrialCase], object] = domain_facade.prepare if operation_name == "prepare" else domain_facade.describe_context
-    with pytest.raises(CompactionDecisionException, match=expected_message_phrase):
+    with pytest.raises(ContextPreparationInvalidException, match=expected_message_phrase):
         preparation_operation(trial_case)
 
 
@@ -909,3 +1083,214 @@ def test_Cli_WhenPreparingTrial_ThenJsonRetainsExternalFieldNames(tmp_path: Path
     actual_manifest: object = json.loads((output_dir / "manifest.json").read_text(encoding=FILE_ENCODING))
 
     assert (actual_exit_code, actual_requests, actual_manifest) == (expected_exit_code, expected_requests, expected_manifest)
+
+
+def _read_records(source: Path) -> list[dict[str, object]]:
+    return [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines()]
+
+
+def _write_records(source: Path, records: Iterable[dict[str, object]]) -> None:
+    source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(("start_line", "cutoff_line"), [(0, 6), (6, 6), (6, 2)])
+def test_Rollout_WhenLineRangeIsInvalid_ThenRejectsBeforeReadingTheFile(tmp_path: Path, start_line: int, cutoff_line: int) -> None:
+    expected_message_phrase: str = f"start={start_line}, cutoff={cutoff_line}"
+
+    with pytest.raises(RolloutLineRangeInvalidException, match=expected_message_phrase):
+        load_context(tmp_path / "never-read.jsonl", start_line, cutoff_line)
+
+
+def test_Rollout_WhenFileIsMissing_ThenNamesTheMissingSource(tmp_path: Path) -> None:
+    source: Path = tmp_path / f"missing-{secrets.token_hex(4)}.jsonl"
+    expected_message_phrase: str = "Codex rollout does not exist"
+
+    with pytest.raises(RolloutFileNotFoundException, match=expected_message_phrase) as exception_info:
+        load_context(source, 1, 6)
+
+    assert exception_info.value.source == source
+
+
+def test_Rollout_WhenRecordIsNotJson_ThenNamesTheLineAndSource(tmp_path: Path) -> None:
+    FILE_ENCODING: str = "utf-8"
+    source: Path = tmp_path / "rollout.jsonl"
+    _write_case(source)
+    lines: list[str] = source.read_text(encoding=FILE_ENCODING).splitlines()
+    lines[2] = "{" + secrets.token_hex(4)
+    source.write_text("\n".join(lines) + "\n", encoding=FILE_ENCODING)
+    expected_diagnostic: tuple[Path, int] = (source, 3)
+    expected_message_phrase: str = "Invalid JSONL record at line"
+
+    with pytest.raises(RolloutRecordInvalidJsonException, match=expected_message_phrase) as exception_info:
+        load_context(source, 1, 6)
+
+    assert (exception_info.value.source, exception_info.value.line_number) == expected_diagnostic
+
+
+def test_Rollout_WhenRecordIsNotUtf8_ThenNamesTheLineAndSource(tmp_path: Path) -> None:
+    source: Path = tmp_path / "rollout.jsonl"
+    _write_case(source)
+    raw_lines: list[bytes] = source.read_bytes().splitlines()
+    raw_lines[2] = b'{"type": "response_item", "x": "\xff"}'
+    source.write_bytes(b"\n".join(raw_lines) + b"\n")
+    expected_diagnostic: tuple[Path, int] = (source, 3)
+    expected_message_phrase: str = "Invalid JSONL record at line"
+
+    with pytest.raises(RolloutRecordInvalidJsonException, match=expected_message_phrase) as exception_info:
+        load_context(source, 1, 6)
+
+    assert (exception_info.value.source, exception_info.value.line_number) == expected_diagnostic
+
+
+def test_Rollout_WhenSelectedPayloadIsNotAnObject_ThenNamesTheLine(tmp_path: Path) -> None:
+    source: Path = tmp_path / "rollout.jsonl"
+    _write_case(source)
+    records: list[dict[str, object]] = _read_records(source)
+    records[1]["payload"] = secrets.token_hex(4)
+    _write_records(source, records)
+    expected_diagnostic: tuple[Path, int] = (source, 2)
+    expected_message_phrase: str = "needs an object payload"
+
+    with pytest.raises(RolloutResponsePayloadNotObjectException, match=expected_message_phrase) as exception_info:
+        load_context(source, 1, 6)
+
+    assert (exception_info.value.source, exception_info.value.line_number) == expected_diagnostic
+
+
+def test_Rollout_WhenToolCallIdRepeats_ThenRejectsWithoutDisclosingTheId(tmp_path: Path) -> None:
+    source: Path = tmp_path / "rollout.jsonl"
+    _write_case(source)
+    records: list[dict[str, object]] = _read_records(source)
+    first_call_id: object = cast(dict[str, object], records[1]["payload"])["call_id"]
+    cast(dict[str, object], records[3]["payload"])["call_id"] = first_call_id
+    _write_records(source, records)
+    expected_call_fingerprint: str = sha256(str(first_call_id).encode("utf-8")).hexdigest()[:12]
+    expected_duplicate_diagnostic: tuple[int, bool, str] = (4, False, expected_call_fingerprint)
+    expected_message_phrase: str = "Duplicate tool call ID at line"
+
+    with pytest.raises(RolloutToolCallIdDuplicateException, match=expected_message_phrase) as exception_info:
+        load_context(source, 1, 6)
+
+    actual_duplicate_diagnostic: tuple[int, bool, str] = (
+        exception_info.value.line_number,
+        str(first_call_id) in str(exception_info.value),
+        exception_info.value.call_fingerprint,
+    )
+    assert actual_duplicate_diagnostic == expected_duplicate_diagnostic
+
+
+def test_Rollout_WhenToolOutputCallIdIsEmpty_ThenRejectsTheOutputRecord(tmp_path: Path) -> None:
+    source: Path = tmp_path / "rollout.jsonl"
+    _write_case(source)
+    records: list[dict[str, object]] = _read_records(source)
+    cast(dict[str, object], records[2]["payload"])["call_id"] = ""
+    _write_records(source, records)
+    expected_message_phrase: str = "nonempty string call ID"
+
+    with pytest.raises(RolloutToolOutputInvalidException, match=expected_message_phrase):
+        load_context(source, 1, 6)
+
+
+def test_Rollout_WhenToolOutputContainsAnImage_ThenRejectsTheNonTextContent(tmp_path: Path) -> None:
+    source: Path = tmp_path / "rollout.jsonl"
+    _write_case(source)
+    records: list[dict[str, object]] = _read_records(source)
+    cast(dict[str, object], records[2]["payload"])["output"] = [{"type": "input_image", "image_url": "data:ignored"}]
+    _write_records(source, records)
+    expected_message_phrase: str = "unsupported nontext content"
+
+    with pytest.raises(RolloutToolOutputNonTextContentException, match=expected_message_phrase):
+        load_context(source, 1, 6)
+
+
+def test_Rollout_WhenWindowLacksSeveralParts_ThenReportsEveryMissingPartAtOnce(tmp_path: Path) -> None:
+    source: Path = tmp_path / "rollout.jsonl"
+    _write_case(source)
+    records: list[dict[str, object]] = _read_records(source)
+    _write_records(source, records[1:5])
+    expected_problems: tuple[str, ...] = ("needs a later assistant answer", "needs a user message")
+    expected_window: str = f"{source}:1-5"
+    expected_window_and_problems: tuple[str, tuple[str, ...]] = (expected_window, expected_problems)
+
+    with pytest.raises(RolloutWindowIncompleteException) as exception_info:
+        load_context(source, 1, 5)
+
+    actual_window_and_problems: tuple[str, tuple[str, ...]] = (exception_info.value.window, exception_info.value.problems)
+    assert actual_window_and_problems == expected_window_and_problems
+
+
+def test_Compaction_WhenSavedDecisionsHaveNoSegmentText_ThenRaisesContextEmptyError() -> None:
+    expected_message_phrase: str = "nonempty segment text"
+
+    with pytest.raises(CompactionContextEmptyException, match=expected_message_phrase):
+        apply_saved_decisions((), {}, 0.5)
+
+
+def test_TrialOptions_WhenEveryOptionIsInvalid_ThenReportsEachProblemAsOneBusinessError() -> None:
+    absent_tool_id: str = f"tool_{secrets.token_hex(4)}"
+    expected_problem_count: int = 3
+    expected_phrases: tuple[str, ...] = ("runs:", "threshold:", absent_tool_id)
+    expected_forbidden_phrases: tuple[str, ...] = ()
+    expected_problem_view: tuple[int, bool] = (expected_problem_count, True)
+
+    with pytest.raises(TrialOptionsInvalidException) as exception_info:
+        DomainFacade().validate_trial_options(6, 1.5, {absent_tool_id}, {"tool_2"})
+
+    actual_problem_view: tuple[int, bool] = (
+        len(exception_info.value.problems),
+        isinstance(exception_info.value, ContextCompactionBusinessBaseException),
+    )
+    assert actual_problem_view == expected_problem_view
+    assert_cli_diagnostic_matches(str(exception_info.value), expected_phrases, expected_forbidden_phrases)
+
+
+def test_TrialOptions_WhenOnlyARequiredToolIsAbsent_ThenReportsTheContainmentProblemAlone() -> None:
+    absent_tool_id: str = f"tool_{secrets.token_hex(4)}"
+    expected_problems: tuple[str, ...] = (f"Required tool IDs must belong to the selected context window; absent={[absent_tool_id]}.",)
+    expected_message_phrase: str = "Trial options are invalid"
+
+    with pytest.raises(TrialOptionsInvalidException, match=expected_message_phrase) as exception_info:
+        DomainFacade().validate_trial_options(1, 0.5, {absent_tool_id}, {"tool_2"})
+
+    assert exception_info.value.problems == expected_problems
+
+
+def test_TrialOutputPaths_WhenSourceIsAPlannedOutput_ThenNamesTheSourceAndOutput(tmp_path: Path) -> None:
+    PLANNED_OUTPUT_ARTIFACT_NAME: str = "manifest.json"
+    source: Path = tmp_path / PLANNED_OUTPUT_ARTIFACT_NAME
+    _write_case(source)
+    expected_diagnostic: tuple[Path, Path] = (source, tmp_path / PLANNED_OUTPUT_ARTIFACT_NAME)
+
+    with pytest.raises(TrialOutputOverwritesRolloutException) as exception_info:
+        ValidatorTrialOutputPaths.validate(source, tmp_path)
+
+    assert (exception_info.value.source, exception_info.value.output_artifact_path) == expected_diagnostic
+
+
+def test_TrialOutputPaths_WhenSourceIsTheLastRepeatTheRunLimitAllows_ThenRejectsItAsAPlannedOutput(tmp_path: Path) -> None:
+    last_allowed_artifact_name: str = f"compacted_careful_{MAXIMUM_TRIAL_RUNS}.json"
+    source: Path = tmp_path / last_allowed_artifact_name
+    _write_case(source)
+    DomainFacade().validate_trial_options(MAXIMUM_TRIAL_RUNS, 0.5, set(), set())
+    expected_diagnostic: tuple[Path, Path] = (source, tmp_path / last_allowed_artifact_name)
+
+    with pytest.raises(TrialOutputOverwritesRolloutException) as exception_info:
+        ValidatorTrialOutputPaths.validate(source, tmp_path)
+
+    assert (exception_info.value.source, exception_info.value.output_artifact_path) == expected_diagnostic
+
+
+def test_Validators_WhenTheirImportsAreRead_ThenNoneReachesIntoTheProcessorSubtree() -> None:
+    validators_directory: Path = Path(compaction_validators.__file__).parent
+    forbidden_module_prefix: str = "context_compaction.managers.processors"
+    expected_processor_imports: list[str] = []
+    validator_sources: list[Path] = sorted(validators_directory.rglob("*.py"))
+
+    actual_processor_imports: list[str] = [
+        f"{validator_source.name}: {syntax_node.module}"
+        for validator_source in validator_sources
+        for syntax_node in ast.walk(ast.parse(validator_source.read_text(encoding="utf-8")))
+        if isinstance(syntax_node, ast.ImportFrom) and (syntax_node.module or "").startswith(forbidden_module_prefix)
+    ]
+
+    assert actual_processor_imports == expected_processor_imports, "validators receive processor-built values from the manager"

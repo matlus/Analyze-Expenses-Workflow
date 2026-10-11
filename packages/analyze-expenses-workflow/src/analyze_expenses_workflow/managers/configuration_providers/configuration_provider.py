@@ -18,7 +18,22 @@ from analyze_expenses_workflow.managers.configuration_providers.settings_models.
     ReasoningEffort,
 )
 from analyze_expenses_workflow.managers.configuration_providers.settings_providers.settings_provider_environment import SettingsProviderEnvironment
-from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import ConfigurationSettingException
+from analyze_expenses_workflow.managers.exceptions.configuration_setting_exception import (
+    CodingAssistantSettingsInvalidException,
+    CodingAssistantSubscriptionUnknownException,
+    ConfigurationSettingBlankException,
+    ConfigurationSettingMissingException,
+    JevMinimumChoiceProbabilitySettingInvalidException,
+    LlmModelFamilyMismatchException,
+    LlmModelSettingInvalidException,
+    LlmModelSettingMissingException,
+    LlmOperationNotConfiguredException,
+    ModelFamilyOverrideRejectedException,
+    MonthlyBudgetSettingInvalidException,
+    OpenRouterBaseUrlSettingInvalidException,
+    ReasoningEffortSettingUnknownException,
+    ReasoningEffortUnsupportedException,
+)
 
 _DEFAULT_REASONING_EFFORT_BY_LLM_OPERATION: Final[Mapping[LlmOperation, ReasoningEffort]] = MappingProxyType(
     {
@@ -37,6 +52,12 @@ _SUPPORTED_REASONING_EFFORTS_BY_SUBSCRIPTION: Final[Mapping[CodingAssistantSubsc
         CodingAssistantSubscription.CLAUDE_CODE: _LOW_TO_MAX_REASONING_EFFORTS,
     }
 )
+_FOREIGN_MODEL_PREFIXES_BY_MODEL_FAMILY: Final[Mapping[ModelFamily, tuple[str, ...]]] = MappingProxyType(
+    {
+        ModelFamily.OPENAI: ("claude-", "anthropic/"),
+        ModelFamily.ANTHROPIC: ("gpt-", "codex-", "openai/"),
+    }
+)
 
 
 class ConfigurationProvider:
@@ -47,6 +68,11 @@ class ConfigurationProvider:
     _OPEN_ROUTER_BASE_URL_SETTING_NAME: Final[str] = "OPEN_ROUTER_BASE_URL"
     _JEV_PARSING_MINIMUM_CHOICE_PROBABILITY_SETTING_NAME: Final[str] = "JEV_PARSING_MINIMUM_CHOICE_PROBABILITY"
     _DEFAULT_OPENAI_MODEL: Final[str] = "gpt-6-luna"
+    _OPEN_ROUTER_BASE_URL_FIELD_NAME: Final[str] = "open_router_base_url"
+    _SETTING_NAME_CONTEXT_FIELD_NAME: Final[str] = "SettingName"
+    _RECEIVED_VALUE_CONTEXT_FIELD_NAME: Final[str] = "ReceivedValue"
+    _MODEL_FAMILY_CONTEXT_FIELD_NAME: Final[str] = "ModelFamily"
+    _SUBSCRIPTION_CONTEXT_FIELD_NAME: Final[str] = "Subscription"
 
     def __init__(self, override_by_environment_variable_name: Mapping[str, str] | None = None) -> None:
         settings_provider_environment: SettingsProviderEnvironment = SettingsProviderEnvironment(override_by_environment_variable_name)
@@ -65,27 +91,39 @@ class ConfigurationProvider:
         family: ModelFamily = MODEL_FAMILY_BY_SUBSCRIPTION[subscription]
         try:
             return CodingAssistantSettings(coding_assistant_subscription=subscription, model_family=family)
-        except ValidationError as exc:
-            raise ConfigurationSettingException(
-                f"{cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME}={subscription.value} produced invalid coding assistant settings"
-            ) from exc
+        except ValidationError as validation_error:
+            subscription_setting: str = f"{cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME}={subscription.value}"
+            raise CodingAssistantSettingsInvalidException(
+                f"{subscription_setting} maps to model family {family.value}, which the settings reject; correct MODEL_FAMILY_BY_SUBSCRIPTION",
+                {
+                    cls._SETTING_NAME_CONTEXT_FIELD_NAME: cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME,
+                    cls._RECEIVED_VALUE_CONTEXT_FIELD_NAME: subscription.value,
+                    cls._MODEL_FAMILY_CONTEXT_FIELD_NAME: family.value,
+                },
+            ) from validation_error
 
     @classmethod
     def _reject_model_family_override(cls, settings_provider_environment: SettingsProviderEnvironment, setting_name: str) -> None:
-        if settings_provider_environment.read_setting_value(setting_name) is not None:
-            raise ConfigurationSettingException(
-                f"{setting_name} is derived from {cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME} and must be removed"
+        override_value: str | None = settings_provider_environment.read_setting_value(setting_name)
+        if override_value is not None:
+            raise ModelFamilyOverrideRejectedException(
+                f"{setting_name} is derived from {cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME} and must be removed; received {override_value!r}",
+                {cls._SETTING_NAME_CONTEXT_FIELD_NAME: setting_name, cls._RECEIVED_VALUE_CONTEXT_FIELD_NAME: override_value},
             )
 
     @classmethod
     def _parse_subscription(cls, subscription_value: str) -> CodingAssistantSubscription:
         try:
             return CodingAssistantSubscription(subscription_value)
-        except ValueError as exc:
+        except ValueError as value_error:
             valid_values: str = ", ".join(subscription.value for subscription in CodingAssistantSubscription)
-            raise ConfigurationSettingException(
-                f"{cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME} must be one of: {valid_values}; received {subscription_value!r}"
-            ) from exc
+            raise CodingAssistantSubscriptionUnknownException(
+                f"{cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME} must be one of: {valid_values}; received {subscription_value!r}",
+                {
+                    cls._SETTING_NAME_CONTEXT_FIELD_NAME: cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME,
+                    cls._RECEIVED_VALUE_CONTEXT_FIELD_NAME: subscription_value,
+                },
+            ) from value_error
 
     @classmethod
     def _load_budget_settings(cls, settings_provider_environment: SettingsProviderEnvironment) -> BudgetSettings:
@@ -102,11 +140,13 @@ class ConfigurationProvider:
                     "shopping_monthly_budget": shopping_budget,
                 }
             )
-        except ValidationError as exc:
+        except ValidationError as validation_error:
             budget_setting_names: str = f"{cls._DINING_COFFEE_MONTHLY_BUDGET_SETTING_NAME} and {cls._SHOPPING_MONTHLY_BUDGET_SETTING_NAME}"
-            raise ConfigurationSettingException(
-                f"{budget_setting_names} must be positive amounts with at most two decimal places; received {dining_budget!r} and {shopping_budget!r}"
-            ) from exc
+            received_budgets: str = f"{dining_budget!r} and {shopping_budget!r}"
+            raise MonthlyBudgetSettingInvalidException(
+                f"{budget_setting_names} must be positive amounts with at most two decimal places; received {received_budgets}",
+                {cls._DINING_COFFEE_MONTHLY_BUDGET_SETTING_NAME: dining_budget, cls._SHOPPING_MONTHLY_BUDGET_SETTING_NAME: shopping_budget},
+            ) from validation_error
 
     @classmethod
     def _load_llm_operation_settings(
@@ -146,7 +186,10 @@ class ConfigurationProvider:
             return model_name
         if family == ModelFamily.OPENAI:
             return cls._DEFAULT_OPENAI_MODEL
-        raise ConfigurationSettingException(f"{model_setting_name} is required for the selected model family")
+        raise LlmModelSettingMissingException(
+            f"{model_setting_name} is required for the selected model family {family.value}; set it to a {family.value} model name",
+            {cls._SETTING_NAME_CONTEXT_FIELD_NAME: model_setting_name, cls._MODEL_FAMILY_CONTEXT_FIELD_NAME: family.value},
+        )
 
     @classmethod
     def _resolve_reasoning_effort_value(
@@ -155,8 +198,9 @@ class ConfigurationProvider:
         reasoning_effort_value: str | None = cls._optional(settings_provider_environment, effort_setting_name)
         return reasoning_effort_value or _DEFAULT_REASONING_EFFORT_BY_LLM_OPERATION[operation].value
 
-    @staticmethod
+    @classmethod
     def _build_llm_operation_setting(
+        cls,
         family: ModelFamily,
         model_name: str,
         model_setting_name: str,
@@ -164,30 +208,59 @@ class ConfigurationProvider:
         effort_setting_name: str,
         subscription: CodingAssistantSubscription,
     ) -> LlmOperationSettings:
-        normalized_model_name: str = model_name.casefold()
-        if family == ModelFamily.OPENAI and normalized_model_name.startswith(("claude-", "anthropic/")):
-            raise ConfigurationSettingException(f"{model_setting_name} must name an OPENAI model for {subscription.value}; received {model_name!r}")
-        if family == ModelFamily.ANTHROPIC and normalized_model_name.startswith(("gpt-", "codex-", "openai/")):
-            raise ConfigurationSettingException(
-                f"{model_setting_name} must name an ANTHROPIC model for {subscription.value}; received {model_name!r}"
-            )
+        cls._reject_foreign_model(family, model_name, model_setting_name, subscription)
+        reasoning_effort: ReasoningEffort = cls._parse_reasoning_effort(reasoning_effort_value, effort_setting_name)
+        cls._reject_unsupported_reasoning_effort(reasoning_effort, effort_setting_name, subscription)
         try:
-            reasoning_effort: ReasoningEffort = ReasoningEffort(reasoning_effort_value)
-        except ValueError as exc:
+            return LlmOperationSettings(model=model_name, reasoning_effort=reasoning_effort, model_family=family)
+        except ValidationError as validation_error:
+            raise LlmModelSettingInvalidException(
+                f"{model_setting_name} resolved to {model_name!r}, which the LLM operation settings reject",
+                {cls._SETTING_NAME_CONTEXT_FIELD_NAME: model_setting_name, cls._RECEIVED_VALUE_CONTEXT_FIELD_NAME: model_name},
+            ) from validation_error
+
+    @staticmethod
+    def _reject_foreign_model(family: ModelFamily, model_name: str, model_setting_name: str, subscription: CodingAssistantSubscription) -> None:
+        if model_name.casefold().startswith(_FOREIGN_MODEL_PREFIXES_BY_MODEL_FAMILY[family]):
+            raise LlmModelFamilyMismatchException(
+                f"{model_setting_name} must name an {family.value} model for {subscription.value}; received {model_name!r}",
+                {
+                    ConfigurationProvider._SETTING_NAME_CONTEXT_FIELD_NAME: model_setting_name,
+                    ConfigurationProvider._RECEIVED_VALUE_CONTEXT_FIELD_NAME: model_name,
+                    ConfigurationProvider._MODEL_FAMILY_CONTEXT_FIELD_NAME: family.value,
+                    ConfigurationProvider._SUBSCRIPTION_CONTEXT_FIELD_NAME: subscription.value,
+                },
+            )
+
+    @staticmethod
+    def _parse_reasoning_effort(reasoning_effort_value: str, effort_setting_name: str) -> ReasoningEffort:
+        try:
+            return ReasoningEffort(reasoning_effort_value)
+        except ValueError as value_error:
             valid_reasoning_efforts: str = ", ".join(known_reasoning_effort.value for known_reasoning_effort in ReasoningEffort)
-            raise ConfigurationSettingException(
-                f"{effort_setting_name} must be one of: {valid_reasoning_efforts}; received {reasoning_effort_value!r}"
-            ) from exc
+            raise ReasoningEffortSettingUnknownException(
+                f"{effort_setting_name} must be one of: {valid_reasoning_efforts}; received {reasoning_effort_value!r}",
+                {
+                    ConfigurationProvider._SETTING_NAME_CONTEXT_FIELD_NAME: effort_setting_name,
+                    ConfigurationProvider._RECEIVED_VALUE_CONTEXT_FIELD_NAME: reasoning_effort_value,
+                },
+            ) from value_error
+
+    @staticmethod
+    def _reject_unsupported_reasoning_effort(
+        reasoning_effort: ReasoningEffort, effort_setting_name: str, subscription: CodingAssistantSubscription
+    ) -> None:
         supported_reasoning_efforts: frozenset[ReasoningEffort] = _SUPPORTED_REASONING_EFFORTS_BY_SUBSCRIPTION[subscription]
         if reasoning_effort not in supported_reasoning_efforts:
             supported_efforts: str = ", ".join(effort.value for effort in ReasoningEffort if effort in supported_reasoning_efforts)
-            raise ConfigurationSettingException(
-                f"{effort_setting_name} must be one of: {supported_efforts} for {subscription.value}; received {reasoning_effort_value!r}"
+            raise ReasoningEffortUnsupportedException(
+                f"{effort_setting_name} must be one of: {supported_efforts} for {subscription.value}; received {reasoning_effort.value!r}",
+                {
+                    ConfigurationProvider._SETTING_NAME_CONTEXT_FIELD_NAME: effort_setting_name,
+                    ConfigurationProvider._RECEIVED_VALUE_CONTEXT_FIELD_NAME: reasoning_effort.value,
+                    ConfigurationProvider._SUBSCRIPTION_CONTEXT_FIELD_NAME: subscription.value,
+                },
             )
-        try:
-            return LlmOperationSettings(model=model_name, reasoning_effort=reasoning_effort, model_family=family)
-        except ValidationError as exc:
-            raise ConfigurationSettingException(f"{model_setting_name} is invalid; received {model_name!r}") from exc
 
     @classmethod
     def _load_jev_settings(cls, settings_provider_environment: SettingsProviderEnvironment) -> JevSettings:
@@ -203,26 +276,37 @@ class ConfigurationProvider:
             return JevSettings.model_validate(
                 {
                     "open_router_key": open_router_key,
-                    "open_router_base_url": open_router_base_url,
+                    cls._OPEN_ROUTER_BASE_URL_FIELD_NAME: open_router_base_url,
                     "jev_model": jev_model,
                     "parsing_minimum_choice_probability": minimum_probability,
                 }
             )
-        except ValidationError as exc:
-            if any("open_router_base_url" in error["loc"] for error in exc.errors()):
-                raise ConfigurationSettingException(
-                    f"{cls._OPEN_ROUTER_BASE_URL_SETTING_NAME} must be a valid HTTPS URL; received {open_router_base_url!r}"
-                ) from exc
-            raise ConfigurationSettingException(
-                f"{cls._JEV_PARSING_MINIMUM_CHOICE_PROBABILITY_SETTING_NAME} must be between zero and one; received {minimum_probability!r}"
-            ) from exc
+        except ValidationError as validation_error:
+            if any(cls._OPEN_ROUTER_BASE_URL_FIELD_NAME in error["loc"] for error in validation_error.errors()):
+                raise OpenRouterBaseUrlSettingInvalidException(
+                    f"{cls._OPEN_ROUTER_BASE_URL_SETTING_NAME} must be a valid HTTPS URL; received {open_router_base_url!r}",
+                    {
+                        cls._SETTING_NAME_CONTEXT_FIELD_NAME: cls._OPEN_ROUTER_BASE_URL_SETTING_NAME,
+                        cls._RECEIVED_VALUE_CONTEXT_FIELD_NAME: open_router_base_url,
+                    },
+                ) from validation_error
+            raise JevMinimumChoiceProbabilitySettingInvalidException(
+                f"{cls._JEV_PARSING_MINIMUM_CHOICE_PROBABILITY_SETTING_NAME} must be between zero and one; received {minimum_probability!r}",
+                {
+                    cls._SETTING_NAME_CONTEXT_FIELD_NAME: cls._JEV_PARSING_MINIMUM_CHOICE_PROBABILITY_SETTING_NAME,
+                    cls._RECEIVED_VALUE_CONTEXT_FIELD_NAME: minimum_probability,
+                },
+            ) from validation_error
 
-    @staticmethod
-    def _require(settings_provider_environment: SettingsProviderEnvironment, configuration_setting_name: str) -> str:
-        configuration_setting_value: str | None = settings_provider_environment.read_setting_value(configuration_setting_name)
-        if configuration_setting_value is None or not configuration_setting_value.strip():
-            raise ConfigurationSettingException(f"{configuration_setting_name} is required and must not be blank")
-        return configuration_setting_value.strip()
+    @classmethod
+    def _require(cls, settings_provider_environment: SettingsProviderEnvironment, configuration_setting_name: str) -> str:
+        configuration_setting_value: str | None = cls._optional(settings_provider_environment, configuration_setting_name)
+        if configuration_setting_value is None:
+            raise ConfigurationSettingMissingException(
+                f"{configuration_setting_name} is required; set it in the environment or the .env file",
+                {cls._SETTING_NAME_CONTEXT_FIELD_NAME: configuration_setting_name},
+            )
+        return configuration_setting_value
 
     @staticmethod
     def _optional(settings_provider_environment: SettingsProviderEnvironment, configuration_setting_name: str) -> str | None:
@@ -231,7 +315,10 @@ class ConfigurationProvider:
             return None
         cleaned_configuration_setting_value: str = configuration_setting_value.strip()
         if not cleaned_configuration_setting_value:
-            raise ConfigurationSettingException(f"{configuration_setting_name} must not be blank when provided")
+            raise ConfigurationSettingBlankException(
+                f"{configuration_setting_name} must not be blank when provided; set a value or remove the setting",
+                {ConfigurationProvider._SETTING_NAME_CONTEXT_FIELD_NAME: configuration_setting_name},
+            )
         return cleaned_configuration_setting_value
 
     def get_coding_assistant_settings(self) -> CodingAssistantSettings:
@@ -246,6 +333,9 @@ class ConfigurationProvider:
     def retrieve_llm_operation_settings(self, operation: LlmOperation) -> LlmOperationSettings:
         try:
             return self._llm_operation_settings[operation]
-        except KeyError as exc:
+        except KeyError as key_error:
             available_operations: str = ", ".join(llm_operation.value for llm_operation in self._llm_operation_settings)
-            raise ConfigurationSettingException(f"{operation.value} is not configured; available operations: {available_operations}") from exc
+            raise LlmOperationNotConfiguredException(
+                f"{operation.value} has no loaded settings; available operations: {available_operations}",
+                {"LlmOperation": operation.value},
+            ) from key_error

@@ -7,7 +7,7 @@ import pytest
 from acceptance_support.asserter_llm_gateway import ExpectedLlmGatewayFailure, assert_llm_gateway_failure
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionAction
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmCliUnavailableException
+from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmCliNotFoundException
 from analyze_expenses_workflow.managers.gateways.clients.coding_assistant_executable_locator import CodingAssistantExecutableLocator
 
 
@@ -32,14 +32,14 @@ def test_locate_WhenTheCliIsNotOnPath_ThenNamesTheMissingCliAsAnInfrastructureFa
     executable_name: str = f"assistant-{secrets.token_hex(4)}"
     monkeypatch.setenv("PATH", str(tmp_path))
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
-        exception_type=LlmCliUnavailableException,
+        exception_type=LlmCliNotFoundException,
         action=ExceptionAction.INFRA_ACTION_REQUIRED.value,
-        reason="Coding assistant CLI is not installed or could not be started",
+        reason="Coding assistant CLI is not installed",
         message_phrases=(executable_name, "not found on PATH"),
         contextual_fields=(("Operation", "executable_resolution"), ("ExecutableName", executable_name)),
     )
 
-    with pytest.raises(LlmCliUnavailableException) as raised_exception:
+    with pytest.raises(LlmCliNotFoundException) as raised_exception:
         CodingAssistantExecutableLocator.locate(executable_name)
 
     assert_llm_gateway_failure(raised_exception.value, expected_llm_gateway_failure)
