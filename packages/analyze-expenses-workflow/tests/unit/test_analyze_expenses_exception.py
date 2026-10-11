@@ -20,11 +20,12 @@ from analyze_expenses_workflow.managers.exceptions.expense_findings_exception im
 from analyze_expenses_workflow.managers.exceptions.expense_input_exception import ExpenseInputException
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
     LlmClientCleanupFailedException,
+    LlmCliUnavailableException,
     LlmGatewayClosedException,
-    LlmGatewayException,
+    LlmGatewayExceptionBase,
     LlmRequestFailedException,
+    LlmRequestRejectedException,
     LlmResponseInvalidException,
-    LlmUnsupportedReasoningEffortException,
 )
 from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import (
     JevGatewayClosedException,
@@ -124,9 +125,15 @@ async def test_ExpenseParsing_WhenBlankLineFollowsExpense_ThenPreservesUnparsedL
             ExpenseLogEvent.LLM_GATEWAY,
         ),
         (
-            LlmUnsupportedReasoningEffortException,
+            LlmRequestRejectedException,
+            ExceptionAction.DEVELOPER_ACTION_REQUIRED,
+            "Coding assistant provider rejected the request",
+            ExpenseLogEvent.LLM_GATEWAY,
+        ),
+        (
+            LlmCliUnavailableException,
             ExceptionAction.INFRA_ACTION_REQUIRED,
-            "Coding assistant reasoning effort is unsupported",
+            "Coding assistant CLI is not installed or could not be started",
             ExpenseLogEvent.LLM_GATEWAY,
         ),
         (
@@ -219,11 +226,11 @@ def test_ExpenseException_WhenContextChangesAfterConstruction_ThenPreservesDiagn
         "CausedBy": "ValueError",
         "Cause": expected_cause_message,
     }
-    llm_gateway_exception: LlmGatewayException = LlmRequestFailedException(expected_message, supplied_context_by_name)
-    llm_gateway_exception.__cause__ = ValueError(expected_cause_message)
+    llm_gateway_exception_base: LlmGatewayExceptionBase = LlmRequestFailedException(expected_message, supplied_context_by_name)
+    llm_gateway_exception_base.__cause__ = ValueError(expected_cause_message)
 
     supplied_context_by_name[operation_context_key] = secrets.token_hex(8)
-    actual_diagnostic_values_by_name: dict[str, str | int | float | bool] = json.loads(llm_gateway_exception.to_json())
+    actual_diagnostic_values_by_name: dict[str, str | int | float | bool] = json.loads(llm_gateway_exception_base.to_json())
     assert actual_diagnostic_values_by_name == expected_diagnostic_values_by_name
 
 
@@ -231,12 +238,12 @@ def test_ExpenseException_WhenContextContainsNonfiniteFloat_ThenWritesStrictJson
     score_context_key: str = "Score"
     nonfinite_score_text: str = "nan"
     expected_score_text: str = nonfinite_score_text
-    llm_gateway_exception: LlmGatewayException = LlmRequestFailedException(
+    llm_gateway_exception_base: LlmGatewayExceptionBase = LlmRequestFailedException(
         secrets.token_hex(8), {score_context_key: float(nonfinite_score_text)}
     )
 
     actual_diagnostic_values_by_name: dict[str, str | int | float | bool] = json.loads(
-        llm_gateway_exception.to_json(), parse_constant=lambda value: pytest.fail(f"Nonstandard JSON constant: {value}")
+        llm_gateway_exception_base.to_json(), parse_constant=lambda value: pytest.fail(f"Nonstandard JSON constant: {value}")
     )
 
     assert actual_diagnostic_values_by_name[score_context_key] == expected_score_text
@@ -247,11 +254,11 @@ def test_ExpenseException_WhenTracebackProjectionIsSelected_ThenOnlyThatProjecti
     expected_traceback_presence: tuple[bool, bool, bool, bool] = (False, True, False, True)
     with pytest.raises(LlmRequestFailedException) as raised:
         raise LlmRequestFailedException(secrets.token_hex(8))
-    llm_gateway_exception: LlmGatewayException = raised.value
-    actual_plain_field_names: tuple[str, ...] = tuple(name for name, _ in llm_gateway_exception.diagnostics.fields())
-    actual_trace_field_names: tuple[str, ...] = tuple(name for name, _ in llm_gateway_exception.diagnostics.fields_with_traceback())
-    actual_plain_text: str = llm_gateway_exception.to_string_without_traceback()
-    actual_trace_text: str = llm_gateway_exception.to_string()
+    llm_gateway_exception_base: LlmGatewayExceptionBase = raised.value
+    actual_plain_field_names: tuple[str, ...] = tuple(name for name, _ in llm_gateway_exception_base.diagnostics.fields())
+    actual_trace_field_names: tuple[str, ...] = tuple(name for name, _ in llm_gateway_exception_base.diagnostics.fields_with_traceback())
+    actual_plain_text: str = llm_gateway_exception_base.to_string_without_traceback()
+    actual_trace_text: str = llm_gateway_exception_base.to_string()
 
     assert (
         expected_traceback_field in actual_plain_field_names,

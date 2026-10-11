@@ -11,11 +11,12 @@ from analyze_expenses_workflow.managers.exceptions.expense_findings_exception im
 from analyze_expenses_workflow.managers.exceptions.expense_input_exception import ExpenseInputException
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
     LlmClientCleanupFailedException,
+    LlmCliUnavailableException,
     LlmGatewayClosedException,
-    LlmGatewayException,
+    LlmGatewayExceptionBase,
     LlmRequestFailedException,
+    LlmRequestRejectedException,
     LlmResponseInvalidException,
-    LlmUnsupportedReasoningEffortException,
 )
 from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import (
     JevGatewayClosedException,
@@ -63,12 +64,13 @@ __all__ = [
     "JevRequestFailedException",
     "JevResourceCleanupFailedException",
     "JevResponseInvalidException",
+    "LlmCliUnavailableException",
     "LlmClientCleanupFailedException",
     "LlmGatewayClosedException",
-    "LlmGatewayException",
+    "LlmGatewayExceptionBase",
     "LlmRequestFailedException",
+    "LlmRequestRejectedException",
     "LlmResponseInvalidException",
-    "LlmUnsupportedReasoningEffortException",
     "MonthCategoryDelta",
     "MonthlyCategoryTotal",
     "MonthlyTotal",

@@ -39,3 +39,37 @@ async def test_analyze_expenses_WhenExpenseLinesAreOneString_ThenRejectsInputBef
     if test_mediator_jev.captured_jev_requests:
         mismatches.append(f"Expected no Jev requests, got {len(test_mediator_jev.captured_jev_requests)}")
     assert not mismatches, f"Invalid expense-line input has {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
+
+
+@pytest.mark.parametrize(
+    ("confirmed_duplicate_line_numbers", "expected_line_number", "expected_message_phrase"),
+    [
+        ((2, 2), 2, "is listed 2 times"),
+        ((1,), 1, "must repeat an earlier line, so it must be from 2 to 3"),
+        ((4,), 4, "must repeat an earlier line, so it must be from 2 to 3"),
+    ],
+)
+async def test_analyze_expenses_WhenConfirmedDuplicateLinesAreRepeatedOrOutOfRange_ThenRejectsInputBeforeJevRequest(
+    confirmed_duplicate_line_numbers: tuple[int, ...], expected_line_number: int, expected_message_phrase: str
+) -> None:
+    expense_lines: list[str] = [f"6/{day} Merchant {secrets.token_hex(4)} $1{day}.00" for day in range(1, 4)]
+    expected_reason: str = "Expense input failed validation"
+    test_mediator_jev: TestMediatorJev = TestMediatorJev()
+
+    async with create_domain_facade(test_mediator_jev) as facade:
+        with pytest.raises(ExpenseInputException) as raised_expense_input_exception:
+            await facade.analyze_expenses(expense_lines, confirmed_duplicate_line_numbers=confirmed_duplicate_line_numbers)
+
+    actual_expense_input_exception: ExpenseInputException = raised_expense_input_exception.value
+    mismatches: list[str] = []
+    if actual_expense_input_exception.reason != expected_reason:
+        mismatches.append(f"Expected reason {expected_reason!r}, got {actual_expense_input_exception.reason!r}")
+    if actual_expense_input_exception.line_number != expected_line_number:
+        mismatches.append(f"Expected line number {expected_line_number}, got {actual_expense_input_exception.line_number}")
+    if expected_message_phrase not in actual_expense_input_exception.message:
+        mismatches.append(f"Expected message phrase {expected_message_phrase!r} in {actual_expense_input_exception.message!r}")
+    if test_mediator_jev.captured_jev_requests:
+        mismatches.append(f"Expected no Jev requests, got {len(test_mediator_jev.captured_jev_requests)}")
+    assert not mismatches, f"Confirmed duplicate lines {confirmed_duplicate_line_numbers} have {len(mismatches)} mismatches:\n" + "\n".join(
+        mismatches
+    )

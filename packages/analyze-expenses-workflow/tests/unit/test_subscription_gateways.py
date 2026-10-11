@@ -1,3 +1,4 @@
+import json
 import secrets
 from datetime import UTC, datetime
 from typing import cast
@@ -11,10 +12,7 @@ from copilot.session_events import AssistantMessageData, SessionEvent
 from openai_codex import AsyncCodex
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionAction
-from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
-    LlmRequestFailedException,
-    LlmUnsupportedReasoningEffortException,
-)
+from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import LlmRequestFailedException
 from analyze_expenses_workflow.managers.gateways.llm_gateway_codex_subscription import LlmGatewayCodexSubscription
 from analyze_expenses_workflow.managers.gateways.llm_gateway_copilot_subscription import LlmGatewayCopilotSubscription
 
@@ -44,65 +42,77 @@ async def test_complete_WhenCodexTurnCompletes_ThenReturnsResponseAndForwardsSet
 
 
 @pytest.mark.asyncio
-async def test_complete_WhenCodexEffortIsInvalid_ThenRejectsBeforeRequest() -> None:
-    expected_prompt: str = f"Extract expense {secrets.token_hex(8)}"
-    expected_model: str = f"test-model-{secrets.token_hex(8)}"
-    rejected_reasoning_effort: str = f"invalid-{secrets.token_hex(8)}"
-    expected_allowed_reasoning_efforts: str = "high, low, max, medium, minimal, none, ultra, xhigh"
-    expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
-        exception_type=LlmUnsupportedReasoningEffortException,
-        action=ExceptionAction.INFRA_ACTION_REQUIRED.value,
-        reason="Coding assistant reasoning effort is unsupported",
-        message_phrases=("Codex", "does not recognize reasoning effort"),
-        contextual_fields=(
-            ("Operation", "reasoning_effort_validation"),
-            ("RejectedReasoningEffort", rejected_reasoning_effort),
-            ("AllowedReasoningEfforts", expected_allowed_reasoning_efforts),
-        ),
-        forbidden_message_phrases=(expected_prompt,),
-    )
-    codex_client_mock: MagicMock = MagicMock(spec=AsyncCodex)
-    codex_client_mock.thread_start = AsyncMock()
-    llm_gateway_codex_subscription: LlmGatewayCodexSubscription = LlmGatewayCodexSubscription(cast("AsyncCodex", codex_client_mock))
-
-    with pytest.raises(LlmUnsupportedReasoningEffortException) as raised_exception:
-        await llm_gateway_codex_subscription.complete(expected_prompt, expected_model, rejected_reasoning_effort)
-
-    actual_llm_gateway_exception: LlmUnsupportedReasoningEffortException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
-    codex_client_mock.thread_start.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_complete_WhenCodexProviderFails_ThenTranslatesFailure() -> None:
     expected_prompt: str = f"Extract expense {secrets.token_hex(8)}"
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
+    expected_provider_failure: str = secrets.token_hex(8)
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
         action=ExceptionAction.RETRY_ACTION_NEEDED.value,
         reason="Coding assistant request failed",
-        message_phrases=("Codex", "request failed"),
-        contextual_fields=(("Operation", "turn_request"), ("Model", expected_model), ("ReasoningEffort", "default")),
+        message_phrases=("Codex", "request failed", expected_provider_failure),
+        contextual_fields=(
+            ("Operation", "turn_request"),
+            ("Model", expected_model),
+            ("ReasoningEffort", "default"),
+            ("ProviderStatusCode", "unknown"),
+            ("ProviderError", expected_provider_failure),
+        ),
         cause_type="OSError",
         forbidden_message_phrases=(expected_prompt,),
     )
     codex_client_mock: MagicMock = MagicMock(spec=AsyncCodex)
-    codex_client_mock.thread_start = AsyncMock(side_effect=OSError(secrets.token_hex(8)))
+    codex_client_mock.thread_start = AsyncMock(side_effect=OSError(expected_provider_failure))
     llm_gateway_codex_subscription: LlmGatewayCodexSubscription = LlmGatewayCodexSubscription(cast("AsyncCodex", codex_client_mock))
 
     with pytest.raises(LlmRequestFailedException) as raised_exception:
         await llm_gateway_codex_subscription.complete(expected_prompt, expected_model, None)
 
-    actual_llm_gateway_exception: LlmRequestFailedException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
+    actual_llm_request_failed_exception: LlmRequestFailedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_request_failed_exception, expected_llm_gateway_failure)
 
 
 @pytest.mark.asyncio
-async def test_complete_WhenCopilotSessionCompletes_ThenReturnsMessageAndForwardsSettings() -> None:
+async def test_complete_WhenCodexIsRateLimited_ThenReportsARetryableFailureWithTheProviderReason() -> None:
+    expected_prompt: str = f"Extract expense {secrets.token_hex(8)}"
+    expected_model: str = f"test-model-{secrets.token_hex(8)}"
+    expected_provider_reason: str = f"Rate limit reached {secrets.token_hex(4)}"
+    provider_error_document: str = json.dumps(
+        {"type": "error", "status": 429, "error": {"type": "rate_limit_error", "message": expected_provider_reason}}
+    )
+    expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
+        exception_type=LlmRequestFailedException,
+        action=ExceptionAction.RETRY_ACTION_NEEDED.value,
+        reason="Coding assistant request failed",
+        message_phrases=("Codex", "request failed", expected_provider_reason),
+        contextual_fields=(
+            ("Operation", "turn_request"),
+            ("Model", expected_model),
+            ("ReasoningEffort", "default"),
+            ("ProviderStatusCode", 429),
+            ("ProviderError", expected_provider_reason),
+        ),
+        cause_type="RuntimeError",
+        forbidden_message_phrases=(expected_prompt,),
+    )
+    codex_client_mock: MagicMock = MagicMock(spec=AsyncCodex)
+    codex_client_mock.thread_start = AsyncMock(side_effect=RuntimeError(provider_error_document))
+    llm_gateway_codex_subscription: LlmGatewayCodexSubscription = LlmGatewayCodexSubscription(cast("AsyncCodex", codex_client_mock))
+
+    with pytest.raises(LlmRequestFailedException) as raised_exception:
+        await llm_gateway_codex_subscription.complete(expected_prompt, expected_model, None)
+
+    assert_llm_gateway_failure(raised_exception.value, expected_llm_gateway_failure)
+
+
+@pytest.mark.asyncio
+async def test_complete_WhenCopilotSessionCompletes_ThenReturnsMessageForwardsSettingsAndDeletesTheSession() -> None:
     expected_response: str = secrets.token_hex(8)
     expected_prompt: str = f"Extract expense {secrets.token_hex(8)}"
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
     expected_reasoning_effort: str = "low"
+    expected_session_id: str = secrets.token_hex(8)
+    expected_session_timeout_seconds: float = 900.0
     copilot_session_event: SessionEvent = SessionEvent(
         data=AssistantMessageData(content=expected_response, message_id=secrets.token_hex(8)),
         id=uuid4(),
@@ -110,11 +120,13 @@ async def test_complete_WhenCopilotSessionCompletes_ThenReturnsMessageAndForward
         type="assistant.message",
     )
     copilot_session_mock: MagicMock = MagicMock()
+    copilot_session_mock.session_id = expected_session_id
     copilot_session_mock.send_and_wait = AsyncMock(return_value=copilot_session_event)
     copilot_session_mock.__aenter__ = AsyncMock(return_value=copilot_session_mock)
     copilot_session_mock.__aexit__ = AsyncMock(return_value=None)
     copilot_client_mock: MagicMock = MagicMock(spec=CopilotClient)
     copilot_client_mock.create_session = AsyncMock(return_value=copilot_session_mock)
+    copilot_client_mock.delete_session = AsyncMock()
     copilot_client_mock.stop = AsyncMock()
     llm_gateway_copilot_subscription: LlmGatewayCopilotSubscription = LlmGatewayCopilotSubscription(cast("CopilotClient", copilot_client_mock))
 
@@ -126,59 +138,74 @@ async def test_complete_WhenCopilotSessionCompletes_ThenReturnsMessageAndForward
         copilot_client_mock.create_session.await_args.kwargs["model"],
         copilot_client_mock.create_session.await_args.kwargs["reasoning_effort"],
     ) == (expected_response, expected_model, expected_reasoning_effort)
-    copilot_session_mock.send_and_wait.assert_awaited_once_with(expected_prompt)
+    copilot_session_mock.send_and_wait.assert_awaited_once_with(expected_prompt, timeout=expected_session_timeout_seconds)
+    copilot_client_mock.delete_session.assert_awaited_once_with(expected_session_id)
     copilot_client_mock.stop.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_complete_WhenCopilotReceivesCodexOnlyEffort_ThenRejectsBeforeRequest() -> None:
-    expected_prompt: str = f"Extract expense {secrets.token_hex(8)}"
-    expected_model: str = f"test-model-{secrets.token_hex(8)}"
-    rejected_reasoning_effort: str = "ultra"
-    expected_allowed_reasoning_efforts: str = "high, low, max, medium, xhigh"
-    expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
-        exception_type=LlmUnsupportedReasoningEffortException,
-        action=ExceptionAction.INFRA_ACTION_REQUIRED.value,
-        reason="Coding assistant reasoning effort is unsupported",
-        message_phrases=("Copilot", "does not recognize reasoning effort"),
-        contextual_fields=(
-            ("Operation", "reasoning_effort_validation"),
-            ("RejectedReasoningEffort", rejected_reasoning_effort),
-            ("AllowedReasoningEfforts", expected_allowed_reasoning_efforts),
-        ),
-        forbidden_message_phrases=(expected_prompt,),
-    )
-    copilot_client_mock: MagicMock = MagicMock(spec=CopilotClient)
-    copilot_client_mock.create_session = AsyncMock()
-    llm_gateway_copilot_subscription: LlmGatewayCopilotSubscription = LlmGatewayCopilotSubscription(cast("CopilotClient", copilot_client_mock))
-
-    with pytest.raises(LlmUnsupportedReasoningEffortException) as raised_exception:
-        await llm_gateway_copilot_subscription.complete(expected_prompt, expected_model, rejected_reasoning_effort)
-
-    actual_llm_gateway_exception: LlmUnsupportedReasoningEffortException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
-    copilot_client_mock.create_session.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_complete_WhenCopilotProviderFails_ThenTranslatesFailure() -> None:
     expected_prompt: str = f"Extract expense {secrets.token_hex(8)}"
     expected_model: str = f"test-model-{secrets.token_hex(8)}"
+    expected_provider_failure: str = secrets.token_hex(8)
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
         action=ExceptionAction.RETRY_ACTION_NEEDED.value,
         reason="Coding assistant request failed",
-        message_phrases=("Copilot", "request failed"),
-        contextual_fields=(("Operation", "session_request"), ("Model", expected_model), ("ReasoningEffort", "default")),
+        message_phrases=("Copilot", "request failed", expected_provider_failure),
+        contextual_fields=(
+            ("Operation", "session_request"),
+            ("Model", expected_model),
+            ("ReasoningEffort", "default"),
+            ("ProviderError", expected_provider_failure),
+        ),
         cause_type="OSError",
         forbidden_message_phrases=(expected_prompt,),
     )
     copilot_client_mock: MagicMock = MagicMock(spec=CopilotClient)
-    copilot_client_mock.create_session = AsyncMock(side_effect=OSError(secrets.token_hex(8)))
+    copilot_client_mock.create_session = AsyncMock(side_effect=OSError(expected_provider_failure))
     llm_gateway_copilot_subscription: LlmGatewayCopilotSubscription = LlmGatewayCopilotSubscription(cast("CopilotClient", copilot_client_mock))
 
     with pytest.raises(LlmRequestFailedException) as raised_exception:
         await llm_gateway_copilot_subscription.complete(expected_prompt, expected_model, None)
 
-    actual_llm_gateway_exception: LlmRequestFailedException = raised_exception.value
-    assert_llm_gateway_failure(actual_llm_gateway_exception, expected_llm_gateway_failure)
+    actual_llm_request_failed_exception: LlmRequestFailedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_request_failed_exception, expected_llm_gateway_failure)
+
+
+@pytest.mark.asyncio
+async def test_complete_WhenCopilotSdkRaisesABareValueError_ThenTranslatesFailureAndDeletesTheSession() -> None:
+    expected_prompt: str = f"Extract expense {secrets.token_hex(8)}"
+    expected_model: str = f"test-model-{secrets.token_hex(8)}"
+    expected_session_id: str = secrets.token_hex(8)
+    expected_provider_failure: str = f"Invalid JSON-RPC response {secrets.token_hex(4)}"
+    expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
+        exception_type=LlmRequestFailedException,
+        action=ExceptionAction.RETRY_ACTION_NEEDED.value,
+        reason="Coding assistant request failed",
+        message_phrases=("Copilot", "request failed", expected_provider_failure),
+        contextual_fields=(
+            ("Operation", "session_request"),
+            ("Model", expected_model),
+            ("ReasoningEffort", "default"),
+            ("ProviderError", expected_provider_failure),
+        ),
+        cause_type="ValueError",
+        forbidden_message_phrases=(expected_prompt,),
+    )
+    copilot_session_mock: MagicMock = MagicMock()
+    copilot_session_mock.session_id = expected_session_id
+    copilot_session_mock.send_and_wait = AsyncMock(side_effect=ValueError(expected_provider_failure))
+    copilot_session_mock.__aenter__ = AsyncMock(return_value=copilot_session_mock)
+    copilot_session_mock.__aexit__ = AsyncMock(return_value=None)
+    copilot_client_mock: MagicMock = MagicMock(spec=CopilotClient)
+    copilot_client_mock.create_session = AsyncMock(return_value=copilot_session_mock)
+    copilot_client_mock.delete_session = AsyncMock()
+    llm_gateway_copilot_subscription: LlmGatewayCopilotSubscription = LlmGatewayCopilotSubscription(cast("CopilotClient", copilot_client_mock))
+
+    with pytest.raises(LlmRequestFailedException) as raised_exception:
+        await llm_gateway_copilot_subscription.complete(expected_prompt, expected_model, None)
+
+    actual_llm_request_failed_exception: LlmRequestFailedException = raised_exception.value
+    assert_llm_gateway_failure(actual_llm_request_failed_exception, expected_llm_gateway_failure)
+    copilot_client_mock.delete_session.assert_awaited_once_with(expected_session_id)

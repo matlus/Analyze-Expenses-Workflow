@@ -31,7 +31,7 @@ async def test_analyze_expenses_WhenCopilotSessionFails_ThenReportsGatewayFailur
         exception_type=LlmRequestFailedException,
         action="RetryActionNeeded",
         reason="Coding assistant request failed",
-        message_phrases=("Copilot", "request failed"),
+        message_phrases=("Copilot", "request failed", "scripted Copilot session failure"),
         contextual_fields=(("Operation", "session_request"), ("Model", expected_model), ("ReasoningEffort", "medium")),
         cause_type="RuntimeError",
         forbidden_message_phrases=(expected_expense_line,),
@@ -68,12 +68,19 @@ async def test_analyze_expenses_WhenCopilotSessionEmitsError_ThenReportsGatewayF
     expected_available_tools: list[list[object]] = [[]] * expected_request_count
     expected_stop_count: int = 1
     expected_jev_request_count: int = 0
+    expected_session_timeouts: list[float] = [900.0] * expected_request_count
+    expected_deleted_session_ids: list[str] = [TestMediatorCopilot.SCRIPTED_SESSION_ID] * expected_request_count
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure = ExpectedLlmGatewayFailure(
         exception_type=LlmRequestFailedException,
         action="RetryActionNeeded",
         reason="Coding assistant request failed",
-        message_phrases=("Copilot", "request failed"),
-        contextual_fields=(("Operation", "session_request"), ("Model", expected_model), ("ReasoningEffort", "medium")),
+        message_phrases=("Copilot", "request failed", "scripted Copilot session failure"),
+        contextual_fields=(
+            ("Operation", "session_request"),
+            ("Model", expected_model),
+            ("ReasoningEffort", "medium"),
+            ("ProviderError", "Session error: scripted Copilot session failure"),
+        ),
         cause_type="Exception",
         forbidden_message_phrases=(expected_expense_line,),
     )
@@ -94,9 +101,18 @@ async def test_analyze_expenses_WhenCopilotSessionEmitsError_ThenReportsGatewayF
     assert (
         test_mediator_copilot.captured_models,
         test_mediator_copilot.captured_available_tools,
+        test_mediator_copilot.captured_timeouts,
+        test_mediator_copilot.deleted_session_ids,
         test_mediator_copilot.stop_count,
         len(test_mediator_jev.captured_jev_requests),
-    ) == (expected_models, expected_available_tools, expected_stop_count, expected_jev_request_count)
+    ) == (
+        expected_models,
+        expected_available_tools,
+        expected_session_timeouts,
+        expected_deleted_session_ids,
+        expected_stop_count,
+        expected_jev_request_count,
+    )
 
 
 async def test_analyze_expenses_WhenCopilotSessionHasNoMessage_ThenReportsInvalidResponseAtBoundary() -> None:

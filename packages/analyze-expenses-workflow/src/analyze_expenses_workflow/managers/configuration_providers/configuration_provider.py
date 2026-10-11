@@ -27,8 +27,15 @@ _DEFAULT_REASONING_EFFORT_BY_LLM_OPERATION: Final[Mapping[LlmOperation, Reasonin
         LlmOperation.EXPENSE_CATEGORIZATION: ReasoningEffort.LOW,
     }
 )
-_COPILOT_SUPPORTED_REASONING_EFFORTS: Final[frozenset[ReasoningEffort]] = frozenset(
+_LOW_TO_MAX_REASONING_EFFORTS: Final[frozenset[ReasoningEffort]] = frozenset(
     {ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH, ReasoningEffort.XHIGH, ReasoningEffort.MAX}
+)
+_SUPPORTED_REASONING_EFFORTS_BY_SUBSCRIPTION: Final[Mapping[CodingAssistantSubscription, frozenset[ReasoningEffort]]] = MappingProxyType(
+    {
+        CodingAssistantSubscription.GPT_CODEX: frozenset(ReasoningEffort),
+        CodingAssistantSubscription.GITHUB_COPILOT: _LOW_TO_MAX_REASONING_EFFORTS,
+        CodingAssistantSubscription.CLAUDE_CODE: _LOW_TO_MAX_REASONING_EFFORTS,
+    }
 )
 
 
@@ -38,6 +45,8 @@ class ConfigurationProvider:
     _DINING_COFFEE_MONTHLY_BUDGET_SETTING_NAME: Final[str] = "DINING_COFFEE_MONTHLY_BUDGET"
     _SHOPPING_MONTHLY_BUDGET_SETTING_NAME: Final[str] = "SHOPPING_MONTHLY_BUDGET"
     _OPEN_ROUTER_BASE_URL_SETTING_NAME: Final[str] = "OPEN_ROUTER_BASE_URL"
+    _JEV_PARSING_MINIMUM_CHOICE_PROBABILITY_SETTING_NAME: Final[str] = "JEV_PARSING_MINIMUM_CHOICE_PROBABILITY"
+    _DEFAULT_OPENAI_MODEL: Final[str] = "gpt-6-luna"
 
     def __init__(self, override_by_environment_variable_name: Mapping[str, str] | None = None) -> None:
         settings_provider_environment: SettingsProviderEnvironment = SettingsProviderEnvironment(override_by_environment_variable_name)
@@ -54,10 +63,6 @@ class ConfigurationProvider:
         subscription: CodingAssistantSubscription = cls._parse_subscription(subscription_value)
         cls._reject_model_family_override(settings_provider_environment, cls._CODING_ASSISTANT_MODEL_FAMILY_SETTING_NAME)
         family: ModelFamily = MODEL_FAMILY_BY_SUBSCRIPTION[subscription]
-        if subscription == CodingAssistantSubscription.CLAUDE_CODE:
-            raise ConfigurationSettingException(
-                f"{cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME}=CLAUDE_CODE maps to ANTHROPIC; SDK unavailable; use GPT_CODEX or GITHUB_COPILOT"
-            )
         try:
             return CodingAssistantSettings(coding_assistant_subscription=subscription, model_family=family)
         except ValidationError as exc:
@@ -68,7 +73,9 @@ class ConfigurationProvider:
     @classmethod
     def _reject_model_family_override(cls, settings_provider_environment: SettingsProviderEnvironment, setting_name: str) -> None:
         if settings_provider_environment.read_setting_value(setting_name) is not None:
-            raise ConfigurationSettingException(f"{setting_name} is derived from CODING_ASSISTANT_SUBSCRIPTION and must be removed")
+            raise ConfigurationSettingException(
+                f"{setting_name} is derived from {cls._CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME} and must be removed"
+            )
 
     @classmethod
     def _parse_subscription(cls, subscription_value: str) -> CodingAssistantSubscription:
@@ -121,21 +128,8 @@ class ConfigurationProvider:
         family: ModelFamily = coding_assistant_settings.model_family
         model_setting_name: str = f"{operation.value}_{family.value}_MODEL"
         effort_setting_name: str = f"{operation.value}_{family.value}_REASONING_EFFORT"
-        model_name: str | None = cls._optional(settings_provider_environment, model_setting_name)
-        reasoning_effort_value: str | None = cls._optional(settings_provider_environment, effort_setting_name)
-        if family == ModelFamily.OPENAI:
-            if model_name is None:
-                legacy_model_setting_name: str = f"{operation.value}_MODEL"
-                model_name = cls._optional(settings_provider_environment, legacy_model_setting_name)
-                if model_name is not None:
-                    model_setting_name = legacy_model_setting_name
-            model_name = model_name or "gpt-6-luna"
-            if reasoning_effort_value is None:
-                effort_setting_name = f"{operation.value}_REASONING_EFFORT"
-                reasoning_effort_value = cls._optional(settings_provider_environment, effort_setting_name)
-            reasoning_effort_value = reasoning_effort_value or _DEFAULT_REASONING_EFFORT_BY_LLM_OPERATION[operation].value
-        elif model_name is None:
-            raise ConfigurationSettingException(f"{model_setting_name} is required for the selected model family")
+        model_name: str = cls._resolve_model_name(settings_provider_environment, model_setting_name, family)
+        reasoning_effort_value: str = cls._resolve_reasoning_effort_value(settings_provider_environment, effort_setting_name, operation)
         return cls._build_llm_operation_setting(
             family,
             model_name,
@@ -145,12 +139,28 @@ class ConfigurationProvider:
             coding_assistant_settings.coding_assistant_subscription,
         )
 
+    @classmethod
+    def _resolve_model_name(cls, settings_provider_environment: SettingsProviderEnvironment, model_setting_name: str, family: ModelFamily) -> str:
+        model_name: str | None = cls._optional(settings_provider_environment, model_setting_name)
+        if model_name is not None:
+            return model_name
+        if family == ModelFamily.OPENAI:
+            return cls._DEFAULT_OPENAI_MODEL
+        raise ConfigurationSettingException(f"{model_setting_name} is required for the selected model family")
+
+    @classmethod
+    def _resolve_reasoning_effort_value(
+        cls, settings_provider_environment: SettingsProviderEnvironment, effort_setting_name: str, operation: LlmOperation
+    ) -> str:
+        reasoning_effort_value: str | None = cls._optional(settings_provider_environment, effort_setting_name)
+        return reasoning_effort_value or _DEFAULT_REASONING_EFFORT_BY_LLM_OPERATION[operation].value
+
     @staticmethod
     def _build_llm_operation_setting(
         family: ModelFamily,
         model_name: str,
         model_setting_name: str,
-        reasoning_effort_value: str | None,
+        reasoning_effort_value: str,
         effort_setting_name: str,
         subscription: CodingAssistantSubscription,
     ) -> LlmOperationSettings:
@@ -162,20 +172,17 @@ class ConfigurationProvider:
                 f"{model_setting_name} must name an ANTHROPIC model for {subscription.value}; received {model_name!r}"
             )
         try:
-            reasoning_effort: ReasoningEffort | None = ReasoningEffort(reasoning_effort_value) if reasoning_effort_value is not None else None
+            reasoning_effort: ReasoningEffort = ReasoningEffort(reasoning_effort_value)
         except ValueError as exc:
-            valid_reasoning_efforts: str = ", ".join(item.value for item in ReasoningEffort)
+            valid_reasoning_efforts: str = ", ".join(known_reasoning_effort.value for known_reasoning_effort in ReasoningEffort)
             raise ConfigurationSettingException(
                 f"{effort_setting_name} must be one of: {valid_reasoning_efforts}; received {reasoning_effort_value!r}"
             ) from exc
-        if (
-            subscription == CodingAssistantSubscription.GITHUB_COPILOT
-            and reasoning_effort is not None
-            and reasoning_effort not in _COPILOT_SUPPORTED_REASONING_EFFORTS
-        ):
-            supported_efforts: str = ", ".join(effort.value for effort in ReasoningEffort if effort in _COPILOT_SUPPORTED_REASONING_EFFORTS)
+        supported_reasoning_efforts: frozenset[ReasoningEffort] = _SUPPORTED_REASONING_EFFORTS_BY_SUBSCRIPTION[subscription]
+        if reasoning_effort not in supported_reasoning_efforts:
+            supported_efforts: str = ", ".join(effort.value for effort in ReasoningEffort if effort in supported_reasoning_efforts)
             raise ConfigurationSettingException(
-                f"{effort_setting_name} must be one of: {supported_efforts} for GITHUB_COPILOT; received {reasoning_effort_value!r}"
+                f"{effort_setting_name} must be one of: {supported_efforts} for {subscription.value}; received {reasoning_effort_value!r}"
             )
         try:
             return LlmOperationSettings(model=model_name, reasoning_effort=reasoning_effort, model_family=family)
@@ -187,7 +194,7 @@ class ConfigurationProvider:
         open_router_base_url: str = cls._require(settings_provider_environment, cls._OPEN_ROUTER_BASE_URL_SETTING_NAME)
         jev_model: str = cls._require(settings_provider_environment, "JEV_MODEL")
         open_router_key: str = cls._require(settings_provider_environment, "OPEN_ROUTER_KEY")
-        minimum_probability: str = cls._optional(settings_provider_environment, "JEV_PARSING_MINIMUM_CHOICE_PROBABILITY") or "0.8"
+        minimum_probability: str = cls._optional(settings_provider_environment, cls._JEV_PARSING_MINIMUM_CHOICE_PROBABILITY_SETTING_NAME) or "0.8"
         return cls._build_jev_settings(open_router_base_url, jev_model, open_router_key, minimum_probability)
 
     @classmethod
@@ -207,7 +214,7 @@ class ConfigurationProvider:
                     f"{cls._OPEN_ROUTER_BASE_URL_SETTING_NAME} must be a valid HTTPS URL; received {open_router_base_url!r}"
                 ) from exc
             raise ConfigurationSettingException(
-                f"JEV_PARSING_MINIMUM_CHOICE_PROBABILITY must be between zero and one; received {minimum_probability!r}"
+                f"{cls._JEV_PARSING_MINIMUM_CHOICE_PROBABILITY_SETTING_NAME} must be between zero and one; received {minimum_probability!r}"
             ) from exc
 
     @staticmethod
@@ -236,9 +243,9 @@ class ConfigurationProvider:
     def get_budget_settings(self) -> BudgetSettings:
         return self._budget_settings
 
-    def get_llm_operation_settings(self, operation: LlmOperation) -> LlmOperationSettings:
+    def retrieve_llm_operation_settings(self, operation: LlmOperation) -> LlmOperationSettings:
         try:
             return self._llm_operation_settings[operation]
         except KeyError as exc:
-            available_operations: str = ", ".join(item.value for item in self._llm_operation_settings)
+            available_operations: str = ", ".join(llm_operation.value for llm_operation in self._llm_operation_settings)
             raise ConfigurationSettingException(f"{operation.value} is not configured; available operations: {available_operations}") from exc

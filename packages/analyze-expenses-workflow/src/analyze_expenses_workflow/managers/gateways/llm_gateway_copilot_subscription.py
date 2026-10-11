@@ -4,7 +4,7 @@ from typing import Final, Self, cast, final
 from copilot import CopilotClient
 from copilot._jsonrpc import JsonRpcError, ProcessExitedError
 from copilot.client import StopError
-from copilot.session import ReasoningEffort
+from copilot.session import CopilotSession, ReasoningEffort
 from copilot.session_events import AssistantMessageData, SessionEvent
 
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
@@ -12,15 +12,27 @@ from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import 
     LlmGatewayClosedException,
     LlmRequestFailedException,
     LlmResponseInvalidException,
-    LlmUnsupportedReasoningEffortException,
 )
 
 
 @final
 class LlmGatewayCopilotSubscription:
-    _SUPPORTED_EFFORTS: frozenset[str] = frozenset({"low", "medium", "high", "xhigh", "max"})
     _OPERATION_CONTEXT_FIELD_NAME: Final[str] = "Operation"
     _MODEL_CONTEXT_FIELD_NAME: Final[str] = "Model"
+    _PROVIDER_ERROR_MESSAGE_LIMIT: Final[int] = 500
+    # The SDK waits only 60 seconds by default, and a high-effort turn can take longer; Claude Code allows the same 900.
+    _SESSION_TIMEOUT_SECONDS: Final[float] = 900.0
+    # The SDK reports a session error or a lost connection as a bare Exception and an invalid JSON-RPC response as a
+    # bare ValueError, alongside its own exception types; none of them may leave the gateway untranslated.
+    _SDK_FAILURE_TYPES: Final[tuple[type[Exception], ...]] = (
+        JsonRpcError,
+        ProcessExitedError,
+        StopError,
+        RuntimeError,
+        OSError,
+        TimeoutError,
+        ValueError,
+    )
 
     def __init__(self, copilot_client: CopilotClient) -> None:
         self._copilot_client: CopilotClient = copilot_client
@@ -31,24 +43,28 @@ class LlmGatewayCopilotSubscription:
         resolved_reasoning_effort: ReasoningEffort | None = self._resolve_effort(reasoning_effort)
 
         try:
-            session_event: SessionEvent | None = await self._request(prompt, model, resolved_reasoning_effort)
-        except (JsonRpcError, ProcessExitedError, StopError, RuntimeError, OSError, TimeoutError) as exc:
-            raise self._request_failure(model, resolved_reasoning_effort) from exc
+            session_event: SessionEvent | None = await self._send_message(self._copilot_client, prompt, model, resolved_reasoning_effort)
         except Exception as exc:
-            if type(exc) is Exception and str(exc).startswith("Session error: "):
-                raise self._request_failure(model, resolved_reasoning_effort) from exc
-            raise
+            if not self._is_sdk_failure(exc):
+                raise
+            raise self._request_failure(exc, model, resolved_reasoning_effort) from exc
 
         return self._response_text(session_event)
 
     @classmethod
-    def _request_failure(cls, model: str, reasoning_effort: ReasoningEffort | None) -> LlmRequestFailedException:
+    def _is_sdk_failure(cls, request_error: Exception) -> bool:
+        return isinstance(request_error, cls._SDK_FAILURE_TYPES) or type(request_error) is Exception
+
+    @classmethod
+    def _request_failure(cls, request_error: Exception, model: str, reasoning_effort: ReasoningEffort | None) -> LlmRequestFailedException:
+        copilot_failure_message: str = (str(request_error) or type(request_error).__name__)[: cls._PROVIDER_ERROR_MESSAGE_LIMIT]
         return LlmRequestFailedException(
-            "Copilot subscription request failed",
+            f"Copilot subscription request failed: {copilot_failure_message}",
             {
                 cls._OPERATION_CONTEXT_FIELD_NAME: "session_request",
                 cls._MODEL_CONTEXT_FIELD_NAME: model,
                 "ReasoningEffort": reasoning_effort if reasoning_effort is not None else "default",
+                "ProviderError": copilot_failure_message,
             },
         )
 
@@ -58,38 +74,26 @@ class LlmGatewayCopilotSubscription:
                 "Copilot gateway is closed", {self._OPERATION_CONTEXT_FIELD_NAME: "gateway_open_state_check", "GatewayState": "closed"}
             )
 
-    @classmethod
-    def _resolve_effort(cls, reasoning_effort: str | None) -> ReasoningEffort | None:
-        if reasoning_effort is not None and reasoning_effort not in cls._SUPPORTED_EFFORTS:
-            supported_efforts: str = ", ".join(sorted(cls._SUPPORTED_EFFORTS))
-            raise LlmUnsupportedReasoningEffortException(
-                f"Copilot does not recognize reasoning effort {reasoning_effort!r}; supported values: {supported_efforts}",
-                {
-                    cls._OPERATION_CONTEXT_FIELD_NAME: "reasoning_effort_validation",
-                    "RejectedReasoningEffort": reasoning_effort,
-                    "AllowedReasoningEfforts": supported_efforts,
-                },
-            )
+    @staticmethod
+    def _resolve_effort(reasoning_effort: str | None) -> ReasoningEffort | None:
+        # The configuration provider has already accepted only the efforts this subscription supports.
         return cast("ReasoningEffort | None", reasoning_effort)
 
-    def _client_for_request(self) -> CopilotClient:
-        self._ensure_open()
-        return self._copilot_client
-
-    async def _request(self, prompt: str, model: str, resolved_reasoning_effort: ReasoningEffort | None) -> SessionEvent | None:
-        copilot_client: CopilotClient = self._client_for_request()
-        return await self._send_message(copilot_client, prompt, model, resolved_reasoning_effort)
-
-    @staticmethod
+    @classmethod
     async def _send_message(
-        copilot_client: CopilotClient, prompt: str, model: str, resolved_reasoning_effort: ReasoningEffort | None
+        cls, copilot_client: CopilotClient, prompt: str, model: str, resolved_reasoning_effort: ReasoningEffort | None
     ) -> SessionEvent | None:
-        async with await copilot_client.create_session(
+        copilot_session: CopilotSession = await copilot_client.create_session(
             model=model,
             reasoning_effort=resolved_reasoning_effort,
             available_tools=[],
-        ) as copilot_session:
-            return await copilot_session.send_and_wait(prompt)
+        )
+        try:
+            async with copilot_session:
+                return await copilot_session.send_and_wait(prompt, timeout=cls._SESSION_TIMEOUT_SECONDS)
+        finally:
+            # Disconnecting keeps the session, and so the user's expense lines, in the user's Copilot history.
+            await copilot_client.delete_session(copilot_session.session_id)
 
     @staticmethod
     def _response_text(session_event: SessionEvent | None) -> str:

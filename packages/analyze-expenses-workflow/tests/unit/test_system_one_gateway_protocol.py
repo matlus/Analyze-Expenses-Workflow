@@ -16,9 +16,7 @@ def test_choice_decision_rejects_a_choice_outside_the_scored_options() -> None:
 
 
 def test_choice_decision_preserves_explicit_choice_after_independent_scoring() -> None:
-    decision: ChoiceDecision = ChoiceDecision(
-        choice="groceries", confidence=0.8, probabilities={"groceries": 0.3, "dining": 0.7}
-    )
+    decision: ChoiceDecision = ChoiceDecision(choice="groceries", confidence=0.8, probabilities={"groceries": 0.3, "dining": 0.7})
 
     assert decision.choice == "groceries"
     assert decision.probabilities["dining"] > decision.probabilities["groceries"]

@@ -29,8 +29,7 @@ class ExpenseReconciliationProcessor:
 
         for parsed_line, categorization in zip(parsed_lines, categorizations, strict=True):
             if categorization is not None and (
-                categorization.source_line_number != parsed_line.line_number
-                or categorization.source_text != parsed_line.source_text
+                categorization.source_line_number != parsed_line.line_number or categorization.source_text != parsed_line.source_text
             ):
                 raise ValueError(f"Categorization does not match expense source line {parsed_line.line_number}")
 
@@ -68,9 +67,7 @@ class ExpenseReconciliationProcessor:
             raise ValueError(f"Complete expense source line {parsed_line.line_number} has no categorization")
 
         duplicate_of_line_number: int | None = (
-            self._duplicate_origin(parsed_line, previous_transaction)
-            if parsed_line.line_number in confirmed_duplicate_line_numbers
-            else None
+            self._duplicate_origin(parsed_line, previous_transaction) if parsed_line.line_number in confirmed_duplicate_line_numbers else None
         )
         if duplicate_of_line_number is not None:
             return ExpenseTransaction(parsed_line, categorization, TransactionTreatment.EXCLUDED_DUPLICATE, duplicate_of_line_number)

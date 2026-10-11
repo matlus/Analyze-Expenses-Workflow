@@ -4,12 +4,12 @@ from openai_codex import ApprovalMode, Sandbox
 
 from acceptance_support.mediator_codex import TestMediatorCodex
 from acceptance_support.mediator_jev import TestMediatorJev
-from analyze_expenses_workflow.domain_facades import LlmGatewayException
+from analyze_expenses_workflow.domain_facades import AnalyzeExpensesTechnicalException
 
 
 @dataclass(frozen=True, slots=True)
 class ExpectedLlmGatewayFailure:
-    exception_type: type[LlmGatewayException]
+    exception_type: type[AnalyzeExpensesTechnicalException]
     action: str
     reason: str
     message_phrases: tuple[str, ...]
@@ -45,7 +45,7 @@ def assert_codex_requests(
 
 
 def assert_llm_gateway_failure(
-    actual_llm_gateway_exception: LlmGatewayException,
+    actual_llm_gateway_exception: AnalyzeExpensesTechnicalException,
     expected_llm_gateway_failure: ExpectedLlmGatewayFailure,
 ) -> None:
     mismatches: list[str] = []

@@ -9,11 +9,15 @@ from copilot.session_events import SessionEvent
 
 class TestMediatorCopilot:
     __test__: ClassVar[bool] = False
+    SCRIPTED_SESSION_ID: ClassVar[str] = "scripted-copilot-session"
 
     def __init__(self, emit_session_error: bool = False, stop_failures_before_success: int = 0, return_no_message: bool = False) -> None:
         self.captured_models: list[str] = []
         self.captured_reasoning_efforts: list[ReasoningEffort | None] = []
         self.captured_available_tools: list[list[object]] = []
+        self.captured_timeouts: list[float] = []
+        self.deleted_session_ids: list[str] = []
+        self.session_id: str = self.SCRIPTED_SESSION_ID
         self.stop_count: int = 0
         self._emit_session_error: bool = emit_session_error
         self._return_no_message: bool = return_no_message
@@ -41,11 +45,15 @@ class TestMediatorCopilot:
     ) -> None:
         return None
 
-    async def send_and_wait(self, prompt: str) -> SessionEvent | None:
+    async def send_and_wait(self, prompt: str, *, timeout: float) -> SessionEvent | None:  # noqa: ASYNC109 - mirrors the Copilot SDK signature
+        self.captured_timeouts.append(timeout)
         if self._return_no_message:
             return None
         sdk_error: Exception = Exception("Session error: scripted Copilot session failure")
         raise sdk_error
+
+    async def delete_session(self, session_id: str) -> None:
+        self.deleted_session_ids.append(session_id)
 
     async def stop(self) -> None:
         self.stop_count += 1
