@@ -1,7 +1,7 @@
 from typing import final, override
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    AnalyzeExpensesTechnicalException,
+    AnalyzeExpensesTechnicalBaseException,
     ExceptionAction,
     ExceptionContextInput,
     ExpenseLogEvent,
@@ -9,7 +9,7 @@ from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception im
 
 
 @final
-class ExpenseFindingsException(AnalyzeExpensesTechnicalException):
+class ExpenseFindingsException(AnalyzeExpensesTechnicalBaseException):
     def __init__(self, message: str, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         super().__init__(message, ExpenseLogEvent.FINDINGS_SELECTION, contextual_data_by_name)
 

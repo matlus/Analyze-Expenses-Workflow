@@ -1,20 +1,20 @@
 from typing import final, override
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    AnalyzeExpensesTechnicalException,
+    AnalyzeExpensesTechnicalBaseException,
     ExceptionAction,
     ExceptionContextInput,
     ExpenseLogEvent,
 )
 
 
-class LlmGatewayExceptionBase(AnalyzeExpensesTechnicalException):
+class LlmGatewayBaseException(AnalyzeExpensesTechnicalBaseException):
     def __init__(self, message: str, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         super().__init__(message, ExpenseLogEvent.LLM_GATEWAY, contextual_data_by_name)
 
 
 @final
-class LlmRequestFailedException(LlmGatewayExceptionBase):
+class LlmRequestFailedException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -27,7 +27,7 @@ class LlmRequestFailedException(LlmGatewayExceptionBase):
 
 
 @final
-class LlmGatewayClosedException(LlmGatewayExceptionBase):
+class LlmGatewayClosedException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -40,7 +40,7 @@ class LlmGatewayClosedException(LlmGatewayExceptionBase):
 
 
 @final
-class LlmResponseInvalidException(LlmGatewayExceptionBase):
+class LlmResponseInvalidException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -53,7 +53,7 @@ class LlmResponseInvalidException(LlmGatewayExceptionBase):
 
 
 @final
-class LlmClientCleanupFailedException(LlmGatewayExceptionBase):
+class LlmClientCleanupFailedException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -66,7 +66,7 @@ class LlmClientCleanupFailedException(LlmGatewayExceptionBase):
 
 
 @final
-class LlmRequestRejectedException(LlmGatewayExceptionBase):
+class LlmRequestRejectedException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -79,7 +79,7 @@ class LlmRequestRejectedException(LlmGatewayExceptionBase):
 
 
 @final
-class LlmCliUnavailableException(LlmGatewayExceptionBase):
+class LlmCliUnavailableException(LlmGatewayBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:

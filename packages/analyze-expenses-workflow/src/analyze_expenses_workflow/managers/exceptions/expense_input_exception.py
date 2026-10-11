@@ -1,7 +1,7 @@
 from typing import final, override
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    AnalyzeExpensesBusinessException,
+    AnalyzeExpensesBusinessBaseException,
     ExceptionAction,
     ExceptionContext,
     ExpenseLogEvent,
@@ -9,7 +9,7 @@ from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception im
 
 
 @final
-class ExpenseInputException(AnalyzeExpensesBusinessException):
+class ExpenseInputException(AnalyzeExpensesBusinessBaseException):
     def __init__(self, message: str, line_number: int | None = None) -> None:
         contextual_data_by_name: ExceptionContext = {"LineNumber": line_number} if line_number is not None else {}
         super().__init__(message, ExpenseLogEvent.INPUT_VALIDATION, contextual_data_by_name)

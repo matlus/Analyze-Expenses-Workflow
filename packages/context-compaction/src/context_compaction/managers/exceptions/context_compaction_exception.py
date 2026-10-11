@@ -6,36 +6,36 @@ from pathlib import Path
 from typing import final
 
 
-class ContextCompactionBusinessError(ValueError):
+class ContextCompactionBusinessBaseException(ValueError):
     """A trial input can be corrected by its caller."""
 
 
-class ContextCompactionTechnicalError(RuntimeError):
+class ContextCompactionTechnicalBaseException(RuntimeError):
     """A trial failure needs system-owner attention."""
 
 
 @final
-class ContextCompactionConfigurationError(ContextCompactionBusinessError):
+class ContextCompactionConfigurationException(ContextCompactionBusinessBaseException):
     """Jev settings cannot be read or are invalid."""
 
 
 @final
-class ContextCompactionInputError(ContextCompactionBusinessError):
+class ContextCompactionInputException(ContextCompactionBusinessBaseException):
     """A caller supplied invalid trial options."""
 
 
 @final
-class CompactionDecisionError(ContextCompactionBusinessError):
+class CompactionDecisionException(ContextCompactionBusinessBaseException):
     """The retention input cannot form a complete compaction decision."""
 
 
 @final
-class RolloutError(ContextCompactionBusinessError):
+class RolloutException(ContextCompactionBusinessBaseException):
     """The selected Codex rollout cannot form a trial case."""
 
 
 @final
-class ContextCompactionConfigurationReadError(ContextCompactionTechnicalError):
+class ContextCompactionConfigurationReadException(ContextCompactionTechnicalBaseException):
     def __init__(self, env_file: Path) -> None:
         self.operation: str = "read_jev_settings"
         self.env_file: Path = env_file

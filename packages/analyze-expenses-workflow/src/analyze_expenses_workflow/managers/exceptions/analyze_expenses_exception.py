@@ -91,7 +91,7 @@ class ExceptionDiagnostics:
         return (*self.fields(), *traceback_fields)
 
 
-class AnalyzeExpensesExceptionBase(Exception, ABC):
+class AnalyzeExpensesBaseException(Exception, ABC):
     APPLICATION_NAME: ClassVar[str] = "AnalyzeExpensesWorkflow"
 
     def __init__(self, message: str, log_event: ExpenseLogEvent, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
@@ -173,20 +173,15 @@ class AnalyzeExpensesExceptionBase(Exception, ABC):
         return json.dumps(serializable_diagnostics, indent=2, allow_nan=False)
 
 
-class AnalyzeExpensesBusinessExceptionBase(AnalyzeExpensesExceptionBase, ABC):
+class AnalyzeExpensesBusinessBaseException(AnalyzeExpensesBaseException, ABC):
     @property
     @override
     def http_status_code(self) -> int:
         return 400
 
 
-class AnalyzeExpensesTechnicalExceptionBase(AnalyzeExpensesExceptionBase, ABC):
+class AnalyzeExpensesTechnicalBaseException(AnalyzeExpensesBaseException, ABC):
     @property
     @override
     def http_status_code(self) -> int:
         return 500
-
-
-AnalyzeExpensesException = AnalyzeExpensesExceptionBase
-AnalyzeExpensesBusinessException = AnalyzeExpensesBusinessExceptionBase
-AnalyzeExpensesTechnicalException = AnalyzeExpensesTechnicalExceptionBase

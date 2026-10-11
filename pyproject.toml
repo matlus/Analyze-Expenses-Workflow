@@ -117,10 +117,11 @@ ignore = [
     "PLR0911",
     "PLR0912",
     "PLR0915",
+    # Exception types end in "Exception" (abstract bases in "BaseException"), not the "Error" that N818 expects.
+    "N818",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"**/exceptions/*.py" = ["N818"]
 "**/tests/**/*.py" = [
     "S101",
     "ARG",
@@ -136,7 +137,7 @@ ignore = [
     "PT004",
     "PT023",
 ]
-"evals/**/*.py" = ["S101", "INP001", "PLR2004", "N802", "N818"]
+"evals/**/*.py" = ["S101", "INP001", "PLR2004", "N802"]
 "**/entry_point.py" = ["I001"]
 "__init__.py" = ["F401"]
 

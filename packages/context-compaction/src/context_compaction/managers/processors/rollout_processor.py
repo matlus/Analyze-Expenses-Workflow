@@ -9,7 +9,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
-from context_compaction.managers.exceptions.context_compaction_error import RolloutError
+from context_compaction.managers.exceptions.context_compaction_exception import RolloutException
 from context_compaction.managers.models.context_models import MessageSegment, PendingToolCall, Segment, ToolSegment, TrialCase
 from context_compaction.managers.processors.models.parsed_rollout_window import ParsedRolloutWindow
 from context_compaction.managers.processors.models.rollout_resources import (
@@ -130,7 +130,7 @@ class ContextRolloutProcessor:
         try:
             return _string_object(json.loads(raw_line))
         except json.JSONDecodeError as error:
-            raise RolloutError(f"Invalid JSONL record at line {line_number} in {source}.") from error
+            raise RolloutException(f"Invalid JSONL record at line {line_number} in {source}.") from error
 
     @staticmethod
     def _selected_payload(
@@ -148,7 +148,7 @@ class ContextRolloutProcessor:
         response_value_by_field_name: Mapping[str, object] | None = _string_object(rollout_value_by_field_name.get("payload"))
         if response_value_by_field_name is None:
             if line_number < rollout_window_selection.cutoff_line:
-                raise RolloutError(f"Selected response at line {line_number} needs an object payload.")
+                raise RolloutException(f"Selected response at line {line_number} needs an object payload.")
             return None
         if line_number >= rollout_window_selection.cutoff_line and (
             held_out_answer is not None
@@ -199,7 +199,7 @@ class ContextRolloutProcessor:
         call_id: str = rollout_tool_call_resource.call_id
         if call_id in rollout_scan_state.pending_call_by_id or call_id in rollout_scan_state.completed_call_ids:
             call_fingerprint: str = sha256(call_id.encode("utf-8")).hexdigest()[:12]
-            raise RolloutError(f"Duplicate tool call ID at line {line_number}; fingerprint={call_fingerprint}.")
+            raise RolloutException(f"Duplicate tool call ID at line {line_number}; fingerprint={call_fingerprint}.")
         pending_call_by_id: dict[str, PendingToolCall] = dict(rollout_scan_state.pending_call_by_id)
         pending_call_by_id[call_id] = PendingToolCall(line_number, f"{rollout_tool_call_resource.name}: {rollout_tool_call_resource.input}")
         return replace(rollout_scan_state, pending_call_by_id=MappingProxyType(pending_call_by_id))
@@ -227,11 +227,11 @@ class ContextRolloutProcessor:
     def _validate_window(parsed_rollout_window: ParsedRolloutWindow) -> None:
         window: str = f"{parsed_rollout_window.source}:{parsed_rollout_window.start_line}-{parsed_rollout_window.cutoff_line}"
         if not parsed_rollout_window.held_out_answer:
-            raise RolloutError(f"The selected window {window} needs a later assistant answer.")
+            raise RolloutException(f"The selected window {window} needs a later assistant answer.")
         if not parsed_rollout_window.segments:
-            raise RolloutError(f"The selected window {window} needs context segments.")
+            raise RolloutException(f"The selected window {window} needs context segments.")
         if parsed_rollout_window.pending_lines:
-            raise RolloutError(
+            raise RolloutException(
                 "".join(
                     (
                         f"The selected window {window} contains {len(parsed_rollout_window.pending_lines)} unfinished tool calls ",
@@ -240,9 +240,9 @@ class ContextRolloutProcessor:
                 )
             )
         if not any(segment.kind == "user" for segment in parsed_rollout_window.segments):
-            raise RolloutError(f"The selected window {window} needs a user message.")
+            raise RolloutException(f"The selected window {window} needs a user message.")
         if not any(segment.kind == "tool" for segment in parsed_rollout_window.segments):
-            raise RolloutError(f"The selected window {window} needs a completed tool call.")
+            raise RolloutException(f"The selected window {window} needs a completed tool call.")
 
     @staticmethod
     def _build_case(parsed_rollout_window: ParsedRolloutWindow) -> TrialCase:

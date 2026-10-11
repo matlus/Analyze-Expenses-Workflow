@@ -1,6 +1,6 @@
 from urllib.parse import SplitResult, urlsplit
 
-from context_compaction.managers.exceptions.context_compaction_error import ContextCompactionConfigurationError
+from context_compaction.managers.exceptions.context_compaction_exception import ContextCompactionConfigurationException
 
 
 class ValidatorJevConfiguration:
@@ -9,7 +9,7 @@ class ValidatorJevConfiguration:
         problems: list[str] = ValidatorJevConfiguration._required_settings(api_key, base_url, model)
         problems.extend(ValidatorJevConfiguration._base_url(base_url))
         if problems:
-            raise ContextCompactionConfigurationError("; ".join(problems))
+            raise ContextCompactionConfigurationException("; ".join(problems))
 
     @staticmethod
     def _required_settings(api_key: str | None, base_url: str | None, model: str | None) -> list[str]:

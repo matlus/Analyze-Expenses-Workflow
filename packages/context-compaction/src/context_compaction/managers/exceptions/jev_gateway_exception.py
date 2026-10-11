@@ -1,10 +1,10 @@
 from collections.abc import Mapping
 from typing import final
 
-from context_compaction.managers.exceptions.context_compaction_error import ContextCompactionTechnicalError
+from context_compaction.managers.exceptions.context_compaction_exception import ContextCompactionTechnicalBaseException
 
 
-class JevGatewayError(ContextCompactionTechnicalError):
+class JevGatewayBaseException(ContextCompactionTechnicalBaseException):
     """Base class for distinct Jev gateway failures."""
 
     def __init__(self, message: str, *, operation: str, model: str, detail_value_by_name: Mapping[str, str] | None = None) -> None:
@@ -16,20 +16,20 @@ class JevGatewayError(ContextCompactionTechnicalError):
 
 
 @final
-class JevGatewayClosedError(JevGatewayError):
+class JevGatewayClosedException(JevGatewayBaseException):
     """The caller used a gateway after its client was released."""
 
 
 @final
-class JevRequestError(JevGatewayError):
+class JevRequestException(JevGatewayBaseException):
     """The provider request failed."""
 
 
 @final
-class JevResponseError(JevGatewayError):
+class JevResponseException(JevGatewayBaseException):
     """The provider returned an unusable answer."""
 
 
 @final
-class JevCleanupError(JevGatewayError):
+class JevCleanupException(JevGatewayBaseException):
     """The provider client could not be closed."""

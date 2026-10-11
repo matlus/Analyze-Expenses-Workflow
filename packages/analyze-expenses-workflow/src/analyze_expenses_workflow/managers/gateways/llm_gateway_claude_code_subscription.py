@@ -3,13 +3,13 @@ from typing import Final, Self, final
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionContext
 from analyze_expenses_workflow.managers.exceptions.claude_code_cli_exception import (
-    ClaudeCodeCliException,
+    ClaudeCodeCliBaseException,
     ClaudeCodeCliResultInvalidException,
     ClaudeCodeCliStartFailedException,
 )
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
     LlmCliUnavailableException,
-    LlmGatewayExceptionBase,
+    LlmGatewayBaseException,
     LlmRequestFailedException,
     LlmResponseInvalidException,
 )
@@ -31,19 +31,21 @@ class LlmGatewayClaudeCodeSubscription:
     async def complete(self, prompt: str, model: str, reasoning_effort: str | None) -> str:
         try:
             result_text: str | None = await self._claude_code_cli_client.run_prompt(prompt, model, reasoning_effort)
-        except ClaudeCodeCliException as claude_code_cli_exception:
-            raise self._request_failure(claude_code_cli_exception, model, reasoning_effort) from claude_code_cli_exception
+        except ClaudeCodeCliBaseException as claude_code_cli_base_exception:
+            raise self._request_failure(claude_code_cli_base_exception, model, reasoning_effort) from claude_code_cli_base_exception
         return self._response_text(result_text, model, reasoning_effort)
 
     @classmethod
-    def _request_failure(cls, claude_code_cli_exception: ClaudeCodeCliException, model: str, reasoning_effort: str | None) -> LlmGatewayExceptionBase:
+    def _request_failure(
+        cls, claude_code_cli_base_exception: ClaudeCodeCliBaseException, model: str, reasoning_effort: str | None
+    ) -> LlmGatewayBaseException:
         """Keeps the action the CLI failure calls for: a missing or unstartable CLI needs installing, unreadable output
         needs a developer, and every other failure of one request may succeed when retried."""
         contextual_data_by_name: ExceptionContext = cls._request_context("cli_request", model, reasoning_effort)
-        failure_description: str = claude_code_cli_exception.message
-        if isinstance(claude_code_cli_exception, ClaudeCodeCliStartFailedException):
+        failure_description: str = claude_code_cli_base_exception.message
+        if isinstance(claude_code_cli_base_exception, ClaudeCodeCliStartFailedException):
             return LlmCliUnavailableException(f"Claude Code is unavailable: {failure_description}", contextual_data_by_name)
-        if isinstance(claude_code_cli_exception, ClaudeCodeCliResultInvalidException):
+        if isinstance(claude_code_cli_base_exception, ClaudeCodeCliResultInvalidException):
             return LlmResponseInvalidException(f"Claude Code returned an unreadable result: {failure_description}", contextual_data_by_name)
         return LlmRequestFailedException(f"Claude Code subscription request failed: {failure_description}", contextual_data_by_name)
 

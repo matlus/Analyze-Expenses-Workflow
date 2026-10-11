@@ -9,8 +9,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import ExceptionContext
 from analyze_expenses_workflow.managers.exceptions.llm_gateway_exception import (
     LlmClientCleanupFailedException,
+    LlmGatewayBaseException,
     LlmGatewayClosedException,
-    LlmGatewayExceptionBase,
     LlmRequestFailedException,
     LlmRequestRejectedException,
     LlmResponseInvalidException,
@@ -64,7 +64,7 @@ class LlmGatewayCodexSubscription:
         return self._response_text(turn_result)
 
     @classmethod
-    def _request_failure(cls, request_error: BaseException, model: str, reasoning_effort: ReasoningEffort | None) -> LlmGatewayExceptionBase:
+    def _request_failure(cls, request_error: BaseException, model: str, reasoning_effort: ReasoningEffort | None) -> LlmGatewayBaseException:
         codex_provider_error: _CodexProviderError = cls._read_provider_error(request_error)
         contextual_data_by_name: ExceptionContext = {
             cls._OPERATION_CONTEXT_FIELD_NAME: "turn_request",

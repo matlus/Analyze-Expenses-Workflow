@@ -4,7 +4,7 @@ from types import TracebackType
 from typing import Self
 
 from context_compaction.managers.configuration_providers.configuration_provider import ConfigurationProvider
-from context_compaction.managers.exceptions.context_compaction_error import ContextCompactionConfigurationError
+from context_compaction.managers.exceptions.context_compaction_exception import ContextCompactionConfigurationException
 from context_compaction.managers.gateways.jev_gateway_protocol import JevGatewayProtocol
 from context_compaction.managers.models.context_models import (
     Compaction,
@@ -69,7 +69,7 @@ class ManagerContextCompaction:
         ValidatorContextPreparation.validate(prepared_compaction.trial_case, prepared_compaction.mode, prepared_compaction.variant)
         ValidatorContextSelection.validate_threshold(threshold)
         if self._jev_gateway is None:
-            raise ContextCompactionConfigurationError("Jev is disabled for this facade; construct it with enable_jev=True for live evaluation.")
+            raise ContextCompactionConfigurationException("Jev is disabled for this facade; construct it with enable_jev=True for live evaluation.")
         jev_decision_batch: JevDecisionBatch = await self._jev_gateway.decide(prepared_compaction.jev_state, prepared_compaction.questions)
         return CompactionResult(
             self._context_selection_processor.select(prepared_compaction.trial_case.segments, jev_decision_batch.probabilities, threshold),

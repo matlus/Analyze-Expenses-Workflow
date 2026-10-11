@@ -9,7 +9,7 @@ from dotenv import dotenv_values
 from pydantic import SecretStr
 
 from context_compaction.managers.configuration_providers.validators.validator_jev_configuration import ValidatorJevConfiguration
-from context_compaction.managers.exceptions.context_compaction_error import ContextCompactionConfigurationReadError
+from context_compaction.managers.exceptions.context_compaction_exception import ContextCompactionConfigurationReadException
 from context_compaction.managers.models.context_models import JevSettings
 
 
@@ -26,7 +26,7 @@ class ConfigurationProvider:
         try:
             return dict(dotenv_values(self._env_file)) if self._env_file.is_file() else {}
         except Exception as error:
-            raise ContextCompactionConfigurationReadError(self._env_file) from error
+            raise ContextCompactionConfigurationReadException(self._env_file) from error
 
     def _create_jev_settings(self, setting_value_by_environment_variable_name: Mapping[str, str | None]) -> JevSettings:
         api_key: str | None = self._setting("OPEN_ROUTER_KEY", setting_value_by_environment_variable_name)

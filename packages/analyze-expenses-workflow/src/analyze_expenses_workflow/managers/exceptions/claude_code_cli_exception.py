@@ -1,20 +1,20 @@
 from typing import final, override
 
 from analyze_expenses_workflow.managers.exceptions.analyze_expenses_exception import (
-    AnalyzeExpensesTechnicalException,
+    AnalyzeExpensesTechnicalBaseException,
     ExceptionAction,
     ExceptionContextInput,
     ExpenseLogEvent,
 )
 
 
-class ClaudeCodeCliException(AnalyzeExpensesTechnicalException):
+class ClaudeCodeCliBaseException(AnalyzeExpensesTechnicalBaseException):
     def __init__(self, message: str, contextual_data_by_name: ExceptionContextInput | None = None) -> None:
         super().__init__(message, ExpenseLogEvent.LLM_GATEWAY, contextual_data_by_name)
 
 
 @final
-class ClaudeCodeCliStartFailedException(ClaudeCodeCliException):
+class ClaudeCodeCliStartFailedException(ClaudeCodeCliBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -27,7 +27,7 @@ class ClaudeCodeCliStartFailedException(ClaudeCodeCliException):
 
 
 @final
-class ClaudeCodeCliTimeoutException(ClaudeCodeCliException):
+class ClaudeCodeCliTimeoutException(ClaudeCodeCliBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -40,7 +40,7 @@ class ClaudeCodeCliTimeoutException(ClaudeCodeCliException):
 
 
 @final
-class ClaudeCodeCliExitedException(ClaudeCodeCliException):
+class ClaudeCodeCliExitedException(ClaudeCodeCliBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -53,7 +53,7 @@ class ClaudeCodeCliExitedException(ClaudeCodeCliException):
 
 
 @final
-class ClaudeCodeCliResultInvalidException(ClaudeCodeCliException):
+class ClaudeCodeCliResultInvalidException(ClaudeCodeCliBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
@@ -66,7 +66,7 @@ class ClaudeCodeCliResultInvalidException(ClaudeCodeCliException):
 
 
 @final
-class ClaudeCodeCliRequestFailedException(ClaudeCodeCliException):
+class ClaudeCodeCliRequestFailedException(ClaudeCodeCliBaseException):
     @property
     @override
     def action(self) -> ExceptionAction:
