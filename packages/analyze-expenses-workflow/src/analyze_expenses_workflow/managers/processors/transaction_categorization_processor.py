@@ -34,7 +34,18 @@ class TransactionCategorizationProcessor:
         self._expense_category_catalog: ExpenseCategoryCatalog = expense_category_catalog
 
     async def categorize_lines(self, parsed_expense_lines: tuple[ParsedExpenseLine, ...]) -> tuple[ExpenseCategorization | None, ...]:
-        """One slot per parsed line, aligned by position; a line without a date, amount and description has no category."""
+        """One slot per parsed line, aligned by position; a line without a date, amount and description has no category.
+
+        A failed categorization raises its own exception, the first one when several lines fail together."""
+        try:
+            return await self._categorize_lines_concurrently(parsed_expense_lines)
+        except ExceptionGroup as categorization_failures:
+            # Not "from None": that would erase the failure's own cause, such as the provider error behind a Jev request failure.
+            # The plain raise keeps that cause and sets the group, with every concurrent failure, as __context__; a traceback
+            # hides that context when the failure was raised from a cause.
+            raise categorization_failures.exceptions[0]  # noqa: B904
+
+    async def _categorize_lines_concurrently(self, parsed_expense_lines: tuple[ParsedExpenseLine, ...]) -> tuple[ExpenseCategorization | None, ...]:
         semaphore: asyncio.Semaphore = asyncio.Semaphore(self._MAXIMUM_CONCURRENT_CATEGORIZATIONS)
         async with asyncio.TaskGroup() as task_group:
             tasks: tuple[asyncio.Task[ExpenseCategorization | None], ...] = tuple(

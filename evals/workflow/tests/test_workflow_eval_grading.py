@@ -1,8 +1,12 @@
+import asyncio
 import secrets
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
+from analyze_expenses_workflow.domain_facades import JevRequestFailedException
 from analyze_expenses_workflow.models import (
     BudgetComparison,
     CalculationReconciliation,
@@ -406,6 +410,45 @@ def test_DescribeWorkflowFailure_WhenAGatewayWrapsTheProviderError_ThenNamesEver
     workflow_failure: ValueError = ValueError(gateway_message)
     workflow_failure.__cause__ = RuntimeError(provider_message)
     expected_description: str = f"ValueError: {gateway_message}; caused by RuntimeError: {provider_message}"
+
+    actual_description: str = describe_workflow_failure(workflow_failure)
+
+    assert actual_description == expected_description, f"expected {expected_description!r}; actual {actual_description!r}"
+
+
+async def test_DescribeWorkflowFailure_WhenATaskGroupCollectsAJevFailure_ThenNamesTheJevExceptionAndItsCause() -> None:
+    jev_request_message: str = f"Jev via OpenRouter categorization request failed {secrets.token_hex(4)}"
+    provider_message: str = f"provider unavailable {secrets.token_hex(4)}"
+
+    async def fail_jev_request() -> None:
+        raise JevRequestFailedException(jev_request_message, {"Operation": "categorization_request"}) from RuntimeError(provider_message)
+
+    with pytest.raises(ExceptionGroup) as raised_exception:
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(fail_jev_request())
+    workflow_failure: ExceptionGroup[Exception] = raised_exception.value
+    expected_description: str = (
+        "ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception); "
+        f"including JevRequestFailedException: {jev_request_message}; caused by RuntimeError: {provider_message}"
+    )
+
+    actual_description: str = describe_workflow_failure(workflow_failure)
+
+    assert actual_description == expected_description, f"expected {expected_description!r}; actual {actual_description!r}"
+
+
+def test_DescribeWorkflowFailure_WhenAnExceptionGroupCollectsSeveralFailures_ThenNamesEachFailureAndItsCause() -> None:
+    group_message: str = f"unhandled errors {secrets.token_hex(4)}"
+    first_message: str = f"first failure {secrets.token_hex(4)}"
+    provider_message: str = f"provider overloaded {secrets.token_hex(4)}"
+    second_message: str = f"second failure {secrets.token_hex(4)}"
+    first_failure: ValueError = ValueError(first_message)
+    first_failure.__cause__ = RuntimeError(provider_message)
+    workflow_failure: ExceptionGroup[Exception] = ExceptionGroup(group_message, [first_failure, TypeError(second_message)])
+    expected_description: str = (
+        f"ExceptionGroup: {group_message} (2 sub-exceptions); including ValueError: {first_message}; "
+        f"caused by RuntimeError: {provider_message}; including TypeError: {second_message}"
+    )
 
     actual_description: str = describe_workflow_failure(workflow_failure)
 

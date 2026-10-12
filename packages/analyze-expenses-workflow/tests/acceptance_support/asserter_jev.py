@@ -158,6 +158,29 @@ def assert_jev_gateway_failure(
     )
 
 
+def assert_task_group_context(actual_raised_exception: BaseException, expected_collected_exceptions: Sequence[BaseException]) -> None:
+    """The raised exception is the first failure the task group collected, and the group, kept as its context, holds exactly
+    the expected failures."""
+    mismatches: list[str] = []
+    actual_context: BaseException | None = actual_raised_exception.__context__
+    if not isinstance(actual_context, BaseExceptionGroup):
+        mismatches.append(f"Expected the task group as context, got {actual_context!r}")
+    else:
+        actual_collected_exceptions: tuple[BaseException, ...] = actual_context.exceptions
+        if actual_collected_exceptions[0] is not actual_raised_exception:
+            mismatches.append(f"Expected the raised exception to be the group's first failure {actual_collected_exceptions[0]!r}")
+        expected_collected_exception_ids: set[int] = {
+            id(expected_collected_exception) for expected_collected_exception in expected_collected_exceptions
+        }
+        actual_collected_exception_ids: set[int] = {id(actual_collected_exception) for actual_collected_exception in actual_collected_exceptions}
+        if (
+            len(actual_collected_exceptions) != len(expected_collected_exceptions)
+            or actual_collected_exception_ids != expected_collected_exception_ids
+        ):
+            mismatches.append(f"Expected the group to collect {list(expected_collected_exceptions)!r}, got {list(actual_collected_exceptions)!r}")
+    assert not mismatches, f"Task group context of {actual_raised_exception!r} has {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
+
+
 def _redact(diagnostic_text: str, expected_jev_gateway_failure: ExpectedJevGatewayFailure) -> str:
     redacted_diagnostic_text: str = diagnostic_text
     forbidden_phrase: str

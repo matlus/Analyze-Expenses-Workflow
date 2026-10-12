@@ -861,15 +861,25 @@ async def attempt_trial(expense_analysis: Awaitable[ExpenseAnalysisResult], tria
 
 def describe_workflow_failure(workflow_failure: BaseException) -> str:
     """The failure and every exception behind it: a gateway's own message hides the provider's reason, such as a model the
-    subscription does not offer."""
+    subscription does not offer, and an exception group's message hides every failure it collected."""
     failure_descriptions: list[str] = []
-    described_failure_ids: set[int] = set()
-    current_failure: BaseException | None = workflow_failure
+    _describe_failure_chain(workflow_failure, "", failure_descriptions, set())
+    return "; ".join(failure_descriptions)
+
+
+def _describe_failure_chain(failure: BaseException, link_text: str, failure_descriptions: list[str], described_failure_ids: set[int]) -> None:
+    current_failure: BaseException | None = failure
+    current_link_text: str = link_text
     while current_failure is not None and id(current_failure) not in described_failure_ids:
         described_failure_ids.add(id(current_failure))
-        failure_descriptions.append(f"{type(current_failure).__name__}: {current_failure}")
+        failure_descriptions.append(f"{current_link_text}{type(current_failure).__name__}: {current_failure}")
+        if isinstance(current_failure, BaseExceptionGroup):
+            collected_failures: tuple[BaseException, ...] = cast("BaseExceptionGroup[BaseException]", current_failure).exceptions
+            collected_failure: BaseException
+            for collected_failure in collected_failures:
+                _describe_failure_chain(collected_failure, "including ", failure_descriptions, described_failure_ids)
         current_failure = current_failure.__cause__ or (None if current_failure.__suppress_context__ else current_failure.__context__)
-    return "; caused by ".join(failure_descriptions)
+        current_link_text = "caused by "
 
 
 # ----------------------------------------------------------------------------------------------------------
