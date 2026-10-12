@@ -137,6 +137,25 @@ category. Use code for the arithmetic. Give exactly three findings and check eac
 runs that did otherwise. That is what I mean by "an instruction is not assurance": the instruction raises the odds, and only
 the check tells you whether it worked.
 
+## Other checks you could add
+
+The checks above are the ones this eval makes. They don't cover everything the task asks for, and it's worth being clear
+about what isn't checked and what it would take to check it:
+
+| Check | Graded by | What it needs |
+|---|---|---|
+| Each line's full date | code | the date for all 198 lines, written into the reference key by hand |
+| Each line's merchant, written consistently ("Delta Air Lines" however the line spells it) | code | the merchant for all 198 lines, written in by hand |
+| Every category total for every month, beyond the five checked | code | nothing new; code can add them up from the reference key's lines |
+| Every budget comparison and every month-to-month change | code | nothing new, for the same reason |
+| Each uncategorized entry is explained ("tell me what it is") | judge | a rubric |
+| The findings and tables agree with each other | code if the report is built from data, judge if it's prose | a rubric for prose |
+
+The first two are the expensive kind. Before code can check a date or a merchant, someone has to write down the right
+answer for every line. That's the usual trade-off: once the reference exists, grading is cheap and automatic, and building
+the reference is the human work. For a written answer, the checks that need "nothing new" in the reference key still need
+the fact extraction to pull out every total, beyond the five it reads today.
+
 ## The same checks, with structured output
 
 I also built a workflow for the same task, where code controls every step instead of the model. Its eval uses the same
