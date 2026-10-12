@@ -146,13 +146,14 @@ about what isn't checked and what it would take to check it:
 |---|---|---|
 | Each line's full date | code | the date for all 198 lines, written into the reference key by hand |
 | Each line's merchant, written consistently ("Delta Air Lines" however the line spells it) | code | the merchant for all 198 lines, written in by hand |
+| Each line got its category for the right reason (the ATM withdrawal by the cash-movement rule, not because the model happened to pick Uncategorized) | code | the rule that should decide each line, written in by hand |
 | Every category total for every month, beyond the five checked | code | nothing new; code can add them up from the reference key's lines |
 | Every budget comparison and every month-to-month change | code | nothing new, for the same reason |
 | Each uncategorized entry is explained ("tell me what it is") | judge | a rubric |
 | The findings and tables agree with each other | code if the report is built from data, judge if it's prose | a rubric for prose |
 
-The first two are the expensive kind. Before code can check a date or a merchant, someone has to write down the right
-answer for every line. That's the usual trade-off: once the reference exists, grading is cheap and automatic, and building
+The first three are the expensive kind. Before code can check a date, a merchant or a reason, someone has to write down
+the right answer for every line. That's the usual trade-off: once the reference exists, grading is cheap and automatic, and building
 the reference is the human work. For a written answer, the checks that need "nothing new" in the reference key still need
 the fact extraction to pull out every total, beyond the five it reads today.
 
