@@ -24,7 +24,6 @@ import contextlib
 import json
 import logging
 import math
-import os
 import re
 import secrets
 import shutil
@@ -169,10 +168,10 @@ def read_whole_numbers(json_object: JsonObject, field_name: str, location: str) 
     field_value: object = read_field(json_object, field_name, location)
     if not isinstance(field_value, list):
         raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list of whole numbers")
-    list_items: list[object] = cast("list[object]", field_value)
-    if not all(isinstance(list_item, int) and not isinstance(list_item, bool) for list_item in list_items):
-        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list of whole numbers")
-    return tuple(cast("list[int]", list_items))
+    field_values: list[object] = cast("list[object]", field_value)
+    if not all(isinstance(listed_value, int) and not isinstance(listed_value, bool) for listed_value in field_values):
+        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list of whole numbers, not {field_values!r}")
+    return tuple(cast("list[int]", field_values))
 
 
 def read_object(json_object: JsonObject, field_name: str, location: str) -> JsonObject:
@@ -219,7 +218,7 @@ def read_pass_rate(json_object: JsonObject, field_name: str, location: str) -> f
     field_value: object = read_field(json_object, field_name, location)
     # NaN fails the range test.
     if isinstance(field_value, bool) or not isinstance(field_value, int | float) or not 0 <= field_value <= 1:
-        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a number from 0 to 1")
+        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a number from 0 to 1, not {field_value!r}")
     return float(field_value)
 
 
@@ -401,7 +400,7 @@ def load_eval_suite(eval_suite_directory: Path) -> EvalSuite:
     )
     case_objects: tuple[JsonObject, ...] = read_object_list(eval_suite_object, "cases", EVAL_SUITE_DEFINITION_FILE_NAME)
     if len(case_objects) != 1:
-        raise InvalidEvalSuiteException(f"{EVAL_SUITE_DEFINITION_FILE_NAME}: 'cases' must list exactly one case")
+        raise InvalidEvalSuiteException(f"{EVAL_SUITE_DEFINITION_FILE_NAME}: 'cases' must list exactly one case, not {len(case_objects)}")
     case_object: JsonObject = case_objects[0]
     case_location: str = f"{EVAL_SUITE_DEFINITION_FILE_NAME} case"
     expected_facts_file: str = read_string(case_object, "expected_facts_file", case_location)
@@ -438,7 +437,7 @@ def validate_eval_case(case_object: JsonObject, eval_suite_directory: Path) -> E
     case_location: str = f"{EVAL_SUITE_DEFINITION_FILE_NAME} case"
     first_expense_line_number: int = read_whole_number(case_object, "first_expense_line_number", case_location)
     if first_expense_line_number < 1:
-        raise InvalidEvalSuiteException(f"{case_location}: 'first_expense_line_number' must be at least 1")
+        raise InvalidEvalSuiteException(f"{case_location}: 'first_expense_line_number' must be at least 1, not {first_expense_line_number}")
     expense_log_text: str = (eval_suite_directory / read_string(case_object, "expense_log_file", case_location)).read_text(encoding=TEXT_ENCODING)
     # Split on "\n" only, as the input file is LF; str.splitlines() would also split inside a line on U+2028 and similar.
     expense_log_lines: list[str] = expense_log_text.removesuffix("\n").split("\n")
@@ -727,7 +726,11 @@ class SettingOverrideException(EvalBusinessBaseException):
 def select_model_steps(coding_assistant_subscription_value: str | None, model: str | None, reasoning_effort: str | None) -> ModelStepSelection | None:
     if coding_assistant_subscription_value is None:
         if model is not None or reasoning_effort is not None:
-            raise SettingOverrideException("A model or reasoning effort for every LLM step needs the subscription that selects their family")
+            known_subscriptions: str = ", ".join(coding_assistant_subscription.value for coding_assistant_subscription in CodingAssistantSubscription)
+            received_values: str = f"model {model!r} and reasoning effort {reasoning_effort!r} with no subscription (one of {known_subscriptions})"
+            raise SettingOverrideException(
+                f"A model or reasoning effort for every LLM step needs the subscription that selects their family; received {received_values}"
+            )
         return None
     return ModelStepSelection(CodingAssistantSubscription(coding_assistant_subscription_value), model, reasoning_effort)
 
@@ -1246,7 +1249,9 @@ def trace_bucket_difference(reference_ledger: ReferenceLedger, ledger_bucket: Le
         for policy_composition in compose_bucket(reference_ledger, ledger_bucket)
     ]
     # compose_bucket always yields the key's own policy first, so there is at least one comparison; the fewest differences wins.
-    bucket_comparison: BucketComparison = min(bucket_comparisons, key=lambda candidate: len(candidate.line_differences))
+    bucket_comparison: BucketComparison = min(
+        bucket_comparisons, key=lambda compared_bucket_comparison: len(compared_bucket_comparison.line_differences)
+    )
     if not bucket_comparison.line_differences:
         return None
     applied_policy_names: tuple[str, ...] = bucket_comparison.policy_composition.applied_policy_names
@@ -1267,26 +1272,33 @@ def trace_bucket_difference(reference_ledger: ReferenceLedger, ledger_bucket: Le
     )
 
 
-def trace_category_differences(reference_ledger: ReferenceLedger, reference_category: str, workflow_outcome: WorkflowOutcome) -> list[TracedCause]:
-    """Every counted reference entry in the category that the workflow placed elsewhere, and every workflow line placed
-    in the category that the reference puts elsewhere."""
+def trace_category_differences(reference_ledger: ReferenceLedger, reference_category: str, line_outcomes: Sequence[LineOutcome]) -> list[TracedCause]:
+    """Every counted reference entry in the category that the workflow placed elsewhere or excluded, and every line the
+    workflow counted in the category that the reference puts elsewhere. A category the key accepts as an alternative matches."""
+    line_outcome_by_line_number: dict[int, LineOutcome] = {line_outcome.line_number: line_outcome for line_outcome in line_outcomes}
     traced_causes: list[TracedCause] = []
     reference_line_numbers: set[int] = set()
     for ledger_entry in reference_ledger.ledger_entries:
         if not ledger_entry.is_counted or ledger_entry.category != reference_category:
             continue
         reference_line_numbers.add(ledger_entry.line_number)
-        line_outcome: LineOutcome | None = workflow_outcome.find_line(ledger_entry.line_number)
-        if line_outcome is None or line_outcome.category != reference_category:
+        line_outcome: LineOutcome | None = line_outcome_by_line_number.get(ledger_entry.line_number)
+        if line_outcome is None or not is_counted_line(line_outcome) or line_outcome.category not in accepted_categories(ledger_entry):
             cause_text: str = (
                 f"line {ledger_entry.line_number} {quote_source(ledger_entry.source_text)}: {describe_where_line_went(line_outcome)}; "
                 f"the reference puts it in {reference_category}"
             )
             traced_causes.append(TracedCause(cause_text, f"{cause_text} ({ledger_entry.amount})"))
     ledger_entry_by_line_number: dict[int, LedgerEntry] = {ledger_entry.line_number: ledger_entry for ledger_entry in reference_ledger.ledger_entries}
-    for line_outcome in workflow_outcome.line_outcomes:
-        if line_outcome.category == reference_category and line_outcome.line_number not in reference_line_numbers:
-            reference_ledger_entry: LedgerEntry | None = ledger_entry_by_line_number.get(line_outcome.line_number)
+    for line_outcome in line_outcomes:
+        if line_outcome.category != reference_category or not is_counted_line(line_outcome) or line_outcome.line_number in reference_line_numbers:
+            continue
+        reference_ledger_entry: LedgerEntry | None = ledger_entry_by_line_number.get(line_outcome.line_number)
+        if (
+            reference_ledger_entry is None
+            or not reference_ledger_entry.is_counted
+            or reference_category not in accepted_categories(reference_ledger_entry)
+        ):
             cause_text = (
                 f"line {line_outcome.line_number} {quote_source(line_outcome.source_text)}: the workflow put it in {reference_category}; "
                 + (
@@ -1297,6 +1309,14 @@ def trace_category_differences(reference_ledger: ReferenceLedger, reference_cate
             )
             traced_causes.append(TracedCause(cause_text, f"{cause_text} ({line_outcome.amount})"))
     return traced_causes
+
+
+def is_counted_line(line_outcome: LineOutcome) -> bool:
+    return line_outcome.treatment != TransactionTreatment.EXCLUDED_DUPLICATE.value
+
+
+def accepted_categories(ledger_entry: LedgerEntry) -> tuple[str, ...]:
+    return (ledger_entry.category, *(ledger_entry.accepted_policy.alternative_categories if ledger_entry.accepted_policy is not None else ()))
 
 
 # ----------------------------------------------------------------------------------------------------------
@@ -1474,7 +1494,7 @@ def trace_fact_value_failure(
             )
             return (traced_cause,) if traced_cause is not None else ()
         case UncategorizedCountReader():
-            return tuple(trace_category_differences(reference_ledger, grading_reference.uncategorized_category, workflow_outcome))
+            return tuple(trace_category_differences(reference_ledger, grading_reference.uncategorized_category, workflow_outcome.line_outcomes))
         case LargestIncreaseReader():
             return trace_period_change_differences(grading_reference, fact_reader, workflow_outcome)
         case RefundTreatmentReader() | DuplicateExcludedReader() | LinesCountedReader():
@@ -1510,7 +1530,9 @@ def grade_ledger_category_check(
         for ledger_entry in reference_ledger.ledger_entries
         if ledger_entry.is_counted and ledger_entry.category == ledger_category_check.reference_category
     ]
-    traced_causes: list[TracedCause] = trace_category_differences(reference_ledger, ledger_category_check.reference_category, workflow_outcome)
+    traced_causes: list[TracedCause] = trace_category_differences(
+        reference_ledger, ledger_category_check.reference_category, workflow_outcome.line_outcomes
+    )
     reason: str = (
         f"{ledger_category_check.description} Expected exactly the reference's {len(reference_line_numbers)} "
         f"{ledger_category_check.reference_category} lines {reference_line_numbers} in {ledger_category_check.reference_category}; "
@@ -1522,7 +1544,7 @@ def grade_ledger_category_check(
 def grade_ledger_lines_check(
     ledger_lines_check: LedgerLinesCheck, reference_ledger: ReferenceLedger, workflow_outcome: WorkflowOutcome
 ) -> CheckGrade:
-    traced_causes: list[TracedCause] = trace_line_differences(reference_ledger, workflow_outcome)
+    traced_causes: list[TracedCause] = trace_line_differences(reference_ledger, workflow_outcome.line_outcomes)
     reason: str = (
         f"{ledger_lines_check.description} Compared the reference's {len(reference_ledger.ledger_entries)} lines with the "
         f"workflow's {len(workflow_outcome.line_outcomes)}; {len(traced_causes)} lines differ."
@@ -1530,17 +1552,18 @@ def grade_ledger_lines_check(
     return CheckGrade(to_check_status(passed=not traced_causes), reason, tuple(traced_causes))
 
 
-def trace_line_differences(reference_ledger: ReferenceLedger, workflow_outcome: WorkflowOutcome) -> list[TracedCause]:
+def trace_line_differences(reference_ledger: ReferenceLedger, line_outcomes: Sequence[LineOutcome]) -> list[TracedCause]:
+    line_outcome_by_line_number: dict[int, LineOutcome] = {line_outcome.line_number: line_outcome for line_outcome in line_outcomes}
     traced_causes: list[TracedCause] = []
     ledger_entry: LedgerEntry
     for ledger_entry in reference_ledger.ledger_entries:
-        line_differences: list[str] = describe_line_differences(ledger_entry, workflow_outcome.find_line(ledger_entry.line_number))
+        line_differences: list[str] = describe_line_differences(ledger_entry, line_outcome_by_line_number.get(ledger_entry.line_number))
         if line_differences:
             cause_text: str = f"line {ledger_entry.line_number} {quote_source(ledger_entry.source_text)}: {'; '.join(line_differences)}"
             traced_causes.append(TracedCause(cause_text, f"{cause_text} ({ledger_entry.amount})"))
     reference_line_numbers: set[int] = {ledger_entry.line_number for ledger_entry in reference_ledger.ledger_entries}
     line_outcome: LineOutcome
-    for line_outcome in workflow_outcome.line_outcomes:
+    for line_outcome in line_outcomes:
         if line_outcome.line_number not in reference_line_numbers:
             cause_text = f"line {line_outcome.line_number} {quote_source(line_outcome.source_text)}: the reference has no expense on that line"
             traced_causes.append(TracedCause(cause_text, f"{cause_text} ({line_outcome.amount})"))
@@ -1556,17 +1579,14 @@ def describe_line_differences(ledger_entry: LedgerEntry, line_outcome: LineOutco
         line_differences.append(f"the workflow read the amount as {line_outcome.amount}; the reference reads {ledger_entry.amount}")
     if line_outcome.period != ledger_entry.period:
         line_differences.append(f"the workflow put it in {line_outcome.period}; the reference puts it in {ledger_entry.period}")
-    is_counted: bool = line_outcome.treatment != TransactionTreatment.EXCLUDED_DUPLICATE.value
+    is_counted: bool = is_counted_line(line_outcome)
     if is_counted != ledger_entry.is_counted:
         line_differences.append(
             "the workflow counted it; the reference does not" if is_counted else "the workflow excluded it; the reference counts it"
         )
-    accepted_categories: tuple[str, ...] = (
-        ledger_entry.category,
-        *(ledger_entry.accepted_policy.alternative_categories if ledger_entry.accepted_policy is not None else ()),
-    )
-    if line_outcome.category not in accepted_categories:
-        line_differences.append(f"the workflow put it in {line_outcome.category}; the reference puts it in {' or '.join(accepted_categories)}")
+    reference_categories: tuple[str, ...] = accepted_categories(ledger_entry)
+    if line_outcome.category not in reference_categories:
+        line_differences.append(f"the workflow put it in {line_outcome.category}; the reference puts it in {' or '.join(reference_categories)}")
     return line_differences
 
 
@@ -1770,7 +1790,7 @@ def build_scorecard_rows(graded_checks: Sequence[GradedCheck], run_grades: Seque
 
 def format_pass_rate(pass_rate: float) -> str:
     # Floored, so a displayed rate never reads as meeting a minimum the gate says it missed (2/3 shows 66%, not 67%).
-    return f"{int(pass_rate * 100)}%"
+    return f"{math.floor(round(pass_rate * 100, 6))}%"
 
 
 def describe_row_below_minimum(scorecard_row: ScorecardRow) -> str:
@@ -1899,6 +1919,8 @@ class ScorecardHeader:
 def list_failure_causes(run_grades: Sequence[RunGrade]) -> list[str]:
     # The summary carries no run-specific amounts, so one mistake made in several runs is listed once with every run that made it.
     occurrences_by_summary: dict[str, list[str]] = {}
+    check_name: str
+    check_grade: CheckGrade
     for run_grade in run_grades:
         for check_name, check_grade in run_grade.check_grade_by_check_name.items():
             for traced_cause in check_grade.causes:
@@ -2248,7 +2270,8 @@ def scrub_user_name(artifact_text: str, user_name: str | None) -> str:
 
 
 def write_artifact(artifact_path: Path, artifact_text: str) -> None:
-    artifact_path.write_text(scrub_user_name(artifact_text, os.environ.get("USERNAME") or os.environ.get("USER")), encoding=TEXT_ENCODING)
+    # The home folder's name is what appears in recorded paths, which is what must not be published.
+    artifact_path.write_text(scrub_user_name(artifact_text, Path.home().name), encoding=TEXT_ENCODING)
 
 
 def to_json_text(document: object) -> str:
