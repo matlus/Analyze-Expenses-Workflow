@@ -1,6 +1,6 @@
 {
   "eval_suite_name": "expense-analysis-workflow",
-  "source": "The Part Three prompt eval (github.com/matlus/Skills-and-Evals, evals/expense_analysis), with the same case files copied unchanged. Every one of its 16 checks is listed here under the same name: graded from the workflow's structured result where code can read the fact, by a judge where it is a judgment call, or marked not applicable with the reason. The prompt eval requires each check to pass in 80% of runs because a model's answer varies; this workflow requires 100%, because its code decides each step and the same input should give the same answer every run.",
+  "source": "The Part Three prompt eval (github.com/matlus/Skills-and-Evals, evals/expense_analysis), with the same case files copied unchanged. Every one of its 16 checks is listed here under the same name, followed by one check the prompt eval cannot make: graded from the workflow's structured result where code can read the fact, by a judge where it is a judgment call, or marked not applicable with the reason. The prompt eval requires each check to pass in 80% of runs because a model's answer varies; this workflow requires 100%, because its code decides each step and the same input should give the same answer every run.",
   "cases": [
     {
       "case_name": "june-august-2026",
@@ -158,6 +158,13 @@
       "minimum_pass_rate": 1.0,
       "description": "Only the two stated budget targets are used.",
       "adaptation": "The workflow reads its two targets from configuration, which the case sets from budget_notes.txt; code checks that the budget comparisons use exactly those targets and no other category."
+    },
+    {
+      "check_name": "every-line-matches-reference",
+      "grader": "ledger_lines",
+      "minimum_pass_rate": 1.0,
+      "description": "Every line is read and categorized as the reference key reads it: its amount with its sign, its month, its category, and whether it is counted.",
+      "adaptation": "Not in the prompt eval: its written answer shows totals, not each line. The workflow reports every line it read, so code compares all of them with the reference ledger, accepting any alternative category the key allows."
     }
   ]
 }

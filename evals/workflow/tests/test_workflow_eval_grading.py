@@ -1,6 +1,7 @@
 import asyncio
 import secrets
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -22,6 +23,7 @@ from analyze_expenses_workflow.models import (
     TransactionTreatment,
 )
 from expense_analysis_workflow_eval import (
+    AcceptedPolicy,
     AmountCheck,
     BucketTotal,
     BudgetOutcome,
@@ -40,6 +42,7 @@ from expense_analysis_workflow_eval import (
     LedgerBucket,
     LedgerCategoryCheck,
     LedgerEntry,
+    LedgerLinesCheck,
     LineCategorization,
     LineOutcome,
     ReferenceLedger,
@@ -51,6 +54,7 @@ from expense_analysis_workflow_eval import (
     grade_fact_value_check,
     grade_judge_check,
     grade_ledger_category_check,
+    grade_ledger_lines_check,
     project_workflow_outcome,
 )
 
@@ -473,6 +477,70 @@ def test_DescribeWorkflowFailure_WhenAnExceptionGroupCollectsSeveralFailures_The
     actual_description: str = describe_workflow_failure(workflow_failure)
 
     assert actual_description == expected_description, f"expected {expected_description!r}; actual {actual_description!r}"
+
+
+def test_LedgerLinesCheck_WhenEveryLineMatchesTheReference_ThenPassesWithoutCause() -> None:
+    ledger_entries: list[LedgerEntry] = [
+        create_ledger_entry(1, "Groceries", create_amount()),
+        create_ledger_entry(2, "Dining and coffee", create_amount()),
+    ]
+    ledger_lines_check: LedgerLinesCheck = LedgerLinesCheck("lines-check", "Every line.", 1.0, None)
+    workflow_outcome: WorkflowOutcome = create_workflow_outcome([create_line_outcome(ledger_entry) for ledger_entry in ledger_entries])
+    expected_reason_phrases: list[str] = ["Compared the reference's 2 lines with the workflow's 2; 0 lines differ."]
+    expected_cause_phrases: list[str] = []
+
+    actual_check_grade: CheckGrade = grade_ledger_lines_check(ledger_lines_check, ReferenceLedger(tuple(ledger_entries), {}), workflow_outcome)
+
+    assert_check_grade("Every line matching", actual_check_grade, CheckStatus.PASSED, expected_reason_phrases, expected_cause_phrases)
+
+
+def test_LedgerLinesCheck_WhenLinesAreMisreadMiscategorizedMiscountedOrMissing_ThenFailsNamingEachLine() -> None:
+    misread_ledger_entry: LedgerEntry = create_ledger_entry(1, "Groceries", create_amount())
+    miscategorized_ledger_entry: LedgerEntry = create_ledger_entry(2, "Groceries", create_amount())
+    duplicate_ledger_entry: LedgerEntry = create_ledger_entry(3, "Groceries", create_amount(), is_counted=False)
+    missing_ledger_entry: LedgerEntry = create_ledger_entry(4, "Groceries", create_amount())
+    misread_amount: Decimal = -misread_ledger_entry.amount
+    ledger_lines_check: LedgerLinesCheck = LedgerLinesCheck("lines-check", "Every line.", 1.0, None)
+    reference_ledger: ReferenceLedger = ReferenceLedger(
+        (misread_ledger_entry, miscategorized_ledger_entry, duplicate_ledger_entry, missing_ledger_entry), {}
+    )
+    workflow_outcome: WorkflowOutcome = create_workflow_outcome(
+        [
+            replace(create_line_outcome(misread_ledger_entry), amount=misread_amount),
+            create_line_outcome(miscategorized_ledger_entry, category="Shopping"),
+            create_line_outcome(duplicate_ledger_entry),
+        ]
+    )
+    expected_reason_phrases: list[str] = ["Compared the reference's 4 lines with the workflow's 3; 4 lines differ."]
+    expected_cause_phrases: list[str] = [
+        (
+            f'line 1 "{misread_ledger_entry.source_text}": the workflow read the amount as {misread_amount}; '
+            f"the reference reads {misread_ledger_entry.amount}"
+        ),
+        f'line 2 "{miscategorized_ledger_entry.source_text}": the workflow put it in Shopping; the reference puts it in Groceries',
+        f'line 3 "{duplicate_ledger_entry.source_text}": the workflow counted it; the reference does not',
+        f'line 4 "{missing_ledger_entry.source_text}": the workflow did not report it',
+    ]
+
+    actual_check_grade: CheckGrade = grade_ledger_lines_check(ledger_lines_check, reference_ledger, workflow_outcome)
+
+    assert_check_grade("Four wrong lines", actual_check_grade, CheckStatus.FAILED, expected_reason_phrases, expected_cause_phrases)
+
+
+def test_LedgerLinesCheck_WhenALineIsInACategoryTheKeyAcceptsAsAnAlternative_ThenPasses() -> None:
+    alternative_category: str = "Transport"
+    ledger_entry: LedgerEntry = replace(
+        create_ledger_entry(1, "Travel", create_amount()),
+        accepted_policy=AcceptedPolicy(f"policy {secrets.token_hex(4)}", (alternative_category,)),
+    )
+    ledger_lines_check: LedgerLinesCheck = LedgerLinesCheck("lines-check", "Every line.", 1.0, None)
+    workflow_outcome: WorkflowOutcome = create_workflow_outcome([create_line_outcome(ledger_entry, category=alternative_category)])
+    expected_reason_phrases: list[str] = ["0 lines differ."]
+    expected_cause_phrases: list[str] = []
+
+    actual_check_grade: CheckGrade = grade_ledger_lines_check(ledger_lines_check, ReferenceLedger((ledger_entry,), {}), workflow_outcome)
+
+    assert_check_grade("An accepted alternative category", actual_check_grade, CheckStatus.PASSED, expected_reason_phrases, expected_cause_phrases)
 
 
 def test_JudgeCheck_WhenTheJudgeRejectsTheFindings_ThenFailsQuotingTheJudge() -> None:

@@ -195,7 +195,8 @@ def test_RunLabel_WhenStepsShareOneModel_ThenNamesTheProviderModelAndEffortOnce(
     assert actual_run_label == expected_run_label
 
 
-def test_EvalSuite_WhenThePartThreeCaseLoads_ThenEveryPartThreeCheckIsMappedAndTwoDoNotApply() -> None:
+def test_EvalSuite_WhenThePartThreeCaseLoads_ThenEveryPartThreeCheckIsMappedTwoDoNotApplyAndEveryLineIsChecked() -> None:
+    expected_check_names: tuple[str, ...] = (*PART_THREE_CHECK_NAMES, "every-line-matches-reference")
     expected_not_applicable_check_names: list[str] = ["code-executed", "tables-before-interpretation"]
     expected_expense_line_count: int = 198
     duplicate_line_number_in_file: int = 112
@@ -209,7 +210,7 @@ def test_EvalSuite_WhenThePartThreeCaseLoads_ThenEveryPartThreeCheckIsMappedAndT
         actual_not_applicable_check_names,
         len(eval_suite.eval_case.expense_lines),
         eval_suite.eval_case.to_workflow_line_number(duplicate_line_number_in_file),
-    ) == (PART_THREE_CHECK_NAMES, expected_not_applicable_check_names, expected_expense_line_count, expected_duplicate_line_number_in_workflow)
+    ) == (expected_check_names, expected_not_applicable_check_names, expected_expense_line_count, expected_duplicate_line_number_in_workflow)
 
 
 def test_EvalSuite_WhenALedgerLineDiffersFromTheInput_ThenReportsTheBrokenReference() -> None:

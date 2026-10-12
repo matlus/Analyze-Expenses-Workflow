@@ -76,11 +76,20 @@ Here are eight real lines from the log. They cover six situations that an expens
 
 For each one, ask the same three questions: what is the right answer, what could go wrong, and how do I check it?
 
-**1. An ordinary purchase (line 31).** Local Coffee Co, $34.22, belongs in Dining & Coffee for June. A model can put it in
-the wrong category or skip the line altogether; one GPT-6 Luna run in the prompt eval left it out, which made June dining
-$178.52 instead of $212.74. You don't need a check per line. You check the total, "June Dining & Coffee is $212.74", with code. When the
-total is wrong, code can compare the answer with the reference key line by line and tell you which line explains the
-difference.
+**1. An ordinary purchase (line 31).** Local Coffee Co, $34.22, belongs in Dining & Coffee for June. Before anything
+else, the line has to be read correctly: the date, the merchant and the amount, with the sign kept when there is one. Then
+it has to go in the right category. A model can get any of that wrong, or skip the line; one GPT-6 Luna run in the prompt
+eval left this line out, which made June dining $178.52 instead of $212.74.
+
+Ideally you verify every line: each one read correctly and put in the right category. Whether you can depends on what the
+output shows you. A prompt's answer is a written report with tables of totals, and the model's line-by-line reading never
+appears in it. All you can check is the totals. A wrong total tells you a line in that category was misread, and because
+the reference key has every line, code can then find which one. But a total only covers its own lines. The prompt eval
+checks five totals, so a grocery or gas line read as $45.18 instead of $54.18 would never be caught.
+
+The workflow below returns every line it read, with its amount, month, category and whether it was counted. When the
+output shows every line, check every line. That check is code comparing 198 lines with the reference key, and it is the
+strongest check in the suite.
 
 **2. A duplicate (lines 111 and 112).** The same Trader Joe's charge appears twice on July 22. It should be counted once.
 The check is a yes or no fact, "the duplicate is flagged", and code compares it with the reference key.
@@ -115,8 +124,8 @@ Put those together and you get the list of things in this task you should not ta
 
 | Don't trust that... | Verify by checking... | Grader |
 |---|---|---|
-| every line was read | the monthly category totals | code |
-| each line is in the right category | the same totals, traced line by line when wrong | code |
+| every line was read correctly | each line's amount, sign and month; the totals when lines aren't visible | code |
+| each line is in the right category | each line's category; the totals when lines aren't visible | code |
 | transfers and withdrawals were left alone | the count of uncategorized entries | code |
 | the duplicate was removed and the look-alikes kept | the duplicate fact, both Delta charges, the travel total | code |
 | the refund was netted | the refund fact and the July shopping total | code |

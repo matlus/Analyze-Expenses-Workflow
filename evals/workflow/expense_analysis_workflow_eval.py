@@ -301,6 +301,11 @@ class LedgerCategoryCheck(CheckDefinition):
 
 
 @dataclass(frozen=True)
+class LedgerLinesCheck(CheckDefinition):
+    """Every input line against the reference ledger: its amount, month, category and whether it is counted."""
+
+
+@dataclass(frozen=True)
 class BudgetTargetsCheck(CheckDefinition):
     target_by_category: Mapping[str, Decimal]
 
@@ -315,7 +320,7 @@ class NotApplicableCheck(CheckDefinition):
     not_applicable_reason: str
 
 
-type GradedCheck = AmountCheck | FactValueCheck | LedgerCategoryCheck | BudgetTargetsCheck | JudgeCheck
+type GradedCheck = AmountCheck | FactValueCheck | LedgerCategoryCheck | LedgerLinesCheck | BudgetTargetsCheck | JudgeCheck
 type EvalSuiteCheck = GradedCheck | NotApplicableCheck
 
 
@@ -538,6 +543,8 @@ def validate_check(check_object: JsonObject, eval_suite_directory: Path) -> Eval
                 adaptation,
                 reference_category=read_string(check_object, "reference_category", check_location),
             )
+        case "ledger_lines":
+            return LedgerLinesCheck(check_name, description, minimum_pass_rate, adaptation)
         case "budget_targets":
             return BudgetTargetsCheck(
                 check_name,
@@ -564,7 +571,7 @@ def validate_check(check_object: JsonObject, eval_suite_directory: Path) -> Eval
         case unknown_grader:
             unknown_grader_message: str = (
                 f"{check_location}: 'grader' names an unknown grader: {unknown_grader}; known graders are "
-                "['amount', 'budget_targets', 'fact_value', 'judge', 'ledger_category', 'not_applicable']"
+                "['amount', 'budget_targets', 'fact_value', 'judge', 'ledger_category', 'ledger_lines', 'not_applicable']"
             )
             raise InvalidEvalSuiteException(unknown_grader_message)
 
@@ -658,7 +665,7 @@ def find_check_reference_problems(check: EvalSuiteCheck, eval_suite: EvalSuite) 
             return [
                 f"{check_location}: '{category}' is not a category name" for category in check.target_by_category if category not in known_categories
             ]
-        case JudgeCheck() | NotApplicableCheck():
+        case LedgerLinesCheck() | JudgeCheck() | NotApplicableCheck():
             return []
 
 
@@ -1512,6 +1519,57 @@ def grade_ledger_category_check(
     return CheckGrade(to_check_status(passed=not traced_causes), reason, tuple(traced_causes))
 
 
+def grade_ledger_lines_check(
+    ledger_lines_check: LedgerLinesCheck, reference_ledger: ReferenceLedger, workflow_outcome: WorkflowOutcome
+) -> CheckGrade:
+    traced_causes: list[TracedCause] = trace_line_differences(reference_ledger, workflow_outcome)
+    reason: str = (
+        f"{ledger_lines_check.description} Compared the reference's {len(reference_ledger.ledger_entries)} lines with the "
+        f"workflow's {len(workflow_outcome.line_outcomes)}; {len(traced_causes)} lines differ."
+    )
+    return CheckGrade(to_check_status(passed=not traced_causes), reason, tuple(traced_causes))
+
+
+def trace_line_differences(reference_ledger: ReferenceLedger, workflow_outcome: WorkflowOutcome) -> list[TracedCause]:
+    traced_causes: list[TracedCause] = []
+    ledger_entry: LedgerEntry
+    for ledger_entry in reference_ledger.ledger_entries:
+        line_differences: list[str] = describe_line_differences(ledger_entry, workflow_outcome.find_line(ledger_entry.line_number))
+        if line_differences:
+            cause_text: str = f"line {ledger_entry.line_number} {quote_source(ledger_entry.source_text)}: {'; '.join(line_differences)}"
+            traced_causes.append(TracedCause(cause_text, f"{cause_text} ({ledger_entry.amount})"))
+    reference_line_numbers: set[int] = {ledger_entry.line_number for ledger_entry in reference_ledger.ledger_entries}
+    line_outcome: LineOutcome
+    for line_outcome in workflow_outcome.line_outcomes:
+        if line_outcome.line_number not in reference_line_numbers:
+            cause_text = f"line {line_outcome.line_number} {quote_source(line_outcome.source_text)}: the reference has no expense on that line"
+            traced_causes.append(TracedCause(cause_text, f"{cause_text} ({line_outcome.amount})"))
+    return traced_causes
+
+
+def describe_line_differences(ledger_entry: LedgerEntry, line_outcome: LineOutcome | None) -> list[str]:
+    """How the workflow's reading of one line differs from the reference's; any accepted alternative category matches."""
+    if line_outcome is None:
+        return ["the workflow did not report it"]
+    line_differences: list[str] = []
+    if line_outcome.amount != ledger_entry.amount:
+        line_differences.append(f"the workflow read the amount as {line_outcome.amount}; the reference reads {ledger_entry.amount}")
+    if line_outcome.period != ledger_entry.period:
+        line_differences.append(f"the workflow put it in {line_outcome.period}; the reference puts it in {ledger_entry.period}")
+    is_counted: bool = line_outcome.treatment != TransactionTreatment.EXCLUDED_DUPLICATE.value
+    if is_counted != ledger_entry.is_counted:
+        line_differences.append(
+            "the workflow counted it; the reference does not" if is_counted else "the workflow excluded it; the reference counts it"
+        )
+    accepted_categories: tuple[str, ...] = (
+        ledger_entry.category,
+        *(ledger_entry.accepted_policy.alternative_categories if ledger_entry.accepted_policy is not None else ()),
+    )
+    if line_outcome.category not in accepted_categories:
+        line_differences.append(f"the workflow put it in {line_outcome.category}; the reference puts it in {' or '.join(accepted_categories)}")
+    return line_differences
+
+
 def grade_budget_targets_check(budget_targets_check: BudgetTargetsCheck, budget_outcomes: Sequence[BudgetOutcome]) -> CheckGrade:
     used_targets: set[tuple[str, Decimal]] = {(budget_outcome.category, budget_outcome.target) for budget_outcome in budget_outcomes}
     expected_targets: set[tuple[str, Decimal]] = set(budget_targets_check.target_by_category.items())
@@ -1548,6 +1606,10 @@ def grade_run(
                 check_grade_by_check_name[graded_check.check_name] = grade_fact_value_check(graded_check, grading_reference, workflow_outcome)
             case LedgerCategoryCheck():
                 check_grade_by_check_name[graded_check.check_name] = grade_ledger_category_check(
+                    graded_check, grading_reference.reference_ledger, workflow_outcome
+                )
+            case LedgerLinesCheck():
+                check_grade_by_check_name[graded_check.check_name] = grade_ledger_lines_check(
                     graded_check, grading_reference.reference_ledger, workflow_outcome
                 )
             case BudgetTargetsCheck():
@@ -1683,6 +1745,7 @@ GRADER_NAME_BY_CHECK_TYPE: Final[Mapping[type[CheckDefinition], str]] = {
     AmountCheck: "amount (read from result)",
     FactValueCheck: "fact (read from result)",
     LedgerCategoryCheck: "lines (read from result)",
+    LedgerLinesCheck: "every line (read from result)",
     BudgetTargetsCheck: "targets (read from result)",
     JudgeCheck: "judge",
 }
