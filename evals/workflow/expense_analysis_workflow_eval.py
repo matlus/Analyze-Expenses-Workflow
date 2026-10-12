@@ -853,6 +853,7 @@ class JevRequestCountingTransport(httpx2.AsyncBaseTransport):
 
     def __init__(self, async_base_transport: httpx2.AsyncBaseTransport) -> None:
         self._async_base_transport: httpx2.AsyncBaseTransport = async_base_transport
+        # code-review: override[pwi.class-design.mutable-state-in-a-behavior-class] - httpx expects only a response, so the count is kept here.
         self.request_count: int = 0
 
     @override
@@ -871,6 +872,7 @@ class ServiceLocatorEval(ServiceLocatorProduction):
 
     def __init__(self, setting_value_by_name: Mapping[str, str]) -> None:
         self._setting_value_by_name: Mapping[str, str] = setting_value_by_name
+        # code-review: override[pwi.class-design.stateful-dependency-injection] - The eval reads the run's Jev request count from it.
         self.jev_request_counting_transport: JevRequestCountingTransport = JevRequestCountingTransport(httpx2.AsyncHTTPTransport())
 
     @override
@@ -914,6 +916,7 @@ class ErroredTrial:
 class LlmStepEventHandler(logging.Handler):
     def __init__(self) -> None:
         super().__init__(logging.INFO)
+        # code-review: override[pwi.class-design.mutable-state-in-a-behavior-class] - logging's emit() returns nothing, so events are kept here.
         self.llm_step_events: list[str] = []
 
     @override
