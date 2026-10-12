@@ -123,29 +123,36 @@ class TransactionCategorizationProcessor:
         )
 
     def _apply_category_policy(self, description: str | None, model_category: ExpenseCategory) -> tuple[ExpenseCategory, str | None]:
-        category: ExpenseCategory = model_category
-        policy_note: str | None = None
-        normalized_description: str | None = description.casefold().removeprefix("return processed - ") if description is not None else None
-        if normalized_description is not None and normalized_description in (
+        if description is None:
+            return model_category, None
+        if self._is_ambiguous_cash_movement(description):
+            return ExpenseCategory.UNCATEGORIZED, "Cash movement without an identified spending purpose"
+        normalized_description: str = description.casefold().removeprefix("return processed - ")
+        known_expense_merchant: KnownExpenseMerchant | None = self._find_known_expense_merchant(normalized_description)
+        if known_expense_merchant is not None:
+            return known_expense_merchant.expense_category, f"Known expense merchant: {known_expense_merchant.name}"
+        if self._is_mixed_retailer_merchant(normalized_description):
+            return ExpenseCategory.OTHER, "Merchant-only mixed retailer charge; item type is not stated"
+        return model_category, None
+
+    def _find_known_expense_merchant(self, normalized_description: str) -> KnownExpenseMerchant | None:
+        return next(
+            (
+                known_expense_merchant
+                for known_expense_merchant in self._expense_category_catalog.known_merchants
+                if normalized_description == known_expense_merchant.name.casefold()
+            ),
+            None,
+        )
+
+    def _is_mixed_retailer_merchant(self, normalized_description: str) -> bool:
+        return normalized_description in (
             mixed_retailer_merchant.casefold() for mixed_retailer_merchant in self._expense_category_catalog.mixed_retailer_merchants
-        ):
-            category = ExpenseCategory.OTHER
-            policy_note = "Merchant-only mixed retailer charge; item type is not stated"
-        if normalized_description is not None:
-            known_expense_merchant: KnownExpenseMerchant
-            for known_expense_merchant in self._expense_category_catalog.known_merchants:
-                if normalized_description == known_expense_merchant.name.casefold():
-                    category = known_expense_merchant.expense_category
-                    policy_note = f"Known expense merchant: {known_expense_merchant.name}"
-                    break
-        if description is not None and self._is_ambiguous_cash_movement(description):
-            category = ExpenseCategory.UNCATEGORIZED
-            policy_note = "Cash movement without an identified spending purpose"
-        return category, policy_note
+        )
 
     @staticmethod
     def _is_ambiguous_cash_movement(description: str) -> bool:
-        normalized: str = " ".join(description.casefold().split())
-        if TransactionCategorizationProcessor._STATED_PURPOSE_PATTERN.search(normalized):
+        normalized_description: str = " ".join(description.casefold().split())
+        if TransactionCategorizationProcessor._STATED_PURPOSE_PATTERN.search(normalized_description):
             return False
-        return TransactionCategorizationProcessor._CASH_MOVEMENT_PATTERN.match(normalized) is not None
+        return TransactionCategorizationProcessor._CASH_MOVEMENT_PATTERN.match(normalized_description) is not None

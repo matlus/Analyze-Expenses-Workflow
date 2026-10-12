@@ -44,6 +44,12 @@ from typing import Final, cast, override
 
 import httpx2
 
+from analyze_expenses_workflow.domain_facades import (
+    ExpenseAnalysisResult,
+    ExpenseCategory,
+    ExpenseTransaction,
+    TransactionTreatment,
+)
 from analyze_expenses_workflow.managers.configuration_providers.configuration_provider import ConfigurationProvider
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import (
     MODEL_FAMILY_BY_SUBSCRIPTION,
@@ -53,7 +59,6 @@ from analyze_expenses_workflow.managers.configuration_providers.settings_models.
 )
 from analyze_expenses_workflow.managers.configuration_providers.settings_models.llm_operation_settings import LlmOperation, LlmOperationSettings
 from analyze_expenses_workflow.managers.service_locators.service_locator_production import ServiceLocatorProduction
-from analyze_expenses_workflow.models import ExpenseAnalysisResult, ExpenseCategory, ExpenseTransaction, TransactionTreatment
 from analyze_expenses_workflow_app.composers.composer_expense_analysis_report import ComposerExpenseAnalysisReport
 
 EVAL_SUITE_DIRECTORY: Final[Path] = Path(__file__).resolve().parents[1] / "expense_analysis"
@@ -97,7 +102,19 @@ JUDGE_VERDICT_SCHEMA: Final[str] = json.dumps(
 type JsonObject = Mapping[str, object]
 
 
-class InvalidEvalSuiteException(Exception):
+class EvalBaseException(Exception):
+    """Every failure the eval reports for itself."""
+
+
+class EvalBusinessBaseException(EvalBaseException):
+    """An input the person running the eval supplies is wrong: an eval suite file or a command-line setting."""
+
+
+class EvalTechnicalBaseException(EvalBaseException):
+    """The eval, a tool it runs, or a file it wrote failed; correcting the eval's inputs would not help."""
+
+
+class InvalidEvalSuiteException(EvalBusinessBaseException):
     """An eval suite file is not valid JSON, lacks a field the eval needs, or holds a value the eval cannot use."""
 
 
@@ -303,17 +320,23 @@ type EvalSuiteCheck = GradedCheck | NotApplicableCheck
 
 
 @dataclass(frozen=True)
+class AcceptedPolicy:
+    """An accepted alternative of the reference key, which may move its entry to one of `alternative_categories`."""
+
+    policy_name: str
+    alternative_categories: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class LedgerEntry:
-    """One input line as the reference key reads it. `policy_name` names the accepted alternative that may move it
-    to one of `alternative_categories`; an entry that is not counted (a likely duplicate) is in no reference total."""
+    """One input line as the reference key reads it; an entry that is not counted (a likely duplicate) is in no reference total."""
 
     line_number: int
     source_text: str
     period: str
     amount: Decimal
     category: str
-    alternative_categories: tuple[str, ...]
-    policy_name: str | None
+    accepted_policy: AcceptedPolicy | None
     is_counted: bool
     note: str | None
 
@@ -449,21 +472,26 @@ def validate_reference_ledger(reference_ledger_text: str, reference_ledger_file:
 
 
 def validate_ledger_entry(entry_object: JsonObject, entry_location: str) -> LedgerEntry:
-    alternative_categories: tuple[str, ...] = read_string_list(entry_object, "alternative_categories", entry_location)
-    policy_name: str | None = read_optional_string(entry_object, "policy_name", entry_location)
-    if bool(alternative_categories) != (policy_name is not None):
-        raise InvalidEvalSuiteException(f"{entry_location}: needs a 'policy_name' exactly when it lists 'alternative_categories'")
     return LedgerEntry(
         line_number=read_whole_number(entry_object, "line_number", entry_location),
         source_text=read_string(entry_object, "source_text", entry_location),
         period=read_string(entry_object, "period", entry_location),
         amount=read_amount(read_string(entry_object, "amount", entry_location), entry_location),
         category=read_string(entry_object, "category", entry_location),
-        alternative_categories=alternative_categories,
-        policy_name=policy_name,
+        accepted_policy=validate_accepted_policy(entry_object, entry_location),
         is_counted=read_bool(entry_object, "is_counted", entry_location),
         note=read_optional_string(entry_object, "note", entry_location),
     )
+
+
+def validate_accepted_policy(entry_object: JsonObject, entry_location: str) -> AcceptedPolicy | None:
+    alternative_categories: tuple[str, ...] = read_string_list(entry_object, "alternative_categories", entry_location)
+    policy_name: str | None = read_optional_string(entry_object, "policy_name", entry_location)
+    if policy_name is None and not alternative_categories:
+        return None
+    if policy_name is None or not alternative_categories:
+        raise InvalidEvalSuiteException(f"{entry_location}: needs a 'policy_name' exactly when it lists 'alternative_categories'")
+    return AcceptedPolicy(policy_name, alternative_categories)
 
 
 def validate_category_names(reference_category_by_category_value: Mapping[str, str]) -> dict[ExpenseCategory, str]:
@@ -665,37 +693,57 @@ class ModelStep:
 
 
 @dataclass(frozen=True)
-class SettingOverrideRequest:
-    """The layers of one run's configuration, in the order they apply: the case's settings, then the subscription with
-    one model and effort for every LLM step, then explicit settings. Anything left out keeps its .env or environment value."""
+class ModelStepSelection:
+    """The subscription for every LLM step, with one model and effort for all of them; a model or effort left out keeps
+    its configured value."""
 
-    case_setting_value_by_name: Mapping[str, str]
-    subscription: CodingAssistantSubscription | None
+    coding_assistant_subscription: CodingAssistantSubscription
     model: str | None
     reasoning_effort: str | None
+
+
+@dataclass(frozen=True)
+class SettingOverrideRequest:
+    """The layers of one run's configuration, in the order they apply: the case's settings, then the model step
+    selection, then explicit settings. Anything left out keeps its .env or environment value."""
+
+    case_setting_value_by_name: Mapping[str, str]
+    model_step_selection: ModelStepSelection | None
     extra_setting_value_by_name: Mapping[str, str]
 
 
-class SettingOverrideException(Exception):
-    """A setting override request cannot be applied."""
+class SettingOverrideException(EvalBusinessBaseException):
+    """A model or reasoning effort was given without the subscription that selects their family, or a command-line
+    setting does not read NAME=VALUE."""
+
+
+def select_model_steps(coding_assistant_subscription_value: str | None, model: str | None, reasoning_effort: str | None) -> ModelStepSelection | None:
+    if coding_assistant_subscription_value is None:
+        if model is not None or reasoning_effort is not None:
+            raise SettingOverrideException("A model or reasoning effort for every LLM step needs the subscription that selects their family")
+        return None
+    return ModelStepSelection(CodingAssistantSubscription(coding_assistant_subscription_value), model, reasoning_effort)
 
 
 def build_setting_overrides(setting_override_request: SettingOverrideRequest) -> dict[str, str]:
     setting_value_by_name: dict[str, str] = dict(setting_override_request.case_setting_value_by_name)
-    subscription: CodingAssistantSubscription | None = setting_override_request.subscription
-    if subscription is not None:
-        setting_value_by_name[CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME] = subscription.value
-    if setting_override_request.model is not None or setting_override_request.reasoning_effort is not None:
-        if subscription is None:
-            raise SettingOverrideException("A model or reasoning effort for every LLM step needs the subscription that selects their family")
-        model_family: ModelFamily = MODEL_FAMILY_BY_SUBSCRIPTION[subscription]
-        for llm_operation in LlmOperation:
-            if setting_override_request.model is not None:
-                setting_value_by_name[f"{llm_operation.value}_{model_family.value}_MODEL"] = setting_override_request.model
-            if setting_override_request.reasoning_effort is not None:
-                setting_value_by_name[f"{llm_operation.value}_{model_family.value}_REASONING_EFFORT"] = setting_override_request.reasoning_effort
+    model_step_selection: ModelStepSelection | None = setting_override_request.model_step_selection
+    if model_step_selection is not None:
+        setting_value_by_name.update(build_model_step_settings(model_step_selection))
     setting_value_by_name.update(setting_override_request.extra_setting_value_by_name)
     return setting_value_by_name
+
+
+def build_model_step_settings(model_step_selection: ModelStepSelection) -> dict[str, str]:
+    coding_assistant_subscription: CodingAssistantSubscription = model_step_selection.coding_assistant_subscription
+    model_step_setting_value_by_name: dict[str, str] = {CODING_ASSISTANT_SUBSCRIPTION_SETTING_NAME: coding_assistant_subscription.value}
+    model_family: ModelFamily = MODEL_FAMILY_BY_SUBSCRIPTION[coding_assistant_subscription]
+    for llm_operation in LlmOperation:
+        if model_step_selection.model is not None:
+            model_step_setting_value_by_name[f"{llm_operation.value}_{model_family.value}_MODEL"] = model_step_selection.model
+        if model_step_selection.reasoning_effort is not None:
+            model_step_setting_value_by_name[f"{llm_operation.value}_{model_family.value}_REASONING_EFFORT"] = model_step_selection.reasoning_effort
+    return model_step_setting_value_by_name
 
 
 def describe_model_steps(configuration_provider: ConfigurationProvider) -> tuple[ModelStep, ...]:
@@ -888,16 +936,26 @@ def _describe_failure_chain(failure: BaseException, link_text: str, failure_desc
 
 
 @dataclass(frozen=True)
+class LineCategorization:
+    """The line's category, and why it has it: Jev's own choice, and the policy that overrode it, if any."""
+
+    category: str
+    model_category: str
+    policy_note: str | None
+
+
+@dataclass(frozen=True)
 class LineOutcome:
     line_number: int
     source_text: str
     amount: Decimal | None
     period: str | None
-    category: str | None
     treatment: str
-    # Why the line has its category: Jev's own choice, and the policy that overrode it, if any.
-    model_category: str | None
-    policy_note: str | None
+    line_categorization: LineCategorization | None
+
+    @property
+    def category(self) -> str | None:
+        return self.line_categorization.category if self.line_categorization is not None else None
 
 
 @dataclass(frozen=True)
@@ -944,9 +1002,9 @@ def to_period(month: date) -> str:
 
 
 def project_workflow_outcome(
-    expense_analysis_result: ExpenseAnalysisResult, eval_case: EvalCase, reference_category_by_workflow_category: Mapping[ExpenseCategory, str]
+    expense_analysis_result: ExpenseAnalysisResult, line_offset: int, reference_category_by_workflow_category: Mapping[ExpenseCategory, str]
 ) -> WorkflowOutcome:
-    line_offset: int = eval_case.first_expense_line_number - 1
+    """`line_offset` turns the workflow's line numbers into the input file's: the file's lines before the first expense line."""
     return WorkflowOutcome(
         line_outcomes=tuple(
             project_line_outcome(expense_transaction, line_offset, reference_category_by_workflow_category)
@@ -992,14 +1050,14 @@ def project_line_outcome(
         source_text=expense_transaction.parsed_line.source_text,
         amount=expense_transaction.parsed_line.amount,
         period=to_period(occurred_on) if occurred_on is not None else None,
-        category=reference_category_by_workflow_category[expense_transaction.categorization.category]
-        if expense_transaction.categorization is not None
-        else None,
         treatment=expense_transaction.treatment.value,
-        model_category=reference_category_by_workflow_category[expense_transaction.categorization.model_category]
+        line_categorization=LineCategorization(
+            category=reference_category_by_workflow_category[expense_transaction.categorization.category],
+            model_category=reference_category_by_workflow_category[expense_transaction.categorization.model_category],
+            policy_note=expense_transaction.categorization.policy_note,
+        )
         if expense_transaction.categorization is not None
         else None,
-        policy_note=expense_transaction.categorization.policy_note if expense_transaction.categorization is not None else None,
     )
 
 
@@ -1047,9 +1105,10 @@ def compose_bucket(reference_ledger: ReferenceLedger, ledger_bucket: LedgerBucke
     ]
     policy_names: list[str] = list(
         dict.fromkeys(
-            ledger_entry.policy_name
+            ledger_entry.accepted_policy.policy_name
             for ledger_entry in entries_in_period
-            if ledger_entry.policy_name and ledger_bucket.category in (ledger_entry.category, *ledger_entry.alternative_categories)
+            if ledger_entry.accepted_policy is not None
+            and ledger_bucket.category in (ledger_entry.category, *ledger_entry.accepted_policy.alternative_categories)
         )
     )
     return [
@@ -1058,7 +1117,8 @@ def compose_bucket(reference_ledger: ReferenceLedger, ledger_bucket: LedgerBucke
             [
                 ledger_entry
                 for ledger_entry in entries_in_period
-                if decide_reference_category(ledger_entry, applied_policy_names, ledger_bucket.category) == ledger_bucket.category
+                if decide_reference_category(ledger_entry.category, ledger_entry.accepted_policy, applied_policy_names, ledger_bucket.category)
+                == ledger_bucket.category
             ],
         )
         for policy_count in range(len(policy_names) + 1)
@@ -1066,10 +1126,12 @@ def compose_bucket(reference_ledger: ReferenceLedger, ledger_bucket: LedgerBucke
     ]
 
 
-def decide_reference_category(ledger_entry: LedgerEntry, applied_policy_names: Sequence[str], bucket_category: str) -> str:
-    if ledger_entry.policy_name not in applied_policy_names:
-        return ledger_entry.category
-    return bucket_category if bucket_category in ledger_entry.alternative_categories else ledger_entry.alternative_categories[0]
+def decide_reference_category(
+    category: str, accepted_policy: AcceptedPolicy | None, applied_policy_names: Sequence[str], bucket_category: str
+) -> str:
+    if accepted_policy is None or accepted_policy.policy_name not in applied_policy_names:
+        return category
+    return bucket_category if bucket_category in accepted_policy.alternative_categories else accepted_policy.alternative_categories[0]
 
 
 def quote_source(source_text: str) -> str:
@@ -1087,12 +1149,16 @@ def describe_where_line_went(line_outcome: LineOutcome | None) -> str:
         case TransactionTreatment.UNCATEGORIZED_OUTFLOW.value | TransactionTreatment.UNCATEGORIZED_CREDIT.value:
             return "the workflow left it uncategorized"
         case _:
-            return f"the workflow put it in {line_outcome.category} {line_outcome.period} {describe_category_decision(line_outcome)}"
+            line_categorization: LineCategorization | None = line_outcome.line_categorization
+            if line_categorization is None:
+                return "the workflow left it uncategorized"
+            category_decision: str = describe_category_decision(line_categorization.model_category, line_categorization.policy_note)
+            return f"the workflow put it in {line_categorization.category} {line_outcome.period} {category_decision}"
 
 
-def describe_category_decision(line_outcome: LineOutcome) -> str:
-    if line_outcome.policy_note is not None:
-        return f"(Jev chose {line_outcome.model_category}; the workflow's policy decided: {line_outcome.policy_note})"
+def describe_category_decision(model_category: str, policy_note: str | None) -> str:
+    if policy_note is not None:
+        return f"(Jev chose {model_category}; the workflow's policy decided: {policy_note})"
     return "(Jev's choice, no policy applied)"
 
 
@@ -1132,26 +1198,32 @@ def find_line_differences(
         extra_line_outcome: LineOutcome | None = workflow_outcome.find_line(line_number)
         extra_amount: Decimal = extra_line_outcome.amount if extra_line_outcome is not None and extra_line_outcome.amount is not None else Decimal(0)
         ledger_entry: LedgerEntry | None = ledger_entry_by_line_number.get(line_number)
-        source_text: str = extra_line_outcome.source_text if extra_line_outcome is not None else ""
-        line_differences.append(
-            LineDifference(
-                line_number,
-                f"line {line_number} {quote_source(source_text)}: the workflow counted it in {ledger_bucket.category}; "
-                + describe_reference_placement(ledger_entry, ledger_bucket),
-                extra_amount,
+        line_label: str = (
+            f"line {line_number} {quote_source(extra_line_outcome.source_text)}" if extra_line_outcome is not None else f"line {line_number}"
+        )
+        reference_placement: str = (
+            describe_reference_placement(
+                is_counted=ledger_entry.is_counted,
+                note=ledger_entry.note,
+                period=ledger_entry.period,
+                category=ledger_entry.category,
+                bucket_period=ledger_bucket.period,
             )
+            if ledger_entry is not None
+            else "the reference has no expense on that line"
+        )
+        line_differences.append(
+            LineDifference(line_number, f"{line_label}: the workflow counted it in {ledger_bucket.category}; {reference_placement}", extra_amount)
         )
     return sorted(line_differences, key=lambda line_difference: line_difference.line_number)
 
 
-def describe_reference_placement(ledger_entry: LedgerEntry | None, ledger_bucket: LedgerBucket) -> str:
-    if ledger_entry is None:
-        return "the reference has no expense on that line"
-    if not ledger_entry.is_counted:
-        return f"the reference does not count it ({ledger_entry.note})"
-    if ledger_entry.period != ledger_bucket.period:
-        return f"the reference puts it in {ledger_entry.period}"
-    return f"the reference puts it in {ledger_entry.category}"
+def describe_reference_placement(*, is_counted: bool, note: str | None, period: str, category: str, bucket_period: str) -> str:
+    if not is_counted:
+        return f"the reference does not count it ({note})"
+    if period != bucket_period:
+        return f"the reference puts it in {period}"
+    return f"the reference puts it in {category}"
 
 
 def trace_bucket_difference(reference_ledger: ReferenceLedger, ledger_bucket: LedgerBucket, workflow_outcome: WorkflowOutcome) -> TracedCause | None:
@@ -1207,12 +1279,12 @@ def trace_category_differences(reference_ledger: ReferenceLedger, reference_cate
     ledger_entry_by_line_number: dict[int, LedgerEntry] = {ledger_entry.line_number: ledger_entry for ledger_entry in reference_ledger.ledger_entries}
     for line_outcome in workflow_outcome.line_outcomes:
         if line_outcome.category == reference_category and line_outcome.line_number not in reference_line_numbers:
-            reference_entry: LedgerEntry | None = ledger_entry_by_line_number.get(line_outcome.line_number)
+            reference_ledger_entry: LedgerEntry | None = ledger_entry_by_line_number.get(line_outcome.line_number)
             cause_text = (
                 f"line {line_outcome.line_number} {quote_source(line_outcome.source_text)}: the workflow put it in {reference_category}; "
                 + (
-                    f"the reference puts it in {reference_entry.category}"
-                    if reference_entry is not None
+                    f"the reference puts it in {reference_ledger_entry.category}"
+                    if reference_ledger_entry is not None
                     else "the reference has no expense on that line"
                 )
             )
@@ -1348,9 +1420,9 @@ def read_largest_increase(largest_increase_reader: LargestIncreaseReader, change
     return ReadFact(ranked_change_outcomes[0].category, f"largest increases: {evidence}")
 
 
-def is_amount_accepted(reported_amount: Decimal | None, expected_amounts: Iterable[str]) -> bool:
-    return reported_amount is not None and any(
-        abs(reported_amount - Decimal(expected_amount)) <= AMOUNT_TOLERANCE for expected_amount in expected_amounts
+def is_amount_accepted(actual_amount: Decimal | None, expected_amounts: Iterable[str]) -> bool:
+    return actual_amount is not None and any(
+        abs(actual_amount - Decimal(expected_amount)) <= AMOUNT_TOLERANCE for expected_amount in expected_amounts
     )
 
 
@@ -1453,12 +1525,12 @@ def grade_budget_targets_check(budget_targets_check: BudgetTargetsCheck, budget_
     return CheckGrade(to_check_status(passed=not invented_targets and not missing_targets), reason)
 
 
-def grade_judge_check(judge_check: JudgeCheck, judgment_attempt: JudgmentAttempt) -> CheckGrade:
+def grade_judge_check(judge_check_description: str, judgment_attempt: JudgmentAttempt) -> CheckGrade:
     match judgment_attempt:
         case ErroredJudgment():
             return CheckGrade(CheckStatus.ERRORED, f"the judge did not return a verdict: {judgment_attempt.failure_description}")
         case CompletedJudgment():
-            return CheckGrade(to_check_status(passed=judgment_attempt.passed), f"{judge_check.description} The judge said: {judgment_attempt.reason}")
+            return CheckGrade(to_check_status(passed=judgment_attempt.passed), f"{judge_check_description} The judge said: {judgment_attempt.reason}")
 
 
 def grade_run(
@@ -1482,7 +1554,7 @@ def grade_run(
                 check_grade_by_check_name[graded_check.check_name] = grade_budget_targets_check(graded_check, workflow_outcome.budget_outcomes)
             case JudgeCheck():
                 check_grade_by_check_name[graded_check.check_name] = grade_judge_check(
-                    graded_check, judgment_attempt_by_check_name[graded_check.check_name]
+                    graded_check.description, judgment_attempt_by_check_name[graded_check.check_name]
                 )
     return check_grade_by_check_name
 
@@ -1500,7 +1572,7 @@ def select_graded_checks(checks: Sequence[EvalSuiteCheck]) -> list[GradedCheck]:
 # ----------------------------------------------------------------------------------------------------------
 
 
-class JudgeSessionFailedException(Exception):
+class JudgeSessionFailedException(EvalTechnicalBaseException):
     """The judge session could not start, did not finish, ended in error, or returned no readable verdict."""
 
 
@@ -1560,15 +1632,17 @@ def read_judge_verdict(exit_code: int, standard_output: bytes, standard_error: b
         return CompletedJudgment(
             passed=read_bool(verdict_object, "passed", "the judge verdict"), reason=read_string(verdict_object, "reason", "the judge verdict")
         )
-    except InvalidEvalSuiteException as malformation:
-        raise JudgeSessionFailedException(f"the judge returned an unreadable verdict: {malformation}") from malformation
+    except InvalidEvalSuiteException as invalid_eval_suite_exception:
+        raise JudgeSessionFailedException(
+            f"the judge returned an unreadable verdict: {invalid_eval_suite_exception}"
+        ) from invalid_eval_suite_exception
 
 
 def attempt_judgment(rubric_text: str, answer: str, judge_settings: JudgeSettings) -> JudgmentAttempt:
     try:
         return judge(rubric_text, answer, judge_settings)
-    except JudgeSessionFailedException as judge_failure:
-        return ErroredJudgment(str(judge_failure))
+    except JudgeSessionFailedException as judge_session_failed_exception:
+        return ErroredJudgment(str(judge_session_failed_exception))
 
 
 # ----------------------------------------------------------------------------------------------------------
@@ -1948,12 +2022,23 @@ def read_latest_configuration_results(results_directory: Path) -> list[Configura
     return sorted(latest_result_by_configuration_key.values(), key=lambda configuration_result: configuration_result.configuration_key)
 
 
+class ScorecardUnreadableException(EvalTechnicalBaseException):
+    """A scorecard the eval wrote cannot be read, is not valid JSON, or lacks a value the comparison needs."""
+
+
 def read_configuration_result(scorecard_path: Path) -> ConfigurationResult:
     document_name: str = str(scorecard_path)
     try:
-        scorecard_object: JsonObject = parse_json_object(scorecard_path.read_text(encoding=TEXT_ENCODING), document_name)
+        return to_configuration_result(parse_json_object(scorecard_path.read_text(encoding=TEXT_ENCODING), document_name), scorecard_path)
     except (OSError, UnicodeDecodeError) as unreadable_scorecard:
-        raise InvalidEvalSuiteException(f"{document_name} cannot be read: {unreadable_scorecard}") from unreadable_scorecard
+        raise ScorecardUnreadableException(f"{document_name} cannot be read: {unreadable_scorecard}") from unreadable_scorecard
+    except InvalidEvalSuiteException as invalid_eval_suite_exception:
+        # The JSON readers are shared with the eval suite, so they report a malformed scorecard as an invalid suite file.
+        raise ScorecardUnreadableException(f"not a readable scorecard: {invalid_eval_suite_exception}") from invalid_eval_suite_exception
+
+
+def to_configuration_result(scorecard_object: JsonObject, scorecard_path: Path) -> ConfigurationResult:
+    document_name: str = str(scorecard_path)
     scorecard_header: JsonObject = read_object(scorecard_object, "scorecard_header", document_name)
     model_steps: tuple[JsonObject, ...] = read_object_list(scorecard_header, "model_steps", document_name)
     llm_model_steps: list[JsonObject] = [
@@ -2088,7 +2173,7 @@ def render_scorecard_comparison(eval_suite_name: str, configuration_results: Seq
 USER_NAME_PLACEHOLDER: Final[str] = "<user>"
 # A user name is scrubbed only where it names an account folder, in any path or JSON escaping, so expense text such as
 # "Venmo - Sam" survives for a user named sam.
-ACCOUNT_FOLDER_PREFIX_PATTERN: Final[str] = r"([\\/](?:users|home)(?:\\\\|[\\/]))"
+ACCOUNT_FOLDER_PREFIX_PATTERN: Final[str] = r"([\\/](?:users|home)[\\/]+)"
 ACCOUNT_FOLDER_END_PATTERN: Final[str] = r"(?=$|[\\/\"'\s])"
 
 
