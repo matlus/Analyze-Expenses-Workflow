@@ -27,9 +27,11 @@ reference key. Each run is graded on the same checks, such as "July shopping is 
 uncategorized". The prompt must pass each check in 80% of runs; the workflow must pass in 100%, because code decides every
 step that has one right answer. Each of the workflow's seven configurations (a model plus a reasoning effort) ran 10
 times; the prompt results have 4 or 5 runs per model. The workflow also has a check the prompt
-eval cannot make, because its output shows every line: all 198 lines compared with the reference key. That check was
-added after these runs, and all 70 pass it when graded from their saved results. [What an eval is](../../../docs/articles/what-an-eval-is.md)
-explains the checks and how they are graded.
+eval cannot make, because its output shows every line: all 198 lines compared with the reference key, each line's date,
+merchant, amount and sign, category, and whether it was counted. All 70 runs pass it. Adding the merchants to the
+reference key found one line the workflow read wrongly: it recorded the merchant on the REI refund as "Return processed -
+REI". That was fixed before these runs. [What an eval is](../../../docs/articles/what-an-eval-is.md) explains the checks
+and how they are graded.
 
 ## Results
 

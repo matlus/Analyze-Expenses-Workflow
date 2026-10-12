@@ -1,0 +1,304 @@
+{
+  "scorecard_header": {
+    "eval_suite_name": "expense-analysis-workflow",
+    "run_identity": "20261012T200855Z-claude_code-claude-sonnet-5-5-medium-ff9e33",
+    "model_steps": [
+      {
+        "step_name": "expense_line_jev_extraction",
+        "provider": "OpenRouter (Jev)",
+        "model": "jev-1.13",
+        "reasoning_effort": "not supported"
+      },
+      {
+        "step_name": "expense_line_extraction",
+        "provider": "CLAUDE_CODE (ANTHROPIC)",
+        "model": "claude-sonnet-5-5",
+        "reasoning_effort": "medium"
+      },
+      {
+        "step_name": "transaction_categorization",
+        "provider": "OpenRouter (Jev)",
+        "model": "jev-1.13",
+        "reasoning_effort": "not supported"
+      },
+      {
+        "step_name": "expense_findings",
+        "provider": "CLAUDE_CODE (ANTHROPIC)",
+        "model": "claude-sonnet-5-5",
+        "reasoning_effort": "medium"
+      }
+    ],
+    "judge_model": "sonnet",
+    "judge_effort": "low",
+    "repetitions": 5,
+    "trial_activities": [
+      {
+        "duration_seconds": 9.369325699983165,
+        "jev_request_count": 198,
+        "llm_step_events": [
+          "progress: Extracting uncertain expense lines",
+          "complete: No uncertain expense lines required extraction",
+          "progress: Selecting evidence-based expense findings",
+          "complete: Three expense findings selected"
+        ],
+        "workflow_completed": true
+      },
+      {
+        "duration_seconds": 9.365985799988266,
+        "jev_request_count": 198,
+        "llm_step_events": [
+          "progress: Extracting uncertain expense lines",
+          "complete: No uncertain expense lines required extraction",
+          "progress: Selecting evidence-based expense findings",
+          "complete: Three expense findings selected"
+        ],
+        "workflow_completed": true
+      },
+      {
+        "duration_seconds": 9.288005600043107,
+        "jev_request_count": 198,
+        "llm_step_events": [
+          "progress: Extracting uncertain expense lines",
+          "complete: No uncertain expense lines required extraction",
+          "progress: Selecting evidence-based expense findings",
+          "complete: Three expense findings selected"
+        ],
+        "workflow_completed": true
+      },
+      {
+        "duration_seconds": 9.338884700031485,
+        "jev_request_count": 198,
+        "llm_step_events": [
+          "progress: Extracting uncertain expense lines",
+          "complete: No uncertain expense lines required extraction",
+          "progress: Selecting evidence-based expense findings",
+          "complete: Three expense findings selected"
+        ],
+        "workflow_completed": true
+      },
+      {
+        "duration_seconds": 10.119187400036026,
+        "jev_request_count": 198,
+        "llm_step_events": [
+          "progress: Extracting uncertain expense lines",
+          "complete: No uncertain expense lines required extraction",
+          "progress: Selecting evidence-based expense findings",
+          "complete: Three expense findings selected"
+        ],
+        "workflow_completed": true
+      }
+    ]
+  },
+  "gate_passed": true,
+  "checks": [
+    {
+      "check_name": "dining-june-total",
+      "grader": "amount (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "dining-july-total",
+      "grader": "amount (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "dining-august-total",
+      "grader": "amount (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "dining-august-over-budget",
+      "grader": "fact (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "refund-netted",
+      "grader": "fact (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "shopping-july-total",
+      "grader": "amount (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "duplicate-flagged",
+      "grader": "fact (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "both-delta-charges-kept",
+      "grader": "fact (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "travel-august-total",
+      "grader": "amount (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "uncategorized-entry-count",
+      "grader": "fact (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "largest-increase-is-travel",
+      "grader": "fact (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "ambiguous-entries-not-forced",
+      "grader": "lines (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "three-supported-findings",
+      "grader": "judge",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "no-invented-budgets",
+      "grader": "targets (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    },
+    {
+      "check_name": "every-line-matches-reference",
+      "grader": "every line (read from result)",
+      "minimum_pass_rate": 1.0,
+      "run_count": 5,
+      "passed_count": 5,
+      "errored_count": 0,
+      "pass_rate": 1.0,
+      "meets_minimum_pass_rate": true
+    }
+  ],
+  "failure_causes": [],
+  "run_timings": [
+    {
+      "run_number": 1,
+      "answer_duration_seconds": 9.369325699983165,
+      "grading_duration_seconds": 4.054809499997646,
+      "total_duration_seconds": 13.42413519998081,
+      "workflow_completed": true
+    },
+    {
+      "run_number": 2,
+      "answer_duration_seconds": 9.365985799988266,
+      "grading_duration_seconds": 4.027843400021084,
+      "total_duration_seconds": 13.39382920000935,
+      "workflow_completed": true
+    },
+    {
+      "run_number": 3,
+      "answer_duration_seconds": 9.288005600043107,
+      "grading_duration_seconds": 4.334310699952766,
+      "total_duration_seconds": 13.622316299995873,
+      "workflow_completed": true
+    },
+    {
+      "run_number": 4,
+      "answer_duration_seconds": 9.338884700031485,
+      "grading_duration_seconds": 3.771255299972836,
+      "total_duration_seconds": 13.110140000004321,
+      "workflow_completed": true
+    },
+    {
+      "run_number": 5,
+      "answer_duration_seconds": 10.119187400036026,
+      "grading_duration_seconds": 4.601780900033191,
+      "total_duration_seconds": 14.720968300069217,
+      "workflow_completed": true
+    }
+  ],
+  "timing_summary": {
+    "run_count": 5,
+    "answer_duration_summary": {
+      "median_seconds": 9.365985799988266,
+      "minimum_seconds": 9.288005600043107,
+      "maximum_seconds": 10.119187400036026,
+      "measured_run_count": 5
+    },
+    "grading_duration_summary": {
+      "median_seconds": 4.054809499997646,
+      "minimum_seconds": 3.771255299972836,
+      "maximum_seconds": 4.601780900033191,
+      "measured_run_count": 5
+    },
+    "total_duration_summary": {
+      "median_seconds": 13.42413519998081,
+      "minimum_seconds": 13.110140000004321,
+      "maximum_seconds": 14.720968300069217,
+      "measured_run_count": 5
+    }
+  }
+}

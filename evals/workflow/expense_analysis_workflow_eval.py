@@ -39,7 +39,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from itertools import combinations
 from pathlib import Path
-from typing import Final, cast, override
+from typing import Final, cast, final, override
 
 import httpx2
 
@@ -113,6 +113,7 @@ class EvalTechnicalBaseException(EvalBaseException):
     """The eval, a tool it runs, or a file it wrote failed; correcting the eval's inputs would not help."""
 
 
+@final
 class InvalidEvalSuiteException(EvalBusinessBaseException):
     """An eval suite file is not valid JSON, lacks a field the eval needs, or holds a value the eval cannot use."""
 
@@ -141,7 +142,7 @@ def read_field(json_object: JsonObject, field_name: str, location: str) -> objec
 def read_string(json_object: JsonObject, field_name: str, location: str) -> str:
     field_value: object = read_field(json_object, field_name, location)
     if not isinstance(field_value, str):
-        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a string")
+        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a string, not {field_value!r}")
     return field_value
 
 
@@ -152,7 +153,7 @@ def read_optional_string(json_object: JsonObject, field_name: str, location: str
 def read_bool(json_object: JsonObject, field_name: str, location: str) -> bool:
     field_value: object = read_field(json_object, field_name, location)
     if not isinstance(field_value, bool):
-        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be true or false")
+        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be true or false, not {field_value!r}")
     return field_value
 
 
@@ -160,14 +161,14 @@ def read_whole_number(json_object: JsonObject, field_name: str, location: str) -
     field_value: object = read_field(json_object, field_name, location)
     # bool is a subclass of int in Python, so true would otherwise pass as 1.
     if isinstance(field_value, bool) or not isinstance(field_value, int):
-        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a whole number")
+        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a whole number, not {field_value!r}")
     return field_value
 
 
 def read_whole_numbers(json_object: JsonObject, field_name: str, location: str) -> tuple[int, ...]:
     field_value: object = read_field(json_object, field_name, location)
     if not isinstance(field_value, list):
-        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list of whole numbers")
+        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list of whole numbers, not {field_value!r}")
     field_values: list[object] = cast("list[object]", field_value)
     if not all(isinstance(listed_value, int) and not isinstance(listed_value, bool) for listed_value in field_values):
         raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list of whole numbers, not {field_values!r}")
@@ -181,14 +182,14 @@ def read_object(json_object: JsonObject, field_name: str, location: str) -> Json
 def read_object_list(json_object: JsonObject, field_name: str, location: str) -> tuple[JsonObject, ...]:
     field_value: object = read_field(json_object, field_name, location)
     if not isinstance(field_value, list):
-        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list")
+        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list, not {field_value!r}")
     return tuple(as_json_object(list_item, f"{location} '{field_name}'") for list_item in cast("list[object]", field_value))
 
 
 def read_string_list(json_object: JsonObject, field_name: str, location: str) -> tuple[str, ...]:
     field_value: object = read_field(json_object, field_name, location)
     if not isinstance(field_value, list) or not all(isinstance(list_item, str) for list_item in cast("list[object]", field_value)):
-        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list of strings")
+        raise InvalidEvalSuiteException(f"{location}: '{field_name}' must be a list of strings, not {field_value!r}")
     return tuple(cast("list[str]", field_value))
 
 
@@ -205,6 +206,13 @@ def read_amount(amount_text: str, location: str) -> Decimal:
     if not amount.is_finite():
         raise InvalidEvalSuiteException(f"{location}: '{amount_text}' is not a finite number")
     return amount
+
+
+def read_date(date_text: str, location: str) -> date:
+    try:
+        return date.fromisoformat(date_text)
+    except ValueError as invalid_date:
+        raise InvalidEvalSuiteException(f"{location}: '{date_text}' is not a date written as YYYY-MM-DD") from invalid_date
 
 
 def is_finite_amount_text(amount_text: str) -> bool:
@@ -283,37 +291,44 @@ class CheckDefinition:
     adaptation: str | None
 
 
+@final
 @dataclass(frozen=True)
 class AmountCheck(CheckDefinition):
     fact_name: str
 
 
+@final
 @dataclass(frozen=True)
 class FactValueCheck(CheckDefinition):
     fact_name: str
     fact_reader: FactReader
 
 
+@final
 @dataclass(frozen=True)
 class LedgerCategoryCheck(CheckDefinition):
     reference_category: str
 
 
+@final
 @dataclass(frozen=True)
 class LedgerLinesCheck(CheckDefinition):
     """Every input line against the reference ledger: its amount, month, category and whether it is counted."""
 
 
+@final
 @dataclass(frozen=True)
 class BudgetTargetsCheck(CheckDefinition):
     target_by_category: Mapping[str, Decimal]
 
 
+@final
 @dataclass(frozen=True)
 class JudgeCheck(CheckDefinition):
     rubric_text: str
 
 
+@final
 @dataclass(frozen=True)
 class NotApplicableCheck(CheckDefinition):
     not_applicable_reason: str
@@ -337,12 +352,17 @@ class LedgerEntry:
 
     line_number: int
     source_text: str
-    period: str
+    merchant: str
+    occurred_on: date
     amount: Decimal
     category: str
     accepted_policy: AcceptedPolicy | None
     is_counted: bool
     note: str | None
+
+    @property
+    def period(self) -> str:
+        return to_period(self.occurred_on)
 
 
 @dataclass(frozen=True)
@@ -479,7 +499,8 @@ def validate_ledger_entry(entry_object: JsonObject, entry_location: str) -> Ledg
     return LedgerEntry(
         line_number=read_whole_number(entry_object, "line_number", entry_location),
         source_text=read_string(entry_object, "source_text", entry_location),
-        period=read_string(entry_object, "period", entry_location),
+        merchant=read_string(entry_object, "merchant", entry_location),
+        occurred_on=read_date(read_string(entry_object, "date", entry_location), entry_location),
         amount=read_amount(read_string(entry_object, "amount", entry_location), entry_location),
         category=read_string(entry_object, "category", entry_location),
         accepted_policy=validate_accepted_policy(entry_object, entry_location),
@@ -618,10 +639,28 @@ def find_reference_problems(eval_suite: EvalSuite) -> list[str]:
         for line_number in eval_case.confirmed_duplicate_line_numbers
         if not eval_case.first_expense_line_number <= line_number <= last_line_number
     )
+    reference_problems.extend(find_ledger_coverage_problems(eval_suite.grading_reference.reference_ledger, eval_case))
     reference_problems.extend(find_ledger_source_problems(eval_suite.grading_reference.reference_ledger, eval_case))
     for check in eval_suite.checks:
         reference_problems.extend(find_check_reference_problems(check, eval_suite))
     return reference_problems
+
+
+def find_ledger_coverage_problems(reference_ledger: ReferenceLedger, eval_case: EvalCase) -> list[str]:
+    # The workflow reports every expense line, so a line the key leaves out, or lists twice, would fail the line check on every run.
+    entry_count_by_line_number: Counter[int] = Counter(ledger_entry.line_number for ledger_entry in reference_ledger.ledger_entries)
+    missing_line_numbers: list[int] = [
+        line_number
+        for line_number in range(eval_case.first_expense_line_number, eval_case.first_expense_line_number + len(eval_case.expense_lines))
+        if line_number not in entry_count_by_line_number
+    ]
+    repeated_line_numbers: list[int] = sorted(line_number for line_number, entry_count in entry_count_by_line_number.items() if entry_count > 1)
+    coverage_problems: list[str] = []
+    if missing_line_numbers:
+        coverage_problems.append(f"the reference ledger has no entry for expense lines {missing_line_numbers}")
+    if repeated_line_numbers:
+        coverage_problems.append(f"the reference ledger lists lines {repeated_line_numbers} more than once")
+    return coverage_problems
 
 
 def find_ledger_source_problems(reference_ledger: ReferenceLedger, eval_case: EvalCase) -> list[str]:
@@ -718,6 +757,7 @@ class SettingOverrideRequest:
     extra_setting_value_by_name: Mapping[str, str]
 
 
+@final
 class SettingOverrideException(EvalBusinessBaseException):
     """A model or reasoning effort was given without the subscription that selects their family, or a command-line
     setting does not read NAME=VALUE."""
@@ -793,14 +833,20 @@ def parse_setting_assignments(setting_assignments: Iterable[str]) -> dict[str, s
     return setting_value_by_name
 
 
+def is_jev_step_effort(reasoning_effort: str) -> bool:
+    """Jev takes no reasoning effort, so the steps it runs are recorded with this placeholder and every other step is an LLM step."""
+    return reasoning_effort == JEV_REASONING_EFFORT
+
+
 def compose_run_label(model_steps: Sequence[ModelStep]) -> str:
     """The distinct LLM models and efforts of the run, for its folder name; Jev steps are the same in every run."""
-    llm_model_steps: list[ModelStep] = [model_step for model_step in model_steps if model_step.reasoning_effort != JEV_REASONING_EFFORT]
+    llm_model_steps: list[ModelStep] = [model_step for model_step in model_steps if not is_jev_step_effort(model_step.reasoning_effort)]
     provider_name: str = llm_model_steps[0].provider.split(" ", maxsplit=1)[0].lower() if llm_model_steps else "no-llm"
     model_labels: list[str] = list(dict.fromkeys(f"{model_step.model}-{model_step.reasoning_effort}" for model_step in llm_model_steps))
     return "-".join((provider_name, *model_labels))
 
 
+@final
 class JevRequestCountingTransport(httpx2.AsyncBaseTransport):
     """The default HTTP transport the Jev SDK would create for itself, counting the requests it sends. Nothing is recorded
     from a request, so the OpenRouter key in its headers never reaches an artifact."""
@@ -819,6 +865,7 @@ class JevRequestCountingTransport(httpx2.AsyncBaseTransport):
         await self._async_base_transport.aclose()
 
 
+@final
 class ServiceLocatorEval(ServiceLocatorProduction):
     """Production clients and gateways, with the run's settings layered over .env and the environment."""
 
@@ -863,6 +910,7 @@ class ErroredTrial:
     trial_activity: TrialActivity
 
 
+@final
 class LlmStepEventHandler(logging.Handler):
     def __init__(self) -> None:
         super().__init__(logging.INFO)
@@ -958,10 +1006,15 @@ class LineCategorization:
 class LineOutcome:
     line_number: int
     source_text: str
+    merchant: str | None
+    occurred_on: date | None
     amount: Decimal | None
-    period: str | None
     treatment: str
     line_categorization: LineCategorization | None
+
+    @property
+    def period(self) -> str | None:
+        return to_period(self.occurred_on) if self.occurred_on is not None else None
 
     @property
     def category(self) -> str | None:
@@ -981,7 +1034,7 @@ class BudgetOutcome:
     category: str
     period: str
     target: Decimal
-    actual: Decimal
+    actual_amount: Decimal
 
 
 @dataclass(frozen=True)
@@ -1034,7 +1087,7 @@ def project_workflow_outcome(
                 category=reference_category_by_workflow_category[budget_comparison.category],
                 period=to_period(budget_comparison.month),
                 target=budget_comparison.target,
-                actual=budget_comparison.actual,
+                actual_amount=budget_comparison.actual,
             )
             for budget_comparison in expense_analysis_result.calculations.budget_comparisons
         ),
@@ -1054,12 +1107,12 @@ def project_workflow_outcome(
 def project_line_outcome(
     expense_transaction: ExpenseTransaction, line_offset: int, reference_category_by_workflow_category: Mapping[ExpenseCategory, str]
 ) -> LineOutcome:
-    occurred_on: date | None = expense_transaction.parsed_line.occurred_on
     return LineOutcome(
         line_number=expense_transaction.parsed_line.line_number + line_offset,
         source_text=expense_transaction.parsed_line.source_text,
+        merchant=expense_transaction.parsed_line.description,
+        occurred_on=expense_transaction.parsed_line.occurred_on,
         amount=expense_transaction.parsed_line.amount,
-        period=to_period(occurred_on) if occurred_on is not None else None,
         treatment=expense_transaction.treatment.value,
         line_categorization=LineCategorization(
             category=reference_category_by_workflow_category[expense_transaction.categorization.category],
@@ -1156,7 +1209,7 @@ def describe_where_line_went(line_outcome: LineOutcome | None) -> str:
             return "the workflow left it unparsed"
         case TransactionTreatment.EXCLUDED_DUPLICATE.value:
             return "the workflow excluded it as a duplicate"
-        case TransactionTreatment.UNCATEGORIZED_OUTFLOW.value | TransactionTreatment.UNCATEGORIZED_CREDIT.value:
+        case uncategorized_treatment if is_uncategorized_treatment(uncategorized_treatment):
             return "the workflow left it uncategorized"
         case _:
             line_categorization: LineCategorization | None = line_outcome.line_categorization
@@ -1279,7 +1332,7 @@ def trace_category_differences(reference_ledger: ReferenceLedger, reference_cate
     traced_causes: list[TracedCause] = []
     reference_line_numbers: set[int] = set()
     for ledger_entry in reference_ledger.ledger_entries:
-        if not ledger_entry.is_counted or ledger_entry.category != reference_category:
+        if not is_counted_in_category(ledger_entry, reference_category):
             continue
         reference_line_numbers.add(ledger_entry.line_number)
         line_outcome: LineOutcome | None = line_outcome_by_line_number.get(ledger_entry.line_number)
@@ -1309,6 +1362,14 @@ def trace_category_differences(reference_ledger: ReferenceLedger, reference_cate
             )
             traced_causes.append(TracedCause(cause_text, f"{cause_text} ({line_outcome.amount})"))
     return traced_causes
+
+
+def is_uncategorized_treatment(treatment: str) -> bool:
+    return treatment in (TransactionTreatment.UNCATEGORIZED_OUTFLOW.value, TransactionTreatment.UNCATEGORIZED_CREDIT.value)
+
+
+def is_counted_in_category(ledger_entry: LedgerEntry, category: str) -> bool:
+    return ledger_entry.is_counted and ledger_entry.category == category
 
 
 def is_counted_line(line_outcome: LineOutcome) -> bool:
@@ -1384,9 +1445,7 @@ def read_fact(fact_reader: FactReader, workflow_outcome: WorkflowOutcome) -> Rea
             return read_lines_counted(fact_reader, workflow_outcome)
         case UncategorizedCountReader():
             uncategorized_line_numbers: list[int] = [
-                line_outcome.line_number
-                for line_outcome in workflow_outcome.line_outcomes
-                if line_outcome.treatment in (TransactionTreatment.UNCATEGORIZED_OUTFLOW.value, TransactionTreatment.UNCATEGORIZED_CREDIT.value)
+                line_outcome.line_number for line_outcome in workflow_outcome.line_outcomes if is_uncategorized_treatment(line_outcome.treatment)
             ]
             return ReadFact(str(len(uncategorized_line_numbers)), f"uncategorized lines {uncategorized_line_numbers}")
         case LargestIncreaseReader():
@@ -1405,8 +1464,8 @@ def read_budget_status(budget_status_reader: BudgetStatusReader, budget_outcomes
     if budget_outcome is None:
         return ReadFact("not_stated", f"no budget comparison for {budget_status_reader.category} {budget_status_reader.period}")
     return ReadFact(
-        "over" if budget_outcome.actual > budget_outcome.target else "under",
-        f"{budget_outcome.category} {budget_outcome.period}: actual {budget_outcome.actual} against target {budget_outcome.target}",
+        "over" if budget_outcome.actual_amount > budget_outcome.target else "under",
+        f"{budget_outcome.category} {budget_outcome.period}: actual {budget_outcome.actual_amount} against target {budget_outcome.target}",
     )
 
 
@@ -1470,13 +1529,13 @@ def grade_amount_check(amount_check: AmountCheck, grading_reference: GradingRefe
 
 def grade_fact_value_check(fact_value_check: FactValueCheck, grading_reference: GradingReference, workflow_outcome: WorkflowOutcome) -> CheckGrade:
     expected_fact_values: tuple[str, ...] = grading_reference.expected_fact_values_by_fact_name[fact_value_check.fact_name]
-    read_fact_value: ReadFact = read_fact(fact_value_check.fact_reader, workflow_outcome)
-    passed: bool = read_fact_value.fact_value is not None and read_fact_value.fact_value.lower() in [
+    actual_read_fact: ReadFact = read_fact(fact_value_check.fact_reader, workflow_outcome)
+    passed: bool = actual_read_fact.fact_value is not None and actual_read_fact.fact_value.lower() in [
         expected_fact_value.lower() for expected_fact_value in expected_fact_values
     ]
     reason: str = (
         f"{fact_value_check.description} Expected {' or '.join(expected_fact_values)} (any case); "
-        f"the workflow's result gives {read_fact_value.fact_value} ({read_fact_value.evidence})."
+        f"the workflow's result gives {actual_read_fact.fact_value} ({actual_read_fact.evidence})."
     )
     if passed:
         return CheckGrade(CheckStatus.PASSED, reason)
@@ -1523,16 +1582,14 @@ def trace_period_change_differences(
 
 
 def grade_ledger_category_check(
-    ledger_category_check: LedgerCategoryCheck, reference_ledger: ReferenceLedger, workflow_outcome: WorkflowOutcome
+    ledger_category_check: LedgerCategoryCheck, reference_ledger: ReferenceLedger, line_outcomes: Sequence[LineOutcome]
 ) -> CheckGrade:
     reference_line_numbers: list[int] = [
         ledger_entry.line_number
         for ledger_entry in reference_ledger.ledger_entries
-        if ledger_entry.is_counted and ledger_entry.category == ledger_category_check.reference_category
+        if is_counted_in_category(ledger_entry, ledger_category_check.reference_category)
     ]
-    traced_causes: list[TracedCause] = trace_category_differences(
-        reference_ledger, ledger_category_check.reference_category, workflow_outcome.line_outcomes
-    )
+    traced_causes: list[TracedCause] = trace_category_differences(reference_ledger, ledger_category_check.reference_category, line_outcomes)
     reason: str = (
         f"{ledger_category_check.description} Expected exactly the reference's {len(reference_line_numbers)} "
         f"{ledger_category_check.reference_category} lines {reference_line_numbers} in {ledger_category_check.reference_category}; "
@@ -1542,12 +1599,12 @@ def grade_ledger_category_check(
 
 
 def grade_ledger_lines_check(
-    ledger_lines_check: LedgerLinesCheck, reference_ledger: ReferenceLedger, workflow_outcome: WorkflowOutcome
+    ledger_lines_check: LedgerLinesCheck, reference_ledger: ReferenceLedger, line_outcomes: Sequence[LineOutcome]
 ) -> CheckGrade:
-    traced_causes: list[TracedCause] = trace_line_differences(reference_ledger, workflow_outcome.line_outcomes)
+    traced_causes: list[TracedCause] = trace_line_differences(reference_ledger, line_outcomes)
     reason: str = (
         f"{ledger_lines_check.description} Compared the reference's {len(reference_ledger.ledger_entries)} lines with the "
-        f"workflow's {len(workflow_outcome.line_outcomes)}; {len(traced_causes)} lines differ."
+        f"workflow's {len(line_outcomes)}; {len(traced_causes)} lines differ."
     )
     return CheckGrade(to_check_status(passed=not traced_causes), reason, tuple(traced_causes))
 
@@ -1575,10 +1632,12 @@ def describe_line_differences(ledger_entry: LedgerEntry, line_outcome: LineOutco
     if line_outcome is None:
         return ["the workflow did not report it"]
     line_differences: list[str] = []
+    if line_outcome.occurred_on != ledger_entry.occurred_on:
+        line_differences.append(f"the workflow read the date as {line_outcome.occurred_on}; the reference reads {ledger_entry.occurred_on}")
+    if line_outcome.merchant != ledger_entry.merchant:
+        line_differences.append(f"the workflow read the merchant as {line_outcome.merchant!r}; the reference reads {ledger_entry.merchant!r}")
     if line_outcome.amount != ledger_entry.amount:
         line_differences.append(f"the workflow read the amount as {line_outcome.amount}; the reference reads {ledger_entry.amount}")
-    if line_outcome.period != ledger_entry.period:
-        line_differences.append(f"the workflow put it in {line_outcome.period}; the reference puts it in {ledger_entry.period}")
     is_counted: bool = is_counted_line(line_outcome)
     if is_counted != ledger_entry.is_counted:
         line_differences.append(
@@ -1626,11 +1685,11 @@ def grade_run(
                 check_grade_by_check_name[graded_check.check_name] = grade_fact_value_check(graded_check, grading_reference, workflow_outcome)
             case LedgerCategoryCheck():
                 check_grade_by_check_name[graded_check.check_name] = grade_ledger_category_check(
-                    graded_check, grading_reference.reference_ledger, workflow_outcome
+                    graded_check, grading_reference.reference_ledger, workflow_outcome.line_outcomes
                 )
             case LedgerLinesCheck():
                 check_grade_by_check_name[graded_check.check_name] = grade_ledger_lines_check(
-                    graded_check, grading_reference.reference_ledger, workflow_outcome
+                    graded_check, grading_reference.reference_ledger, workflow_outcome.line_outcomes
                 )
             case BudgetTargetsCheck():
                 check_grade_by_check_name[graded_check.check_name] = grade_budget_targets_check(graded_check, workflow_outcome.budget_outcomes)
@@ -1654,6 +1713,7 @@ def select_graded_checks(checks: Sequence[EvalSuiteCheck]) -> list[GradedCheck]:
 # ----------------------------------------------------------------------------------------------------------
 
 
+@final
 class JudgeSessionFailedException(EvalTechnicalBaseException):
     """The judge session could not start, did not finish, ended in error, or returned no readable verdict."""
 
@@ -2107,6 +2167,7 @@ def read_latest_configuration_results(results_directory: Path) -> list[Configura
     return sorted(latest_result_by_configuration_key.values(), key=lambda configuration_result: configuration_result.configuration_key)
 
 
+@final
 class ScorecardUnreadableException(EvalTechnicalBaseException):
     """A scorecard the eval wrote cannot be read, is not valid JSON, or lacks a value the comparison needs."""
 
@@ -2127,13 +2188,13 @@ def to_configuration_result(scorecard_object: JsonObject, scorecard_path: Path) 
     scorecard_header: JsonObject = read_object(scorecard_object, "scorecard_header", document_name)
     model_steps: tuple[JsonObject, ...] = read_object_list(scorecard_header, "model_steps", document_name)
     llm_model_steps: list[JsonObject] = [
-        model_step for model_step in model_steps if read_string(model_step, "reasoning_effort", document_name) != JEV_REASONING_EFFORT
+        model_step for model_step in model_steps if not is_jev_step_effort(read_string(model_step, "reasoning_effort", document_name))
     ]
     jev_models: list[str] = list(
         dict.fromkeys(
             read_string(model_step, "model", document_name)
             for model_step in model_steps
-            if read_string(model_step, "reasoning_effort", document_name) == JEV_REASONING_EFFORT
+            if is_jev_step_effort(read_string(model_step, "reasoning_effort", document_name))
         )
     )
     check_results: tuple[JsonObject, ...] = read_object_list(scorecard_object, "checks", document_name)
@@ -2262,7 +2323,7 @@ ACCOUNT_FOLDER_PREFIX_PATTERN: Final[str] = r"([\\/](?:users|home)[\\/]+)"
 ACCOUNT_FOLDER_END_PATTERN: Final[str] = r"(?=$|[\\/\"'\s])"
 
 
-def scrub_user_name(artifact_text: str, user_name: str | None) -> str:
+def scrub_user_name(artifact_text: str, user_name: str) -> str:
     if not user_name:
         return artifact_text
     account_folder_pattern: str = ACCOUNT_FOLDER_PREFIX_PATTERN + re.escape(user_name) + ACCOUNT_FOLDER_END_PATTERN
@@ -2280,6 +2341,7 @@ def to_json_text(document: object) -> str:
 
 
 def report_progress(progress_message: str) -> None:
+    # A Windows console's code page cannot encode some progress characters, such as "·"; progress is advisory, so the line is dropped.
     with contextlib.suppress(UnicodeEncodeError):
         print(progress_message, flush=True)  # noqa: T201 - step-boundary progress, visible with `pytest -s`
 

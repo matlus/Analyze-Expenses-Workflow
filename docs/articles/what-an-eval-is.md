@@ -28,7 +28,7 @@ The industry uses a handful of terms for the parts of an eval. They are simple o
 | Task | One input with a known correct outcome: the expense log and the budget note, and the job "analyze my spending". |
 | Run | One attempt at the task, starting fresh, sharing nothing with any other run. Some people call this a trial. |
 | Output | What the run produced: a written answer, or structured data, or both. |
-| Reference key | The hand-checked correct answer: every line's category and amount, and every total that follows from them. |
+| Reference key | The hand-checked correct answer: every line's date, merchant, amount and category, and every total that follows from them. |
 | Check | One property of the output that must be right, such as "July shopping is $756.72". |
 | Grader | Whatever decides whether a check passed: a piece of code, a model, or a person. |
 | Pass rate | How many runs passed a check, divided by how many runs there were. Four out of five is 80%. |
@@ -87,9 +87,9 @@ appears in it. All you can check is the totals. A wrong total tells you a line i
 the reference key has every line, code can then find which one. But a total only covers its own lines. The prompt eval
 checks five totals, so a grocery or gas line read as $45.18 instead of $54.18 would never be caught.
 
-The workflow below returns every line it read, with its amount, month, category and whether it was counted. When the
-output shows every line, check every line. That check is code comparing 198 lines with the reference key, and it is the
-strongest check in the suite.
+The workflow below returns every line it read, with its date, merchant, amount, category and whether it was counted. When
+the output shows every line, check every line. That check is code comparing 198 lines with the reference key, and it is
+the strongest check in the suite.
 
 **2. A duplicate (lines 111 and 112).** The same Trader Joe's charge appears twice on July 22. It should be counted once.
 The check is a yes or no fact, "the duplicate is flagged", and code compares it with the reference key.
@@ -124,7 +124,7 @@ Put those together and you get the list of things in this task you should not ta
 
 | Don't trust that... | Verify by checking... | Grader |
 |---|---|---|
-| every line was read correctly | each line's amount, sign and month; the totals when lines aren't visible | code |
+| every line was read correctly | each line's date, merchant, amount and sign; the totals when lines aren't visible | code |
 | each line is in the right category | each line's category; the totals when lines aren't visible | code |
 | transfers and withdrawals were left alone | the count of uncategorized entries | code |
 | the duplicate was removed and the look-alikes kept | the duplicate fact, both Delta charges, the travel total | code |
@@ -144,18 +144,13 @@ about what isn't checked and what it would take to check it:
 
 | Check | Graded by | What it needs |
 |---|---|---|
-| Each line's full date | code | the date for all 198 lines, written into the reference key by hand |
-| Each line's merchant, written consistently ("Delta Air Lines" however the line spells it) | code | the merchant for all 198 lines, written in by hand |
-| Each line got its category for the right reason (the ATM withdrawal by the cash-movement rule, not because the model happened to pick Uncategorized) | code | the rule that should decide each line, written in by hand |
-| Every category total for every month, beyond the five checked | code | nothing new; code can add them up from the reference key's lines |
-| Every budget comparison and every month-to-month change | code | nothing new, for the same reason |
+| Every category total for every month beyond the five checked, every budget comparison, every month-to-month change | code | nothing new in the reference key; for a written answer, the fact extraction has to pull out every total, beyond the five it reads today |
 | Each uncategorized entry is explained ("tell me what it is") | judge | a rubric |
 | The findings and tables agree with each other | code if the report is built from data, judge if it's prose | a rubric for prose |
 
-The first three are the expensive kind. Before code can check a date, a merchant or a reason, someone has to write down
-the right answer for every line. That's the usual trade-off: once the reference exists, grading is cheap and automatic, and building
-the reference is the human work. For a written answer, the checks that need "nothing new" in the reference key still need
-the fact extraction to pull out every total, beyond the five it reads today.
+Each line's date and merchant used to be on this list. Before code could check them, someone had to write down the right
+date and merchant for all 198 lines. That's the usual trade-off: building the reference is the human work, and once it
+exists, grading is cheap and automatic. Both are now in the reference key and checked on every line.
 
 ## The same checks, with structured output
 
@@ -168,6 +163,31 @@ code reading each line's category. "Only the two stated budgets are used" is cod
 budget note. The more structure your output has, the more of your eval code can grade. Of the workflow's checks, only the
 findings still need a judge.
 
+## Check every step, and the totals follow
+
+The workflow runs in steps: read each line, put it in a category, add up the totals, choose the findings. If you verify
+what each step produces, you don't need to verify the same thing again further on.
+
+The line check covers the first two steps. Every line's date, merchant, amount and sign are compared with the reference
+key, and so are its category and whether it was counted. The third step is code, and that code has its own unit tests.
+Tested code adding up verified lines gives the right totals, so a total can only be wrong if a line is wrong, and the line
+check would already have caught it. For the workflow, the complete set of checks is short: every line, the findings, and
+the unit tests of the calculation code.
+
+The workflow's eval still makes the five total checks and the fact checks. They are the same checks the prompt eval makes,
+and keeping them is what makes the two results comparable. For the workflow, they confirm what the line check has already
+established.
+
+The prompt is different. The model does its own adding up, so its totals don't follow from its lines. It can read every
+line correctly and still add them up wrong, or total a different set of lines from the ones it read. That's why the prompt
+eval needs its total checks, and would need them even if its answer listed every line. You can skip checking a total only
+when tested code computed it.
+
+Writing the merchants into the reference key paid off straight away. It showed that the workflow recorded the merchant on
+line 108 as "Return processed - REI" rather than REI. Nothing downstream was wrong, because REI still went into Shopping,
+but the line was not read the way it should have been. The workflow now separates refund wording from the merchant's name,
+and every line matches.
+
 ## Verifying inside the run
 
 An eval checks the answer after it is written. The workflow also checks each step while it runs, before the next step
@@ -175,7 +195,7 @@ uses the result. Two kinds of model take part. Jev is a System 1 model: it answe
 without reasoning step by step first, and gives a probability for each choice. A large language model is used only where
 code and Jev can't do the job.
 
-1. Code reads each line's date, description and amount. For a line code can't read, code lists the possible dates and
+1. Code reads each line's date, merchant and amount. For a line code can't read, code lists the possible dates and
    amounts in its text and Jev picks which is which. If Jev isn't confident, a large language model reads the line, and
    code confirms the date and amount it returns appear in the line's own text. In this log, code read every line itself.
 2. Jev puts each line in a category from a fixed list. Code rejects any answer that isn't on the list, then applies written
