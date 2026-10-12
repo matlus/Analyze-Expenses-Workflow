@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from analyze_expenses_workflow.managers.exceptions.system_one_gateway_exception import JevChoiceCategoryUnrecognizedException
 from analyze_expenses_workflow.managers.gateways.system_one_gateway_protocol import ChoiceDecision, ChoiceQuestion, SystemOneGatewayProtocol
+from analyze_expenses_workflow.managers.processors.evidence_parsers.expense_line_evidence_parser import ExpenseLineEvidenceParser
 from analyze_expenses_workflow.models.expense_analysis_result import CategoryProbability, ExpenseCategorization
 from analyze_expenses_workflow.models.expense_category_catalog import (
     STANDARD_EXPENSE_CATEGORY_CATALOG,
@@ -127,7 +128,7 @@ class TransactionCategorizationProcessor:
             return model_category, None
         if self._is_ambiguous_cash_movement(description):
             return ExpenseCategory.UNCATEGORIZED, "Cash movement without an identified spending purpose"
-        normalized_description: str = description.casefold().removeprefix("return processed - ")
+        normalized_description: str = ExpenseLineEvidenceParser.merchant_name(description).casefold()
         known_expense_merchant: KnownExpenseMerchant | None = self._find_known_expense_merchant(normalized_description)
         if known_expense_merchant is not None:
             return known_expense_merchant.expense_category, f"Known expense merchant: {known_expense_merchant.name}"

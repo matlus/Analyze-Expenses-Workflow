@@ -48,6 +48,8 @@ class ExpenseLineEvidenceParser:
     )
     _REFUND_DESCRIPTION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"\brefund\b|\breturn processed\b", re.IGNORECASE)
     _NEGATED_REFUND_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"\b(?:no|not|without|never)\s+refund\b", re.IGNORECASE)
+    _LEADING_REFUND_LABEL_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^(?:refund|return processed)\b[\s,|:-]*(?=\S)", re.IGNORECASE)
+    _TRAILING_REFUND_LABEL_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"(?<=\S)[\s,|:-]*\brefund$", re.IGNORECASE)
     _BALANCE_FIELD_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"\bbalance\s*(?:of\s*)?:?\s*$", re.IGNORECASE)
 
     @classmethod
@@ -172,18 +174,32 @@ class ExpenseLineEvidenceParser:
         return cls._REFUND_DESCRIPTION_PATTERN.search(amount_context) is not None and cls._NEGATED_REFUND_PATTERN.search(amount_context) is None
 
     @classmethod
+    def merchant_name(cls, description: str) -> str:
+        """The description without the wording that marks a refund, as in "Return processed - REI" or "REI refund"; a
+        description that is only that wording is kept, since no merchant name remains."""
+        if not cls._is_refund_context(description):
+            return description
+        return cls._TRAILING_REFUND_LABEL_PATTERN.sub("", cls._LEADING_REFUND_LABEL_PATTERN.sub("", description))
+
+    @classmethod
     def has_descriptive_text(cls, evidence: str) -> bool:
-        remainder: str = cls._text_without_field_evidence(evidence)
+        remainder: str = cls.text_without_field_evidence(evidence)
         return any(character.isalpha() for character in remainder)
 
     @classmethod
-    def _text_without_field_evidence(cls, evidence: str) -> str:
-        matched_spans: list[tuple[int, int]] = [
-            match.span() for pattern in (cls.DATE_PATTERN, cls.AMOUNT_PATTERN) for match in pattern.finditer(evidence)
-        ]
-        remainder: str = evidence
-        for matched_span in sorted(matched_spans, reverse=True):
-            span_start_index: int = matched_span[0]
-            span_end_index: int = matched_span[1]
+    def text_without_field_evidence(cls, evidence: str) -> str:
+        return cls._text_without_spans(evidence, cls._field_evidence_spans(evidence))
+
+    @classmethod
+    def _field_evidence_spans(cls, evidence: str) -> list[tuple[int, int]]:
+        return [match.span() for pattern in (cls.DATE_PATTERN, cls.AMOUNT_PATTERN) for match in pattern.finditer(evidence)]
+
+    @staticmethod
+    def _text_without_spans(text: str, spans: list[tuple[int, int]]) -> str:
+        """Removes from the last span to the first, so each removal leaves the earlier spans' positions valid."""
+        remainder: str = text
+        for span in sorted(spans, reverse=True):
+            span_start_index: int = span[0]
+            span_end_index: int = span[1]
             remainder = remainder[:span_start_index] + remainder[span_end_index:]
         return remainder

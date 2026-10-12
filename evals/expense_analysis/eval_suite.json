@@ -163,7 +163,7 @@
       "check_name": "every-line-matches-reference",
       "grader": "ledger_lines",
       "minimum_pass_rate": 1.0,
-      "description": "Every line is read and categorized as the reference key reads it: its amount with its sign, its month, its category, and whether it is counted.",
+      "description": "Every line is read and categorized as the reference key reads it: its date, its merchant, its amount with its sign, its category, and whether it is counted.",
       "adaptation": "Not in the prompt eval: its written answer shows totals, not each line. The workflow reports every line it read, so code compares all of them with the reference ledger, accepting any alternative category the key allows."
     }
   ]

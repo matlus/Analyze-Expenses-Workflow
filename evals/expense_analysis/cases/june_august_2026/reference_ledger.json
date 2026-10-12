@@ -1,10 +1,11 @@
 {
-  "source": "expense_reference_key.md (the author's reference key, revised 2026-10-10; this workspace's copy revised 2026-10-11 to accept merchant-only Amazon, Target and Costco charges in Other): every transaction line of inputs/personal_expenses.txt with the key's category under its facilitator conventions. alternative_categories lists another category the key accepts for that entry under the named policy_name; every entry of one policy switches together. is_counted is false for the likely duplicate the key counts once. Reproduces all 30 category cells of the key's monthly table.",
+  "source": "expense_reference_key.md (the author's reference key, revised 2026-10-10; this workspace's copy revised 2026-10-11 to accept merchant-only Amazon, Target and Costco charges in Other): every transaction line of inputs/personal_expenses.txt with the key's category under its facilitator conventions. merchant and date were added 2026-10-12, read from each source line independently of the workflow's parser and checked line by line: merchant is the name as written, without the date, the amount, separators, or refund wording; date reads a yearless date as 2026, as the key's conventions do. alternative_categories lists another category the key accepts for that entry under the named policy_name; every entry of one policy switches together. is_counted is false for the likely duplicate the key counts once. Reproduces all 30 category cells of the key's monthly table.",
   "entries": [
     {
       "line_number": 4,
       "source_text": "- June 1  Trader Joe's  $82.18",
-      "period": "2026-06",
+      "merchant": "Trader Joe's",
+      "date": "2026-06-01",
       "amount": "82.18",
       "category": "Groceries",
       "alternative_categories": [],
@@ -15,7 +16,8 @@
     {
       "line_number": 5,
       "source_text": "06-01: iCloud+ 200GB, 2.99",
-      "period": "2026-06",
+      "merchant": "iCloud+ 200GB",
+      "date": "2026-06-01",
       "amount": "2.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -26,7 +28,8 @@
     {
       "line_number": 6,
       "source_text": "June 1 Amazon Prime $14.99",
-      "period": "2026-06",
+      "merchant": "Amazon Prime",
+      "date": "2026-06-01",
       "amount": "14.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -37,7 +40,8 @@
     {
       "line_number": 7,
       "source_text": "6/2: Xfinity Internet, $64.99",
-      "period": "2026-06",
+      "merchant": "Xfinity Internet",
+      "date": "2026-06-02",
       "amount": "64.99",
       "category": "Utilities",
       "alternative_categories": [],
@@ -48,7 +52,8 @@
     {
       "line_number": 8,
       "source_text": "- 6/2  Shell  $24.97",
-      "period": "2026-06",
+      "merchant": "Shell",
+      "date": "2026-06-02",
       "amount": "24.97",
       "category": "Transport",
       "alternative_categories": [],
@@ -59,7 +64,8 @@
     {
       "line_number": 9,
       "source_text": "- 6/2  Local Coffee Co  13.73",
-      "period": "2026-06",
+      "merchant": "Local Coffee Co",
+      "date": "2026-06-02",
       "amount": "13.73",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -70,7 +76,8 @@
     {
       "line_number": 10,
       "source_text": "6/3/26 - Local Coffee Co - $11.35",
-      "period": "2026-06",
+      "merchant": "Local Coffee Co",
+      "date": "2026-06-03",
       "amount": "11.35",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -81,7 +88,8 @@
     {
       "line_number": 11,
       "source_text": "Jun. 3 - Netflix - $15.49",
-      "period": "2026-06",
+      "merchant": "Netflix",
+      "date": "2026-06-03",
       "amount": "15.49",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -92,7 +100,8 @@
     {
       "line_number": 12,
       "source_text": "Planet Fitness App (6/3/26) - 9.99",
-      "period": "2026-06",
+      "merchant": "Planet Fitness App",
+      "date": "2026-06-03",
       "amount": "9.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -103,7 +112,8 @@
     {
       "line_number": 13,
       "source_text": "June 3: Verizon Wireless, $78.14",
-      "period": "2026-06",
+      "merchant": "Verizon Wireless",
+      "date": "2026-06-03",
       "amount": "78.14",
       "category": "Utilities",
       "alternative_categories": [],
@@ -114,7 +124,8 @@
     {
       "line_number": 14,
       "source_text": "Trader Joe's (Jun. 4) - $35.72",
-      "period": "2026-06",
+      "merchant": "Trader Joe's",
+      "date": "2026-06-04",
       "amount": "35.72",
       "category": "Groceries",
       "alternative_categories": [],
@@ -125,7 +136,8 @@
     {
       "line_number": 15,
       "source_text": "6/4 Planet Fitness $67.82",
-      "period": "2026-06",
+      "merchant": "Planet Fitness",
+      "date": "2026-06-04",
       "amount": "67.82",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -136,7 +148,8 @@
     {
       "line_number": 16,
       "source_text": "June 4: Steam, 47.58",
-      "period": "2026-06",
+      "merchant": "Steam",
+      "date": "2026-06-04",
       "amount": "47.58",
       "category": "Entertainment",
       "alternative_categories": [
@@ -149,7 +162,8 @@
     {
       "line_number": 17,
       "source_text": "Jun. 4 Spotify Premium 11.99",
-      "period": "2026-06",
+      "merchant": "Spotify Premium",
+      "date": "2026-06-04",
       "amount": "11.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -160,7 +174,8 @@
     {
       "line_number": 18,
       "source_text": "- Jun 5  Aldi  $61.21",
-      "period": "2026-06",
+      "merchant": "Aldi",
+      "date": "2026-06-05",
       "amount": "61.21",
       "category": "Groceries",
       "alternative_categories": [],
@@ -171,7 +186,8 @@
     {
       "line_number": 19,
       "source_text": "06-05: Spotify Concert, $55.28",
-      "period": "2026-06",
+      "merchant": "Spotify Concert",
+      "date": "2026-06-05",
       "amount": "55.28",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -182,7 +198,8 @@
     {
       "line_number": 20,
       "source_text": "Amazon (June 5) - $182.78",
-      "period": "2026-06",
+      "merchant": "Amazon",
+      "date": "2026-06-05",
       "amount": "182.78",
       "category": "Shopping",
       "alternative_categories": [
@@ -195,7 +212,8 @@
     {
       "line_number": 21,
       "source_text": "Best Buy, 2026-06-05 -- $56.99",
-      "period": "2026-06",
+      "merchant": "Best Buy",
+      "date": "2026-06-05",
       "amount": "56.99",
       "category": "Shopping",
       "alternative_categories": [],
@@ -206,7 +224,8 @@
     {
       "line_number": 22,
       "source_text": "Kroger, Jun. 6 -- $114.37",
-      "period": "2026-06",
+      "merchant": "Kroger",
+      "date": "2026-06-06",
       "amount": "114.37",
       "category": "Groceries",
       "alternative_categories": [],
@@ -217,7 +236,8 @@
     {
       "line_number": 23,
       "source_text": "- 6/8/26  Kroger  $112.18",
-      "period": "2026-06",
+      "merchant": "Kroger",
+      "date": "2026-06-08",
       "amount": "112.18",
       "category": "Groceries",
       "alternative_categories": [],
@@ -228,7 +248,8 @@
     {
       "line_number": 24,
       "source_text": "Jun. 7: Kroger, $21.78",
-      "period": "2026-06",
+      "merchant": "Kroger",
+      "date": "2026-06-07",
       "amount": "21.78",
       "category": "Groceries",
       "alternative_categories": [],
@@ -239,7 +260,8 @@
     {
       "line_number": 25,
       "source_text": "Jun. 7 | Chevron | $33.58",
-      "period": "2026-06",
+      "merchant": "Chevron",
+      "date": "2026-06-07",
       "amount": "33.58",
       "category": "Transport",
       "alternative_categories": [],
@@ -250,7 +272,8 @@
     {
       "line_number": 26,
       "source_text": "AMC Theatres - $31.31 (June 6)",
-      "period": "2026-06",
+      "merchant": "AMC Theatres",
+      "date": "2026-06-06",
       "amount": "31.31",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -261,7 +284,8 @@
     {
       "line_number": 27,
       "source_text": "6/9: BP Gas, $30.24",
-      "period": "2026-06",
+      "merchant": "BP Gas",
+      "date": "2026-06-09",
       "amount": "30.24",
       "category": "Transport",
       "alternative_categories": [],
@@ -272,7 +296,8 @@
     {
       "line_number": 28,
       "source_text": "2026-06-09 | Home Depot | $103.93",
-      "period": "2026-06",
+      "merchant": "Home Depot",
+      "date": "2026-06-09",
       "amount": "103.93",
       "category": "Shopping",
       "alternative_categories": [],
@@ -283,7 +308,8 @@
     {
       "line_number": 29,
       "source_text": "Jun 12: Lyft, $49.78",
-      "period": "2026-06",
+      "merchant": "Lyft",
+      "date": "2026-06-12",
       "amount": "49.78",
       "category": "Transport",
       "alternative_categories": [],
@@ -294,7 +320,8 @@
     {
       "line_number": 30,
       "source_text": "Jun. 12: Chipotle, $16.85",
-      "period": "2026-06",
+      "merchant": "Chipotle",
+      "date": "2026-06-12",
       "amount": "16.85",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -305,7 +332,8 @@
     {
       "line_number": 31,
       "source_text": "Local Coffee Co - 34.22 (2026-06-12)",
-      "period": "2026-06",
+      "merchant": "Local Coffee Co",
+      "date": "2026-06-12",
       "amount": "34.22",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -316,7 +344,8 @@
     {
       "line_number": 32,
       "source_text": "McDonald's, June 10 -- $7.60",
-      "period": "2026-06",
+      "merchant": "McDonald's",
+      "date": "2026-06-10",
       "amount": "7.60",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -327,7 +356,8 @@
     {
       "line_number": 33,
       "source_text": "Rustic Tap Brewery - $8.37 (6/13)",
-      "period": "2026-06",
+      "merchant": "Rustic Tap Brewery",
+      "date": "2026-06-13",
       "amount": "8.37",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -338,7 +368,8 @@
     {
       "line_number": 34,
       "source_text": "Panera Bread, 06-13 -- $33.59",
-      "period": "2026-06",
+      "merchant": "Panera Bread",
+      "date": "2026-06-13",
       "amount": "33.59",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -349,7 +380,8 @@
     {
       "line_number": 35,
       "source_text": "June 13 | Chevron | $20.97",
-      "period": "2026-06",
+      "merchant": "Chevron",
+      "date": "2026-06-13",
       "amount": "20.97",
       "category": "Transport",
       "alternative_categories": [],
@@ -360,7 +392,8 @@
     {
       "line_number": 36,
       "source_text": "6/13 | Target | $142.47",
-      "period": "2026-06",
+      "merchant": "Target",
+      "date": "2026-06-13",
       "amount": "142.47",
       "category": "Shopping",
       "alternative_categories": [
@@ -373,7 +406,8 @@
     {
       "line_number": 37,
       "source_text": "REI, 6/13/26 -- $189.97",
-      "period": "2026-06",
+      "merchant": "REI",
+      "date": "2026-06-13",
       "amount": "189.97",
       "category": "Shopping",
       "alternative_categories": [],
@@ -384,7 +418,8 @@
     {
       "line_number": 38,
       "source_text": "Riverside Physical Therapy - $15.40 (6/13)",
-      "period": "2026-06",
+      "merchant": "Riverside Physical Therapy",
+      "date": "2026-06-13",
       "amount": "15.40",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -395,7 +430,8 @@
     {
       "line_number": 39,
       "source_text": "- 6/14/26  Costco  $29.04",
-      "period": "2026-06",
+      "merchant": "Costco",
+      "date": "2026-06-14",
       "amount": "29.04",
       "category": "Groceries",
       "alternative_categories": [
@@ -408,7 +444,8 @@
     {
       "line_number": 40,
       "source_text": "Costco, Jun 15 -- $71.28",
-      "period": "2026-06",
+      "merchant": "Costco",
+      "date": "2026-06-15",
       "amount": "71.28",
       "category": "Groceries",
       "alternative_categories": [
@@ -421,7 +458,8 @@
     {
       "line_number": 41,
       "source_text": "- 6/17  Riverside Physical Therapy  $94.67",
-      "period": "2026-06",
+      "merchant": "Riverside Physical Therapy",
+      "date": "2026-06-17",
       "amount": "94.67",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -432,7 +470,8 @@
     {
       "line_number": 42,
       "source_text": "Barnes & Noble (Jun. 17) - $29.02",
-      "period": "2026-06",
+      "merchant": "Barnes & Noble",
+      "date": "2026-06-17",
       "amount": "29.02",
       "category": "Entertainment",
       "alternative_categories": [
@@ -445,7 +484,8 @@
     {
       "line_number": 43,
       "source_text": "Target - $62.34 (2026-06-18)",
-      "period": "2026-06",
+      "merchant": "Target",
+      "date": "2026-06-18",
       "amount": "62.34",
       "category": "Shopping",
       "alternative_categories": [
@@ -458,7 +498,8 @@
     {
       "line_number": 44,
       "source_text": "06-19 | Shell | $23.87",
-      "period": "2026-06",
+      "merchant": "Shell",
+      "date": "2026-06-19",
       "amount": "23.87",
       "category": "Transport",
       "alternative_categories": [],
@@ -469,7 +510,8 @@
     {
       "line_number": 45,
       "source_text": "06-19 Old Navy $65.50",
-      "period": "2026-06",
+      "merchant": "Old Navy",
+      "date": "2026-06-19",
       "amount": "65.50",
       "category": "Shopping",
       "alternative_categories": [],
@@ -480,7 +522,8 @@
     {
       "line_number": 46,
       "source_text": "City Parking Authority (6/20/26) - 50.53",
-      "period": "2026-06",
+      "merchant": "City Parking Authority",
+      "date": "2026-06-20",
       "amount": "50.53",
       "category": "Transport",
       "alternative_categories": [],
@@ -491,7 +534,8 @@
     {
       "line_number": 47,
       "source_text": "6/20/26 - Zelle Payment - $102.66",
-      "period": "2026-06",
+      "merchant": "Zelle Payment",
+      "date": "2026-06-20",
       "amount": "102.66",
       "category": "Uncategorized",
       "alternative_categories": [],
@@ -502,7 +546,8 @@
     {
       "line_number": 48,
       "source_text": "Costco (Jun 21) - $43.25",
-      "period": "2026-06",
+      "merchant": "Costco",
+      "date": "2026-06-21",
       "amount": "43.25",
       "category": "Groceries",
       "alternative_categories": [
@@ -515,7 +560,8 @@
     {
       "line_number": 49,
       "source_text": "Uber (June 21) - $71.36",
-      "period": "2026-06",
+      "merchant": "Uber",
+      "date": "2026-06-21",
       "amount": "71.36",
       "category": "Transport",
       "alternative_categories": [],
@@ -526,7 +572,8 @@
     {
       "line_number": 50,
       "source_text": "Jun 21 | Barnes & Noble | $31.68",
-      "period": "2026-06",
+      "merchant": "Barnes & Noble",
+      "date": "2026-06-21",
       "amount": "31.68",
       "category": "Entertainment",
       "alternative_categories": [
@@ -539,7 +586,8 @@
     {
       "line_number": 51,
       "source_text": "6/21/26 - ATM Cash Withdrawal - $100.00",
-      "period": "2026-06",
+      "merchant": "ATM Cash Withdrawal",
+      "date": "2026-06-21",
       "amount": "100.00",
       "category": "Uncategorized",
       "alternative_categories": [],
@@ -550,7 +598,8 @@
     {
       "line_number": 52,
       "source_text": "- Jun 22  City Parking Authority  $44.97",
-      "period": "2026-06",
+      "merchant": "City Parking Authority",
+      "date": "2026-06-22",
       "amount": "44.97",
       "category": "Transport",
       "alternative_categories": [],
@@ -561,7 +610,8 @@
     {
       "line_number": 53,
       "source_text": "Jun 22: Home Depot, $45.36",
-      "period": "2026-06",
+      "merchant": "Home Depot",
+      "date": "2026-06-22",
       "amount": "45.36",
       "category": "Shopping",
       "alternative_categories": [],
@@ -572,7 +622,8 @@
     {
       "line_number": 54,
       "source_text": "Jun 24 - City Parking Authority - $21.44",
-      "period": "2026-06",
+      "merchant": "City Parking Authority",
+      "date": "2026-06-24",
       "amount": "21.44",
       "category": "Transport",
       "alternative_categories": [],
@@ -583,7 +634,8 @@
     {
       "line_number": 55,
       "source_text": "6/24/26 Bowl-O-Rama 9.25",
-      "period": "2026-06",
+      "merchant": "Bowl-O-Rama",
+      "date": "2026-06-24",
       "amount": "9.25",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -594,7 +646,8 @@
     {
       "line_number": 56,
       "source_text": "Jun 25 | Starbucks | $26.82",
-      "period": "2026-06",
+      "merchant": "Starbucks",
+      "date": "2026-06-25",
       "amount": "26.82",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -605,7 +658,8 @@
     {
       "line_number": 57,
       "source_text": "Jun. 25 - Uber - 62.41",
-      "period": "2026-06",
+      "merchant": "Uber",
+      "date": "2026-06-25",
       "amount": "62.41",
       "category": "Transport",
       "alternative_categories": [],
@@ -616,7 +670,8 @@
     {
       "line_number": 58,
       "source_text": "Jun. 25: Old Navy, $110.73",
-      "period": "2026-06",
+      "merchant": "Old Navy",
+      "date": "2026-06-25",
       "amount": "110.73",
       "category": "Shopping",
       "alternative_categories": [],
@@ -627,7 +682,8 @@
     {
       "line_number": 59,
       "source_text": "Jun. 28: Sushi Kame, $37.51",
-      "period": "2026-06",
+      "merchant": "Sushi Kame",
+      "date": "2026-06-28",
       "amount": "37.51",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -638,7 +694,8 @@
     {
       "line_number": 60,
       "source_text": "- 2026-06-25  Venmo - Sam  $68.54",
-      "period": "2026-06",
+      "merchant": "Venmo - Sam",
+      "date": "2026-06-25",
       "amount": "68.54",
       "category": "Uncategorized",
       "alternative_categories": [],
@@ -649,7 +706,8 @@
     {
       "line_number": 61,
       "source_text": "6/28/26 | Costco | $53.33",
-      "period": "2026-06",
+      "merchant": "Costco",
+      "date": "2026-06-28",
       "amount": "53.33",
       "category": "Groceries",
       "alternative_categories": [
@@ -662,7 +720,8 @@
     {
       "line_number": 62,
       "source_text": "June 25: Riverside Physical Therapy, $73.82",
-      "period": "2026-06",
+      "merchant": "Riverside Physical Therapy",
+      "date": "2026-06-25",
       "amount": "73.82",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -673,7 +732,8 @@
     {
       "line_number": 63,
       "source_text": "Walgreens, 6/28 -- $92.54",
-      "period": "2026-06",
+      "merchant": "Walgreens",
+      "date": "2026-06-28",
       "amount": "92.54",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -684,7 +744,8 @@
     {
       "line_number": 64,
       "source_text": "Jun 30: Thai Orchid, $22.70",
-      "period": "2026-06",
+      "merchant": "Thai Orchid",
+      "date": "2026-06-30",
       "amount": "22.70",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -695,7 +756,8 @@
     {
       "line_number": 65,
       "source_text": "6/30/26 | City Parking Authority | 27.29",
-      "period": "2026-06",
+      "merchant": "City Parking Authority",
+      "date": "2026-06-30",
       "amount": "27.29",
       "category": "Transport",
       "alternative_categories": [],
@@ -706,7 +768,8 @@
     {
       "line_number": 66,
       "source_text": "Panera Bread (07-01) - $24.42",
-      "period": "2026-07",
+      "merchant": "Panera Bread",
+      "date": "2026-07-01",
       "amount": "24.42",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -717,7 +780,8 @@
     {
       "line_number": 67,
       "source_text": "Jul. 1 | Planet Fitness App | 9.99",
-      "period": "2026-07",
+      "merchant": "Planet Fitness App",
+      "date": "2026-07-01",
       "amount": "9.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -728,7 +792,8 @@
     {
       "line_number": 68,
       "source_text": "7/1/26 - Xfinity Internet - $64.99",
-      "period": "2026-07",
+      "merchant": "Xfinity Internet",
+      "date": "2026-07-01",
       "amount": "64.99",
       "category": "Utilities",
       "alternative_categories": [],
@@ -739,7 +804,8 @@
     {
       "line_number": 69,
       "source_text": "2026-07-02: Chipotle, $28.36",
-      "period": "2026-07",
+      "merchant": "Chipotle",
+      "date": "2026-07-02",
       "amount": "28.36",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -750,7 +816,8 @@
     {
       "line_number": 70,
       "source_text": "07-02 | Panera Bread | $7.22",
-      "period": "2026-07",
+      "merchant": "Panera Bread",
+      "date": "2026-07-02",
       "amount": "7.22",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -761,7 +828,8 @@
     {
       "line_number": 71,
       "source_text": "7/2/26 IKEA $92.60",
-      "period": "2026-07",
+      "merchant": "IKEA",
+      "date": "2026-07-02",
       "amount": "92.60",
       "category": "Shopping",
       "alternative_categories": [],
@@ -772,7 +840,8 @@
     {
       "line_number": 72,
       "source_text": "07-05 Netflix $15.49",
-      "period": "2026-07",
+      "merchant": "Netflix",
+      "date": "2026-07-05",
       "amount": "15.49",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -783,7 +852,8 @@
     {
       "line_number": 73,
       "source_text": "07-02 Spotify Premium $11.99",
-      "period": "2026-07",
+      "merchant": "Spotify Premium",
+      "date": "2026-07-02",
       "amount": "11.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -794,7 +864,8 @@
     {
       "line_number": 74,
       "source_text": "- 2026-07-03  IKEA  $16.89",
-      "period": "2026-07",
+      "merchant": "IKEA",
+      "date": "2026-07-03",
       "amount": "16.89",
       "category": "Shopping",
       "alternative_categories": [],
@@ -805,7 +876,8 @@
     {
       "line_number": 75,
       "source_text": "Jul. 2 | Planet Fitness | $73.58",
-      "period": "2026-07",
+      "merchant": "Planet Fitness",
+      "date": "2026-07-02",
       "amount": "73.58",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -816,7 +888,8 @@
     {
       "line_number": 76,
       "source_text": "Jul. 5 - iCloud+ 200GB - $2.99",
-      "period": "2026-07",
+      "merchant": "iCloud+ 200GB",
+      "date": "2026-07-05",
       "amount": "2.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -827,7 +900,8 @@
     {
       "line_number": 77,
       "source_text": "Jul 6 | IKEA | $180.34",
-      "period": "2026-07",
+      "merchant": "IKEA",
+      "date": "2026-07-06",
       "amount": "180.34",
       "category": "Shopping",
       "alternative_categories": [],
@@ -838,7 +912,8 @@
     {
       "line_number": 78,
       "source_text": "July 6: Spotify Concert, 15.09",
-      "period": "2026-07",
+      "merchant": "Spotify Concert",
+      "date": "2026-07-06",
       "amount": "15.09",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -849,7 +924,8 @@
     {
       "line_number": 79,
       "source_text": "Amazon Prime, 7/5 -- $14.99",
-      "period": "2026-07",
+      "merchant": "Amazon Prime",
+      "date": "2026-07-05",
       "amount": "14.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -860,7 +936,8 @@
     {
       "line_number": 80,
       "source_text": "July 5 | Verizon Wireless | $78.14",
-      "period": "2026-07",
+      "merchant": "Verizon Wireless",
+      "date": "2026-07-05",
       "amount": "78.14",
       "category": "Utilities",
       "alternative_categories": [],
@@ -871,7 +948,8 @@
     {
       "line_number": 81,
       "source_text": "7/7/26 | Costco | $71.74",
-      "period": "2026-07",
+      "merchant": "Costco",
+      "date": "2026-07-07",
       "amount": "71.74",
       "category": "Groceries",
       "alternative_categories": [
@@ -884,7 +962,8 @@
     {
       "line_number": 82,
       "source_text": "7/7/26 - Sushi Kame - $27.08",
-      "period": "2026-07",
+      "merchant": "Sushi Kame",
+      "date": "2026-07-07",
       "amount": "27.08",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -895,7 +974,8 @@
     {
       "line_number": 83,
       "source_text": "2026-07-07: Shell, $26.17",
-      "period": "2026-07",
+      "merchant": "Shell",
+      "date": "2026-07-07",
       "amount": "26.17",
       "category": "Transport",
       "alternative_categories": [],
@@ -906,7 +986,8 @@
     {
       "line_number": 84,
       "source_text": "Jul 7 | Thai Orchid | $31.65",
-      "period": "2026-07",
+      "merchant": "Thai Orchid",
+      "date": "2026-07-07",
       "amount": "31.65",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -917,7 +998,8 @@
     {
       "line_number": 85,
       "source_text": "Jul 7 REI $109.19",
-      "period": "2026-07",
+      "merchant": "REI",
+      "date": "2026-07-07",
       "amount": "109.19",
       "category": "Shopping",
       "alternative_categories": [],
@@ -928,7 +1010,8 @@
     {
       "line_number": 86,
       "source_text": "- Jul 7  CVS Pharmacy  $26.14",
-      "period": "2026-07",
+      "merchant": "CVS Pharmacy",
+      "date": "2026-07-07",
       "amount": "26.14",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -939,7 +1022,8 @@
     {
       "line_number": 87,
       "source_text": "2026-07-08: Aldi, $33.37",
-      "period": "2026-07",
+      "merchant": "Aldi",
+      "date": "2026-07-08",
       "amount": "33.37",
       "category": "Groceries",
       "alternative_categories": [],
@@ -950,7 +1034,8 @@
     {
       "line_number": 88,
       "source_text": "- 2026-07-08  Rustic Tap Brewery  $7.34",
-      "period": "2026-07",
+      "merchant": "Rustic Tap Brewery",
+      "date": "2026-07-08",
       "amount": "7.34",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -961,7 +1046,8 @@
     {
       "line_number": 89,
       "source_text": "Jul 8: Local Coffee Co, $24.01",
-      "period": "2026-07",
+      "merchant": "Local Coffee Co",
+      "date": "2026-07-08",
       "amount": "24.01",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -972,7 +1058,8 @@
     {
       "line_number": 90,
       "source_text": "Chevron (07-08) - $27.99",
-      "period": "2026-07",
+      "merchant": "Chevron",
+      "date": "2026-07-08",
       "amount": "27.99",
       "category": "Transport",
       "alternative_categories": [],
@@ -983,7 +1070,8 @@
     {
       "line_number": 91,
       "source_text": "Venmo - Sam, 7/9 -- $75.00",
-      "period": "2026-07",
+      "merchant": "Venmo - Sam",
+      "date": "2026-07-09",
       "amount": "75.00",
       "category": "Uncategorized",
       "alternative_categories": [],
@@ -994,7 +1082,8 @@
     {
       "line_number": 92,
       "source_text": "Shell, 2026-07-12 -- $51.20",
-      "period": "2026-07",
+      "merchant": "Shell",
+      "date": "2026-07-12",
       "amount": "51.20",
       "category": "Transport",
       "alternative_categories": [],
@@ -1005,7 +1094,8 @@
     {
       "line_number": 93,
       "source_text": "Trader Joe's (07-13) - $108.54",
-      "period": "2026-07",
+      "merchant": "Trader Joe's",
+      "date": "2026-07-13",
       "amount": "108.54",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1016,7 +1106,8 @@
     {
       "line_number": 94,
       "source_text": "Jul. 13 - City Parking Authority - $17.00",
-      "period": "2026-07",
+      "merchant": "City Parking Authority",
+      "date": "2026-07-13",
       "amount": "17.00",
       "category": "Transport",
       "alternative_categories": [],
@@ -1027,7 +1118,8 @@
     {
       "line_number": 95,
       "source_text": "7/13: Target, $88.28",
-      "period": "2026-07",
+      "merchant": "Target",
+      "date": "2026-07-13",
       "amount": "88.28",
       "category": "Shopping",
       "alternative_categories": [
@@ -1040,7 +1132,8 @@
     {
       "line_number": 96,
       "source_text": "Jiffy Lube (Jul. 14) - $38.37",
-      "period": "2026-07",
+      "merchant": "Jiffy Lube",
+      "date": "2026-07-14",
       "amount": "38.37",
       "category": "Transport",
       "alternative_categories": [],
@@ -1051,7 +1144,8 @@
     {
       "line_number": 97,
       "source_text": "Jul 15 BP Gas $67.32",
-      "period": "2026-07",
+      "merchant": "BP Gas",
+      "date": "2026-07-15",
       "amount": "67.32",
       "category": "Transport",
       "alternative_categories": [],
@@ -1062,7 +1156,8 @@
     {
       "line_number": 98,
       "source_text": "2026-07-16 - Kroger - $28.88",
-      "period": "2026-07",
+      "merchant": "Kroger",
+      "date": "2026-07-16",
       "amount": "28.88",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1073,7 +1168,8 @@
     {
       "line_number": 99,
       "source_text": "July 16 Trader Joe's $34.31",
-      "period": "2026-07",
+      "merchant": "Trader Joe's",
+      "date": "2026-07-16",
       "amount": "34.31",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1084,7 +1180,8 @@
     {
       "line_number": 100,
       "source_text": "Riverside Physical Therapy - $66.26 (2026-07-16)",
-      "period": "2026-07",
+      "merchant": "Riverside Physical Therapy",
+      "date": "2026-07-16",
       "amount": "66.26",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -1095,7 +1192,8 @@
     {
       "line_number": 101,
       "source_text": "Costco (Jul. 17) - $38.97",
-      "period": "2026-07",
+      "merchant": "Costco",
+      "date": "2026-07-17",
       "amount": "38.97",
       "category": "Groceries",
       "alternative_categories": [
@@ -1108,7 +1206,8 @@
     {
       "line_number": 102,
       "source_text": "7/17 | Whole Foods | $73.64",
-      "period": "2026-07",
+      "merchant": "Whole Foods",
+      "date": "2026-07-17",
       "amount": "73.64",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1119,7 +1218,8 @@
     {
       "line_number": 103,
       "source_text": "- Jul 18  Kroger  $142.20",
-      "period": "2026-07",
+      "merchant": "Kroger",
+      "date": "2026-07-18",
       "amount": "142.20",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1130,7 +1230,8 @@
     {
       "line_number": 104,
       "source_text": "Rustic Tap Brewery (2026-07-18) - $5.69",
-      "period": "2026-07",
+      "merchant": "Rustic Tap Brewery",
+      "date": "2026-07-18",
       "amount": "5.69",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1141,7 +1242,8 @@
     {
       "line_number": 105,
       "source_text": "Jul. 18 - BP Gas - $63.54",
-      "period": "2026-07",
+      "merchant": "BP Gas",
+      "date": "2026-07-18",
       "amount": "63.54",
       "category": "Transport",
       "alternative_categories": [],
@@ -1152,7 +1254,8 @@
     {
       "line_number": 106,
       "source_text": "Amazon (2026-07-18) - $141.82",
-      "period": "2026-07",
+      "merchant": "Amazon",
+      "date": "2026-07-18",
       "amount": "141.82",
       "category": "Shopping",
       "alternative_categories": [
@@ -1165,7 +1268,8 @@
     {
       "line_number": 107,
       "source_text": "Planet Fitness (Jul. 18) - 59.23",
-      "period": "2026-07",
+      "merchant": "Planet Fitness",
+      "date": "2026-07-18",
       "amount": "59.23",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -1176,7 +1280,8 @@
     {
       "line_number": 108,
       "source_text": "Return processed - REI (7/18/26) - -$68.00",
-      "period": "2026-07",
+      "merchant": "REI",
+      "date": "2026-07-18",
       "amount": "-68.00",
       "category": "Shopping",
       "alternative_categories": [],
@@ -1187,7 +1292,8 @@
     {
       "line_number": 109,
       "source_text": "07-21 - City Parking Authority - $14.30",
-      "period": "2026-07",
+      "merchant": "City Parking Authority",
+      "date": "2026-07-21",
       "amount": "14.30",
       "category": "Transport",
       "alternative_categories": [],
@@ -1198,7 +1304,8 @@
     {
       "line_number": 110,
       "source_text": "AMC Theatres, July 22 -- $54.22",
-      "period": "2026-07",
+      "merchant": "AMC Theatres",
+      "date": "2026-07-22",
       "amount": "54.22",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -1209,7 +1316,8 @@
     {
       "line_number": 111,
       "source_text": "Trader Joe's (Jul. 22) - $54.12",
-      "period": "2026-07",
+      "merchant": "Trader Joe's",
+      "date": "2026-07-22",
       "amount": "54.12",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1220,7 +1328,8 @@
     {
       "line_number": 112,
       "source_text": "Trader Joe's (Jul. 22) - $54.12",
-      "period": "2026-07",
+      "merchant": "Trader Joe's",
+      "date": "2026-07-22",
       "amount": "54.12",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1231,7 +1340,8 @@
     {
       "line_number": 113,
       "source_text": "Costco, 2026-07-23 -- 113.92",
-      "period": "2026-07",
+      "merchant": "Costco",
+      "date": "2026-07-23",
       "amount": "113.92",
       "category": "Groceries",
       "alternative_categories": [
@@ -1244,7 +1354,8 @@
     {
       "line_number": 114,
       "source_text": "Jul. 26: Best Buy, 195.60",
-      "period": "2026-07",
+      "merchant": "Best Buy",
+      "date": "2026-07-26",
       "amount": "195.60",
       "category": "Shopping",
       "alternative_categories": [],
@@ -1255,7 +1366,8 @@
     {
       "line_number": 115,
       "source_text": "Jul 28 Lyft $36.08",
-      "period": "2026-07",
+      "merchant": "Lyft",
+      "date": "2026-07-28",
       "amount": "36.08",
       "category": "Transport",
       "alternative_categories": [],
@@ -1266,7 +1378,8 @@
     {
       "line_number": 116,
       "source_text": "City Parking Authority, 07-28 -- $31.70",
-      "period": "2026-07",
+      "merchant": "City Parking Authority",
+      "date": "2026-07-28",
       "amount": "31.70",
       "category": "Transport",
       "alternative_categories": [],
@@ -1277,7 +1390,8 @@
     {
       "line_number": 117,
       "source_text": "ATM Cash Withdrawal - $30.79 (Jul. 29)",
-      "period": "2026-07",
+      "merchant": "ATM Cash Withdrawal",
+      "date": "2026-07-29",
       "amount": "30.79",
       "category": "Uncategorized",
       "alternative_categories": [],
@@ -1288,7 +1402,8 @@
     {
       "line_number": 118,
       "source_text": "Jul. 30 Bagel Corner $9.37",
-      "period": "2026-07",
+      "merchant": "Bagel Corner",
+      "date": "2026-07-30",
       "amount": "9.37",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1299,7 +1414,8 @@
     {
       "line_number": 119,
       "source_text": "- 7/31  Walgreens  $45.96",
-      "period": "2026-07",
+      "merchant": "Walgreens",
+      "date": "2026-07-31",
       "amount": "45.96",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -1310,7 +1426,8 @@
     {
       "line_number": 120,
       "source_text": "7/31 | Trader Joe's | $129.51",
-      "period": "2026-07",
+      "merchant": "Trader Joe's",
+      "date": "2026-07-31",
       "amount": "129.51",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1321,7 +1438,8 @@
     {
       "line_number": 121,
       "source_text": "- 2026-07-30  Spotify Concert  $45.24",
-      "period": "2026-07",
+      "merchant": "Spotify Concert",
+      "date": "2026-07-30",
       "amount": "45.24",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -1332,7 +1450,8 @@
     {
       "line_number": 122,
       "source_text": "Spotify Concert - $20.96 (7/31)",
-      "period": "2026-07",
+      "merchant": "Spotify Concert",
+      "date": "2026-07-31",
       "amount": "20.96",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -1343,7 +1462,8 @@
     {
       "line_number": 123,
       "source_text": "Netflix (8/2/26) - $15.49",
-      "period": "2026-08",
+      "merchant": "Netflix",
+      "date": "2026-08-02",
       "amount": "15.49",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -1354,7 +1474,8 @@
     {
       "line_number": 124,
       "source_text": "08-01 | Xfinity Internet | $64.99",
-      "period": "2026-08",
+      "merchant": "Xfinity Internet",
+      "date": "2026-08-01",
       "amount": "64.99",
       "category": "Utilities",
       "alternative_categories": [],
@@ -1365,7 +1486,8 @@
     {
       "line_number": 125,
       "source_text": "Aug 2: Zelle Payment, $120.00",
-      "period": "2026-08",
+      "merchant": "Zelle Payment",
+      "date": "2026-08-02",
       "amount": "120.00",
       "category": "Uncategorized",
       "alternative_categories": [],
@@ -1376,7 +1498,8 @@
     {
       "line_number": 126,
       "source_text": "Old Navy (2026-08-01) - $78.91",
-      "period": "2026-08",
+      "merchant": "Old Navy",
+      "date": "2026-08-01",
       "amount": "78.91",
       "category": "Shopping",
       "alternative_categories": [],
@@ -1387,7 +1510,8 @@
     {
       "line_number": 127,
       "source_text": "Costco (Aug 3) - $144.50",
-      "period": "2026-08",
+      "merchant": "Costco",
+      "date": "2026-08-03",
       "amount": "144.50",
       "category": "Groceries",
       "alternative_categories": [
@@ -1400,7 +1524,8 @@
     {
       "line_number": 128,
       "source_text": "Amazon Prime (08-03) - $14.99",
-      "period": "2026-08",
+      "merchant": "Amazon Prime",
+      "date": "2026-08-03",
       "amount": "14.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -1411,7 +1536,8 @@
     {
       "line_number": 129,
       "source_text": "August 4 | Ticketmaster | 59.42",
-      "period": "2026-08",
+      "merchant": "Ticketmaster",
+      "date": "2026-08-04",
       "amount": "59.42",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -1422,7 +1548,8 @@
     {
       "line_number": 130,
       "source_text": "August 4 | McDonald's | $23.51",
-      "period": "2026-08",
+      "merchant": "McDonald's",
+      "date": "2026-08-04",
       "amount": "23.51",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1433,7 +1560,8 @@
     {
       "line_number": 131,
       "source_text": "- 08-04  Sushi Kame  $8.81",
-      "period": "2026-08",
+      "merchant": "Sushi Kame",
+      "date": "2026-08-04",
       "amount": "8.81",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1444,7 +1572,8 @@
     {
       "line_number": 132,
       "source_text": "Planet Fitness App, 8/4 -- $9.99",
-      "period": "2026-08",
+      "merchant": "Planet Fitness App",
+      "date": "2026-08-04",
       "amount": "9.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -1455,7 +1584,8 @@
     {
       "line_number": 133,
       "source_text": "- Aug 5  Chipotle  $35.98",
-      "period": "2026-08",
+      "merchant": "Chipotle",
+      "date": "2026-08-05",
       "amount": "35.98",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1466,7 +1596,8 @@
     {
       "line_number": 134,
       "source_text": "Rustic Tap Brewery - $24.22 (August 5)",
-      "period": "2026-08",
+      "merchant": "Rustic Tap Brewery",
+      "date": "2026-08-05",
       "amount": "24.22",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1477,7 +1608,8 @@
     {
       "line_number": 135,
       "source_text": "Aug. 5: Spotify Premium, $11.99",
-      "period": "2026-08",
+      "merchant": "Spotify Premium",
+      "date": "2026-08-05",
       "amount": "11.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -1488,7 +1620,8 @@
     {
       "line_number": 136,
       "source_text": "2026-08-05: iCloud+ 200GB, $2.99",
-      "period": "2026-08",
+      "merchant": "iCloud+ 200GB",
+      "date": "2026-08-05",
       "amount": "2.99",
       "category": "Subscriptions",
       "alternative_categories": [],
@@ -1499,7 +1632,8 @@
     {
       "line_number": 137,
       "source_text": "8/5 - Verizon Wireless - $78.14",
-      "period": "2026-08",
+      "merchant": "Verizon Wireless",
+      "date": "2026-08-05",
       "amount": "78.14",
       "category": "Utilities",
       "alternative_categories": [],
@@ -1510,7 +1644,8 @@
     {
       "line_number": 138,
       "source_text": "BP Gas (2026-08-06) - $26.14",
-      "period": "2026-08",
+      "merchant": "BP Gas",
+      "date": "2026-08-06",
       "amount": "26.14",
       "category": "Transport",
       "alternative_categories": [],
@@ -1521,7 +1656,8 @@
     {
       "line_number": 139,
       "source_text": "Starbucks - $34.66 (2026-08-07)",
-      "period": "2026-08",
+      "merchant": "Starbucks",
+      "date": "2026-08-07",
       "amount": "34.66",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1532,7 +1668,8 @@
     {
       "line_number": 140,
       "source_text": "Dr. Hensley Dental Copay, Aug 7 -- $86.46",
-      "period": "2026-08",
+      "merchant": "Dr. Hensley Dental Copay",
+      "date": "2026-08-07",
       "amount": "86.46",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -1543,7 +1680,8 @@
     {
       "line_number": 141,
       "source_text": "PayPal Transfer - $69.90 (08-07)",
-      "period": "2026-08",
+      "merchant": "PayPal Transfer",
+      "date": "2026-08-07",
       "amount": "69.90",
       "category": "Uncategorized",
       "alternative_categories": [],
@@ -1554,7 +1692,8 @@
     {
       "line_number": 142,
       "source_text": "BP Gas (8/8) - $64.15",
-      "period": "2026-08",
+      "merchant": "BP Gas",
+      "date": "2026-08-08",
       "amount": "64.15",
       "category": "Transport",
       "alternative_categories": [],
@@ -1565,7 +1704,8 @@
     {
       "line_number": 143,
       "source_text": "Costco - $45.07 (Aug 9)",
-      "period": "2026-08",
+      "merchant": "Costco",
+      "date": "2026-08-09",
       "amount": "45.07",
       "category": "Groceries",
       "alternative_categories": [
@@ -1578,7 +1718,8 @@
     {
       "line_number": 144,
       "source_text": "8/9 Luigi's Pizza $26.02",
-      "period": "2026-08",
+      "merchant": "Luigi's Pizza",
+      "date": "2026-08-09",
       "amount": "26.02",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1589,7 +1730,8 @@
     {
       "line_number": 145,
       "source_text": "Sushi Kame - $21.68 (8/9)",
-      "period": "2026-08",
+      "merchant": "Sushi Kame",
+      "date": "2026-08-09",
       "amount": "21.68",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1600,7 +1742,8 @@
     {
       "line_number": 146,
       "source_text": "8/9: Amazon, $185.90",
-      "period": "2026-08",
+      "merchant": "Amazon",
+      "date": "2026-08-09",
       "amount": "185.90",
       "category": "Shopping",
       "alternative_categories": [
@@ -1613,7 +1756,8 @@
     {
       "line_number": 147,
       "source_text": "- Aug 9  Target  127.80",
-      "period": "2026-08",
+      "merchant": "Target",
+      "date": "2026-08-09",
       "amount": "127.80",
       "category": "Shopping",
       "alternative_categories": [
@@ -1626,7 +1770,8 @@
     {
       "line_number": 148,
       "source_text": "August 10 - Trader Joe's - $103.30",
-      "period": "2026-08",
+      "merchant": "Trader Joe's",
+      "date": "2026-08-10",
       "amount": "103.30",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1637,7 +1782,8 @@
     {
       "line_number": 149,
       "source_text": "Aug. 10: Bagel Corner, $10.13",
-      "period": "2026-08",
+      "merchant": "Bagel Corner",
+      "date": "2026-08-10",
       "amount": "10.13",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1648,7 +1794,8 @@
     {
       "line_number": 150,
       "source_text": "McDonald's (8/10/26) - $9.21",
-      "period": "2026-08",
+      "merchant": "McDonald's",
+      "date": "2026-08-10",
       "amount": "9.21",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1659,7 +1806,8 @@
     {
       "line_number": 151,
       "source_text": "Costco - $89.78 (8/11/26)",
-      "period": "2026-08",
+      "merchant": "Costco",
+      "date": "2026-08-11",
       "amount": "89.78",
       "category": "Groceries",
       "alternative_categories": [
@@ -1672,7 +1820,8 @@
     {
       "line_number": 152,
       "source_text": "Local Coffee Co - $11.95 (Aug. 11)",
-      "period": "2026-08",
+      "merchant": "Local Coffee Co",
+      "date": "2026-08-11",
       "amount": "11.95",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1683,7 +1832,8 @@
     {
       "line_number": 153,
       "source_text": "Sushi Kame (Aug 11) - $6.45",
-      "period": "2026-08",
+      "merchant": "Sushi Kame",
+      "date": "2026-08-11",
       "amount": "6.45",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1694,7 +1844,8 @@
     {
       "line_number": 154,
       "source_text": "August 11 - Best Buy - $156.79",
-      "period": "2026-08",
+      "merchant": "Best Buy",
+      "date": "2026-08-11",
       "amount": "156.79",
       "category": "Shopping",
       "alternative_categories": [],
@@ -1705,7 +1856,8 @@
     {
       "line_number": 155,
       "source_text": "August 11 - Ticketmaster - 59.68",
-      "period": "2026-08",
+      "merchant": "Ticketmaster",
+      "date": "2026-08-11",
       "amount": "59.68",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -1716,7 +1868,8 @@
     {
       "line_number": 156,
       "source_text": "08-12 Kroger $129.67",
-      "period": "2026-08",
+      "merchant": "Kroger",
+      "date": "2026-08-12",
       "amount": "129.67",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1727,7 +1880,8 @@
     {
       "line_number": 157,
       "source_text": "Panera Bread, Aug. 12 -- $27.01",
-      "period": "2026-08",
+      "merchant": "Panera Bread",
+      "date": "2026-08-12",
       "amount": "27.01",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1738,7 +1892,8 @@
     {
       "line_number": 158,
       "source_text": "- 8/13  Whole Foods  $48.31",
-      "period": "2026-08",
+      "merchant": "Whole Foods",
+      "date": "2026-08-13",
       "amount": "48.31",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1749,7 +1904,8 @@
     {
       "line_number": 159,
       "source_text": "- 08-13  BP Gas  $53.78",
-      "period": "2026-08",
+      "merchant": "BP Gas",
+      "date": "2026-08-13",
       "amount": "53.78",
       "category": "Transport",
       "alternative_categories": [],
@@ -1760,7 +1916,8 @@
     {
       "line_number": 160,
       "source_text": "Aug. 13 Shell $51.26",
-      "period": "2026-08",
+      "merchant": "Shell",
+      "date": "2026-08-13",
       "amount": "51.26",
       "category": "Transport",
       "alternative_categories": [],
@@ -1771,7 +1928,8 @@
     {
       "line_number": 161,
       "source_text": "ATM Cash Withdrawal (8/13/26) - $79.84",
-      "period": "2026-08",
+      "merchant": "ATM Cash Withdrawal",
+      "date": "2026-08-13",
       "amount": "79.84",
       "category": "Uncategorized",
       "alternative_categories": [],
@@ -1782,7 +1940,8 @@
     {
       "line_number": 162,
       "source_text": "Aug 14 - Starbucks - $8.05",
-      "period": "2026-08",
+      "merchant": "Starbucks",
+      "date": "2026-08-14",
       "amount": "8.05",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1793,7 +1952,8 @@
     {
       "line_number": 163,
       "source_text": "2026-08-14: BP Gas, $21.80",
-      "period": "2026-08",
+      "merchant": "BP Gas",
+      "date": "2026-08-14",
       "amount": "21.80",
       "category": "Transport",
       "alternative_categories": [],
@@ -1804,7 +1964,8 @@
     {
       "line_number": 164,
       "source_text": "Uber - $58.73 (08-14)",
-      "period": "2026-08",
+      "merchant": "Uber",
+      "date": "2026-08-14",
       "amount": "58.73",
       "category": "Transport",
       "alternative_categories": [],
@@ -1815,7 +1976,8 @@
     {
       "line_number": 165,
       "source_text": "Aug 14: Amazon, $35.25",
-      "period": "2026-08",
+      "merchant": "Amazon",
+      "date": "2026-08-14",
       "amount": "35.25",
       "category": "Shopping",
       "alternative_categories": [
@@ -1828,7 +1990,8 @@
     {
       "line_number": 166,
       "source_text": "Walgreens - $13.77 (08-14)",
-      "period": "2026-08",
+      "merchant": "Walgreens",
+      "date": "2026-08-14",
       "amount": "13.77",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -1839,7 +2002,8 @@
     {
       "line_number": 167,
       "source_text": "Delta Air Lines - $412.60 (Aug. 14)",
-      "period": "2026-08",
+      "merchant": "Delta Air Lines",
+      "date": "2026-08-14",
       "amount": "412.60",
       "category": "Travel",
       "alternative_categories": [],
@@ -1850,7 +2014,8 @@
     {
       "line_number": 168,
       "source_text": "Delta Air Lines (8/14) - $450.60",
-      "period": "2026-08",
+      "merchant": "Delta Air Lines",
+      "date": "2026-08-14",
       "amount": "450.60",
       "category": "Travel",
       "alternative_categories": [],
@@ -1861,7 +2026,8 @@
     {
       "line_number": 169,
       "source_text": "Airport Parking - $68.00 (August 14)",
-      "period": "2026-08",
+      "merchant": "Airport Parking",
+      "date": "2026-08-14",
       "amount": "68.00",
       "category": "Travel",
       "alternative_categories": [],
@@ -1872,7 +2038,8 @@
     {
       "line_number": 170,
       "source_text": "August 15 | Marriott | $486.27",
-      "period": "2026-08",
+      "merchant": "Marriott",
+      "date": "2026-08-15",
       "amount": "486.27",
       "category": "Travel",
       "alternative_categories": [],
@@ -1883,7 +2050,8 @@
     {
       "line_number": 171,
       "source_text": "Hertz Rental Car - 214.35 (8/15/26)",
-      "period": "2026-08",
+      "merchant": "Hertz Rental Car",
+      "date": "2026-08-15",
       "amount": "214.35",
       "category": "Travel",
       "alternative_categories": [],
@@ -1894,7 +2062,8 @@
     {
       "line_number": 172,
       "source_text": "8/16/26 - BP Gas - $13.36",
-      "period": "2026-08",
+      "merchant": "BP Gas",
+      "date": "2026-08-16",
       "amount": "13.36",
       "category": "Transport",
       "alternative_categories": [],
@@ -1905,7 +2074,8 @@
     {
       "line_number": 173,
       "source_text": "Uber, August 16 -- $24.10",
-      "period": "2026-08",
+      "merchant": "Uber",
+      "date": "2026-08-16",
       "amount": "24.10",
       "category": "Travel",
       "alternative_categories": [
@@ -1918,7 +2088,8 @@
     {
       "line_number": 174,
       "source_text": "August 17 REI $132.82",
-      "period": "2026-08",
+      "merchant": "REI",
+      "date": "2026-08-17",
       "amount": "132.82",
       "category": "Shopping",
       "alternative_categories": [],
@@ -1929,7 +2100,8 @@
     {
       "line_number": 175,
       "source_text": "8/17/26 - Barnes & Noble - $77.40",
-      "period": "2026-08",
+      "merchant": "Barnes & Noble",
+      "date": "2026-08-17",
       "amount": "77.40",
       "category": "Entertainment",
       "alternative_categories": [
@@ -1942,7 +2114,8 @@
     {
       "line_number": 176,
       "source_text": "8/18: Luigi's Pizza, $29.46",
-      "period": "2026-08",
+      "merchant": "Luigi's Pizza",
+      "date": "2026-08-18",
       "amount": "29.46",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -1953,7 +2126,8 @@
     {
       "line_number": 177,
       "source_text": "8/20/26 - Kroger - $19.18",
-      "period": "2026-08",
+      "merchant": "Kroger",
+      "date": "2026-08-20",
       "amount": "19.18",
       "category": "Groceries",
       "alternative_categories": [],
@@ -1964,7 +2138,8 @@
     {
       "line_number": 178,
       "source_text": "Costco - 107.35 (Aug 20)",
-      "period": "2026-08",
+      "merchant": "Costco",
+      "date": "2026-08-20",
       "amount": "107.35",
       "category": "Groceries",
       "alternative_categories": [
@@ -1977,7 +2152,8 @@
     {
       "line_number": 179,
       "source_text": "BP Gas (08-20) - $35.79",
-      "period": "2026-08",
+      "merchant": "BP Gas",
+      "date": "2026-08-20",
       "amount": "35.79",
       "category": "Transport",
       "alternative_categories": [],
@@ -1988,7 +2164,8 @@
     {
       "line_number": 180,
       "source_text": "- 08-20  Barnes & Noble  $78.98",
-      "period": "2026-08",
+      "merchant": "Barnes & Noble",
+      "date": "2026-08-20",
       "amount": "78.98",
       "category": "Entertainment",
       "alternative_categories": [
@@ -2001,7 +2178,8 @@
     {
       "line_number": 181,
       "source_text": "IKEA, 2026-08-21 -- $68.71",
-      "period": "2026-08",
+      "merchant": "IKEA",
+      "date": "2026-08-21",
       "amount": "68.71",
       "category": "Shopping",
       "alternative_categories": [],
@@ -2012,7 +2190,8 @@
     {
       "line_number": 182,
       "source_text": "Whole Foods (8/23/26) - $43.94",
-      "period": "2026-08",
+      "merchant": "Whole Foods",
+      "date": "2026-08-23",
       "amount": "43.94",
       "category": "Groceries",
       "alternative_categories": [],
@@ -2023,7 +2202,8 @@
     {
       "line_number": 183,
       "source_text": "- 8/23  Chipotle  $36.19",
-      "period": "2026-08",
+      "merchant": "Chipotle",
+      "date": "2026-08-23",
       "amount": "36.19",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -2034,7 +2214,8 @@
     {
       "line_number": 184,
       "source_text": "BP Gas (08-24) - $51.86",
-      "period": "2026-08",
+      "merchant": "BP Gas",
+      "date": "2026-08-24",
       "amount": "51.86",
       "category": "Transport",
       "alternative_categories": [],
@@ -2045,7 +2226,8 @@
     {
       "line_number": 185,
       "source_text": "08-26: Planet Fitness, $54.19",
-      "period": "2026-08",
+      "merchant": "Planet Fitness",
+      "date": "2026-08-26",
       "amount": "54.19",
       "category": "Health and fitness",
       "alternative_categories": [],
@@ -2056,7 +2238,8 @@
     {
       "line_number": 186,
       "source_text": "2026-08-26 Rustic Tap Brewery $34.67",
-      "period": "2026-08",
+      "merchant": "Rustic Tap Brewery",
+      "date": "2026-08-26",
       "amount": "34.67",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -2067,7 +2250,8 @@
     {
       "line_number": 187,
       "source_text": "Chevron (8/26) - 63.74",
-      "period": "2026-08",
+      "merchant": "Chevron",
+      "date": "2026-08-26",
       "amount": "63.74",
       "category": "Transport",
       "alternative_categories": [],
@@ -2078,7 +2262,8 @@
     {
       "line_number": 188,
       "source_text": "Aug. 25 - Aldi - $58.15",
-      "period": "2026-08",
+      "merchant": "Aldi",
+      "date": "2026-08-25",
       "amount": "58.15",
       "category": "Groceries",
       "alternative_categories": [],
@@ -2089,7 +2274,8 @@
     {
       "line_number": 189,
       "source_text": "Aug 27 - Whole Foods - $38.03",
-      "period": "2026-08",
+      "merchant": "Whole Foods",
+      "date": "2026-08-27",
       "amount": "38.03",
       "category": "Groceries",
       "alternative_categories": [],
@@ -2100,7 +2286,8 @@
     {
       "line_number": 190,
       "source_text": "08-27 Costco 18.99",
-      "period": "2026-08",
+      "merchant": "Costco",
+      "date": "2026-08-27",
       "amount": "18.99",
       "category": "Groceries",
       "alternative_categories": [
@@ -2113,7 +2300,8 @@
     {
       "line_number": 191,
       "source_text": "Luigi's Pizza, Aug 27 -- $23.00",
-      "period": "2026-08",
+      "merchant": "Luigi's Pizza",
+      "date": "2026-08-27",
       "amount": "23.00",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -2124,7 +2312,8 @@
     {
       "line_number": 192,
       "source_text": "2026-08-27: Lyft, 32.33",
-      "period": "2026-08",
+      "merchant": "Lyft",
+      "date": "2026-08-27",
       "amount": "32.33",
       "category": "Transport",
       "alternative_categories": [],
@@ -2135,7 +2324,8 @@
     {
       "line_number": 193,
       "source_text": "Old Navy, 08-27 -- $92.34",
-      "period": "2026-08",
+      "merchant": "Old Navy",
+      "date": "2026-08-27",
       "amount": "92.34",
       "category": "Shopping",
       "alternative_categories": [],
@@ -2146,7 +2336,8 @@
     {
       "line_number": 194,
       "source_text": "Panera Bread - $27.69 (August 28)",
-      "period": "2026-08",
+      "merchant": "Panera Bread",
+      "date": "2026-08-28",
       "amount": "27.69",
       "category": "Dining and coffee",
       "alternative_categories": [],
@@ -2157,7 +2348,8 @@
     {
       "line_number": 195,
       "source_text": "8/29/26 Trader Joe's $136.52",
-      "period": "2026-08",
+      "merchant": "Trader Joe's",
+      "date": "2026-08-29",
       "amount": "136.52",
       "category": "Groceries",
       "alternative_categories": [],
@@ -2168,7 +2360,8 @@
     {
       "line_number": 196,
       "source_text": "City Parking Authority, 8/30/26 -- $20.43",
-      "period": "2026-08",
+      "merchant": "City Parking Authority",
+      "date": "2026-08-30",
       "amount": "20.43",
       "category": "Transport",
       "alternative_categories": [],
@@ -2179,7 +2372,8 @@
     {
       "line_number": 197,
       "source_text": "Aug 30: Shell, $21.94",
-      "period": "2026-08",
+      "merchant": "Shell",
+      "date": "2026-08-30",
       "amount": "21.94",
       "category": "Transport",
       "alternative_categories": [],
@@ -2190,7 +2384,8 @@
     {
       "line_number": 198,
       "source_text": "Chevron - $23.17 (Aug 30)",
-      "period": "2026-08",
+      "merchant": "Chevron",
+      "date": "2026-08-30",
       "amount": "23.17",
       "category": "Transport",
       "alternative_categories": [],
@@ -2201,7 +2396,8 @@
     {
       "line_number": 199,
       "source_text": "2026-08-31 Best Buy 183.41",
-      "period": "2026-08",
+      "merchant": "Best Buy",
+      "date": "2026-08-31",
       "amount": "183.41",
       "category": "Shopping",
       "alternative_categories": [],
@@ -2212,7 +2408,8 @@
     {
       "line_number": 200,
       "source_text": "Ticketmaster - $41.78 (August 31)",
-      "period": "2026-08",
+      "merchant": "Ticketmaster",
+      "date": "2026-08-31",
       "amount": "41.78",
       "category": "Entertainment",
       "alternative_categories": [],
@@ -2223,7 +2420,8 @@
     {
       "line_number": 201,
       "source_text": "8/31 | Riverside Physical Therapy | $68.38",
-      "period": "2026-08",
+      "merchant": "Riverside Physical Therapy",
+      "date": "2026-08-31",
       "amount": "68.38",
       "category": "Health and fitness",
       "alternative_categories": [],

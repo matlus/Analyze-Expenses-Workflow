@@ -2,6 +2,7 @@ import json
 import os
 import secrets
 from collections.abc import Mapping, Sequence
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from expense_analysis_workflow_eval import (
     compose_run_label,
     describe_model_steps,
     find_check_reference_problems,
+    find_ledger_coverage_problems,
     find_ledger_source_problems,
     load_eval_suite,
     parse_setting_assignments,
@@ -229,11 +231,46 @@ def test_EvalSuite_WhenALedgerLineDiffersFromTheInput_ThenReportsTheBrokenRefere
     first_expense_line_number: int = 4
     eval_case: EvalCase = EvalCase(f"case-{secrets.token_hex(4)}", (input_line,), first_expense_line_number, (), {})
     ledger_entry: LedgerEntry = LedgerEntry(
-        first_expense_line_number, ledger_line, "2026-06", Decimal("10.00"), "Shopping", None, is_counted=True, note=None
+        first_expense_line_number,
+        ledger_line,
+        f"Merchant {secrets.token_hex(4)}",
+        date(2026, 6, 1),
+        Decimal("10.00"),
+        "Shopping",
+        None,
+        is_counted=True,
+        note=None,
     )
     expected_problems: list[str] = [f"reference ledger line {first_expense_line_number} reads {ledger_line!r}; the input has {input_line!r}"]
 
     actual_problems: list[str] = find_ledger_source_problems(ReferenceLedger((ledger_entry,), {}), eval_case)
+
+    assert actual_problems == expected_problems
+
+
+def test_EvalSuite_WhenTheLedgerMissesALineOrListsOneTwice_ThenReportsBothBeforeAnyRun() -> None:
+    first_expense_line_number: int = 4
+    expense_lines: tuple[str, ...] = tuple(f"June {day} Merchant {secrets.token_hex(4)} $10.00" for day in (1, 2, 3))
+    eval_case: EvalCase = EvalCase(f"case-{secrets.token_hex(4)}", expense_lines, first_expense_line_number, (), {})
+    listed_line_number: int = first_expense_line_number
+    missing_line_numbers: list[int] = [first_expense_line_number + 1, first_expense_line_number + 2]
+    ledger_entry: LedgerEntry = LedgerEntry(
+        listed_line_number,
+        expense_lines[0],
+        f"Merchant {secrets.token_hex(4)}",
+        date(2026, 6, 1),
+        Decimal("10.00"),
+        "Shopping",
+        None,
+        is_counted=True,
+        note=None,
+    )
+    expected_problems: list[str] = [
+        f"the reference ledger has no entry for expense lines {missing_line_numbers}",
+        f"the reference ledger lists lines {[listed_line_number]} more than once",
+    ]
+
+    actual_problems: list[str] = find_ledger_coverage_problems(ReferenceLedger((ledger_entry, ledger_entry), {}), eval_case)
 
     assert actual_problems == expected_problems
 
