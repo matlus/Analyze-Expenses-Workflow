@@ -1,6 +1,7 @@
 import json
 import os
 import secrets
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from pathlib import Path
 
@@ -78,11 +79,18 @@ def create_jev_settings() -> dict[str, str]:
     }
 
 
+def assert_message_phrases(actual_message: str, expected_message_phrases: Sequence[str]) -> None:
+    missing_message_phrases: list[str] = [
+        expected_message_phrase for expected_message_phrase in expected_message_phrases if expected_message_phrase not in actual_message
+    ]
+    assert not missing_message_phrases, f"Expected the message to contain {missing_message_phrases!r}; message: {actual_message!r}"
+
+
 def create_setting_override_request(
     coding_assistant_subscription: CodingAssistantSubscription,
     model: str | None,
     reasoning_effort: str | None,
-    extra_setting_value_by_name: dict[str, str],
+    extra_setting_value_by_name: Mapping[str, str],
 ) -> SettingOverrideRequest:
     return SettingOverrideRequest({}, ModelStepSelection(coding_assistant_subscription, model, reasoning_effort), extra_setting_value_by_name)
 
@@ -161,10 +169,12 @@ def test_ModelStepSelection_WhenAModelIsGivenWithoutASubscription_ThenRejectsIt(
 
 
 def test_SettingAssignments_WhenAValueContainsAnEqualsSign_ThenKeepsTheWholeValueAndTrimsSpaces() -> None:
+    jev_model_setting_name: str = "JEV_MODEL"
+    shopping_budget_setting_name: str = "SHOPPING_MONTHLY_BUDGET"
     jev_model_value: str = f"a={secrets.token_hex(4)}"
     budget_value: str = "900.00"
-    setting_assignments: list[str] = [f"JEV_MODEL={jev_model_value}", f"SHOPPING_MONTHLY_BUDGET = {budget_value} "]
-    expected_setting_value_by_name: dict[str, str] = {"JEV_MODEL": jev_model_value, "SHOPPING_MONTHLY_BUDGET": budget_value}
+    setting_assignments: list[str] = [f"{jev_model_setting_name}={jev_model_value}", f"{shopping_budget_setting_name} = {budget_value} "]
+    expected_setting_value_by_name: dict[str, str] = {jev_model_setting_name: jev_model_value, shopping_budget_setting_name: budget_value}
 
     actual_setting_value_by_name: dict[str, str] = parse_setting_assignments(setting_assignments)
 
@@ -195,7 +205,8 @@ def test_RunLabel_WhenStepsShareOneModel_ThenNamesTheProviderModelAndEffortOnce(
     assert actual_run_label == expected_run_label
 
 
-def test_EvalSuite_WhenThePartThreeCaseLoads_ThenEveryPartThreeCheckIsMappedAndTwoDoNotApply() -> None:
+def test_EvalSuite_WhenThePartThreeCaseLoads_ThenEveryPartThreeCheckIsMappedTwoDoNotApplyAndEveryLineIsChecked() -> None:
+    expected_check_names: tuple[str, ...] = (*PART_THREE_CHECK_NAMES, "every-line-matches-reference")
     expected_not_applicable_check_names: list[str] = ["code-executed", "tables-before-interpretation"]
     expected_expense_line_count: int = 198
     duplicate_line_number_in_file: int = 112
@@ -209,14 +220,14 @@ def test_EvalSuite_WhenThePartThreeCaseLoads_ThenEveryPartThreeCheckIsMappedAndT
         actual_not_applicable_check_names,
         len(eval_suite.eval_case.expense_lines),
         eval_suite.eval_case.to_workflow_line_number(duplicate_line_number_in_file),
-    ) == (PART_THREE_CHECK_NAMES, expected_not_applicable_check_names, expected_expense_line_count, expected_duplicate_line_number_in_workflow)
+    ) == (expected_check_names, expected_not_applicable_check_names, expected_expense_line_count, expected_duplicate_line_number_in_workflow)
 
 
 def test_EvalSuite_WhenALedgerLineDiffersFromTheInput_ThenReportsTheBrokenReference() -> None:
     input_line: str = f"June 1 Merchant {secrets.token_hex(4)} $10.00"
     ledger_line: str = f"June 1 Merchant {secrets.token_hex(4)} $10.00"
     first_expense_line_number: int = 4
-    eval_case: EvalCase = EvalCase("case", (input_line,), first_expense_line_number, (), {})
+    eval_case: EvalCase = EvalCase(f"case-{secrets.token_hex(4)}", (input_line,), first_expense_line_number, (), {})
     ledger_entry: LedgerEntry = LedgerEntry(
         first_expense_line_number, ledger_line, "2026-06", Decimal("10.00"), "Shopping", None, is_counted=True, note=None
     )
@@ -242,8 +253,9 @@ def test_EvalSuite_WhenAnExpectedAmountIsNotAPlainNumber_ThenReportsItBeforeAnyR
         eval_suite.reference_category_by_workflow_category,
         eval_suite.checks,
     )
-    amount_check: AmountCheck = AmountCheck("amount-check", "A total.", 0.8, None, fact_name=fact_name)
-    expected_problems: list[str] = [f"check 'amount-check': the expected amount '{formatted_amount}' of '{fact_name}' is not a finite plain number"]
+    check_name: str = f"check-{secrets.token_hex(4)}"
+    amount_check: AmountCheck = AmountCheck(check_name, f"A total {secrets.token_hex(4)}.", 0.8, None, fact_name=fact_name)
+    expected_problems: list[str] = [f"check '{check_name}': the expected amount '{formatted_amount}' of '{fact_name}' is not a finite plain number"]
 
     actual_problems: list[str] = find_check_reference_problems(amount_check, broken_eval_suite)
 
@@ -265,19 +277,23 @@ def test_JudgeVerdict_WhenTheResultCarriesStructuredOutput_ThenReadsPassAndReaso
 
 def test_JudgeVerdict_WhenTheSessionEndsInAnErrorResult_ThenRaisesSessionFailureWithStandardError() -> None:
     standard_error: str = f"rate limited {secrets.token_hex(4)}"
-    expected_error_phrase: str = rf"the judge session failed \(exit 1\): {standard_error}"
+    expected_message_phrases: list[str] = ["the judge session failed", "exit 1", standard_error]
     judge_result: dict[str, object] = {"is_error": True, "subtype": "error_during_execution", "result": "API error"}
 
-    with pytest.raises(JudgeSessionFailedException, match=expected_error_phrase):
+    with pytest.raises(JudgeSessionFailedException) as raised_exception:
         read_judge_verdict(1, json.dumps(judge_result).encode(), standard_error.encode())
+
+    assert_message_phrases(str(raised_exception.value), expected_message_phrases)
 
 
 def test_JudgeVerdict_WhenTheCliFailsBeforeWritingAResult_ThenRaisesSessionFailureWithStandardError() -> None:
     standard_error: str = f"model not found {secrets.token_hex(4)}"
-    expected_error_phrase: str = rf"the judge session failed \(exit 2\) without a result: {standard_error}"
+    expected_message_phrases: list[str] = ["the judge session failed", "exit 2", "without a result", standard_error]
 
-    with pytest.raises(JudgeSessionFailedException, match=expected_error_phrase):
+    with pytest.raises(JudgeSessionFailedException) as raised_exception:
         read_judge_verdict(2, b"", standard_error.encode())
+
+    assert_message_phrases(str(raised_exception.value), expected_message_phrases)
 
 
 def test_JudgeVerdict_WhenStructuredOutputIsMissing_ThenRaisesUnreadableVerdict() -> None:

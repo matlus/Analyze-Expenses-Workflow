@@ -1,6 +1,7 @@
 import asyncio
 import secrets
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -22,6 +23,7 @@ from analyze_expenses_workflow.models import (
     TransactionTreatment,
 )
 from expense_analysis_workflow_eval import (
+    AcceptedPolicy,
     AmountCheck,
     BucketTotal,
     BudgetOutcome,
@@ -40,6 +42,7 @@ from expense_analysis_workflow_eval import (
     LedgerBucket,
     LedgerCategoryCheck,
     LedgerEntry,
+    LedgerLinesCheck,
     LineCategorization,
     LineOutcome,
     ReferenceLedger,
@@ -51,6 +54,7 @@ from expense_analysis_workflow_eval import (
     grade_fact_value_check,
     grade_judge_check,
     grade_ledger_category_check,
+    grade_ledger_lines_check,
     project_workflow_outcome,
 )
 
@@ -72,6 +76,14 @@ def create_fact_name() -> str:
     return f"fact_{secrets.token_hex(4)}"
 
 
+def create_check_name() -> str:
+    return f"check-{secrets.token_hex(4)}"
+
+
+def create_check_description() -> str:
+    return f"A check {secrets.token_hex(4)}."
+
+
 def create_ledger_entry(line_number: int, category: str, amount: Decimal, *, period: str = PERIOD, is_counted: bool = True) -> LedgerEntry:
     return LedgerEntry(
         line_number=line_number,
@@ -81,7 +93,7 @@ def create_ledger_entry(line_number: int, category: str, amount: Decimal, *, per
         category=category,
         accepted_policy=None,
         is_counted=is_counted,
-        note=None if is_counted else "likely duplicate",
+        note=None if is_counted else f"likely duplicate {secrets.token_hex(4)}",
     )
 
 
@@ -107,12 +119,21 @@ def create_workflow_outcome(
     for line_outcome in line_outcomes:
         if line_outcome.treatment == INCLUDED_SPENDING and line_outcome.category is not None and line_outcome.period is not None:
             line_outcomes_by_bucket.setdefault((line_outcome.category, line_outcome.period), []).append(line_outcome)
+    bucket_totals: list[BucketTotal] = []
+    bucket_key: tuple[str, str]
+    bucket_line_outcomes: list[LineOutcome]
+    for bucket_key, bucket_line_outcomes in line_outcomes_by_bucket.items():
+        bucket_totals.append(
+            BucketTotal(
+                category=bucket_key[0],
+                period=bucket_key[1],
+                amount=sum((bucket_line_outcome.amount or Decimal(0) for bucket_line_outcome in bucket_line_outcomes), Decimal(0)),
+                line_numbers=tuple(bucket_line_outcome.line_number for bucket_line_outcome in bucket_line_outcomes),
+            )
+        )
     return WorkflowOutcome(
         line_outcomes=tuple(line_outcomes),
-        bucket_totals=tuple(
-            BucketTotal(category, period, sum((line.amount or Decimal(0) for line in lines), Decimal(0)), tuple(line.line_number for line in lines))
-            for (category, period), lines in line_outcomes_by_bucket.items()
-        ),
+        bucket_totals=tuple(bucket_totals),
         budget_outcomes=tuple(budget_outcomes),
         change_outcomes=tuple(change_outcomes),
         finding_texts=(),
@@ -139,6 +160,8 @@ def assert_check_grade(
     expected_reason_phrases: Sequence[str],
     expected_cause_phrases: Sequence[str],
     unexpected_cause_phrases: Sequence[str] = (),
+    *,
+    expected_cause_count: int | None = None,
 ) -> None:
     mismatches: list[str] = []
     if actual_check_grade.check_status != expected_check_status:
@@ -161,6 +184,8 @@ def assert_check_grade(
     )
     if not expected_cause_phrases and actual_check_grade.causes:
         mismatches.append(f"Expected no traced cause, got {actual_cause_text!r}")
+    if expected_cause_count is not None and len(actual_check_grade.causes) != expected_cause_count:
+        mismatches.append(f"Expected {expected_cause_count} traced causes, got {len(actual_check_grade.causes)}: {actual_cause_text!r}")
     assert not mismatches, f"{scenario}: the check grade has {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
 
 
@@ -176,14 +201,17 @@ def assert_workflow_outcome(scenario: str, actual_workflow_outcome: WorkflowOutc
     field_name: str
     expected_items: Sequence[object]
     actual_items: Sequence[object]
+    position: int
     for field_name, (expected_items, actual_items) in compared_items_by_field_name.items():
         if len(actual_items) != len(expected_items):
-            mismatches.append(f"Expected {len(expected_items)} {field_name}, got {len(actual_items)}: {actual_items!r}")
-        mismatches.extend(
-            f"{field_name} item {position}: expected {expected_item!r}, got {actual_item!r}"
-            for position, (expected_item, actual_item) in enumerate(zip(expected_items, actual_items, strict=False), start=1)
-            if actual_item != expected_item
-        )
+            mismatches.append(f"Expected {len(expected_items)} {field_name}, got {len(actual_items)}")
+        for position in range(max(len(expected_items), len(actual_items))):
+            if position >= len(actual_items):
+                mismatches.append(f"{field_name} item {position + 1}: expected {expected_items[position]!r}, missing")
+            elif position >= len(expected_items):
+                mismatches.append(f"{field_name} item {position + 1}: unexpected {actual_items[position]!r}")
+            elif actual_items[position] != expected_items[position]:
+                mismatches.append(f"{field_name} item {position + 1}: expected {expected_items[position]!r}, got {actual_items[position]!r}")
     assert not mismatches, f"{scenario}: the workflow outcome has {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
 
 
@@ -197,7 +225,7 @@ def test_AmountCheck_WhenWorkflowTotalMatchesAnAcceptedValue_ThenPassesWithoutCa
         (first_ledger_entry, second_ledger_entry), fact_name, LedgerBucket(reference_category, PERIOD), expected_total
     )
     workflow_outcome: WorkflowOutcome = create_workflow_outcome([create_line_outcome(first_ledger_entry), create_line_outcome(second_ledger_entry)])
-    amount_check: AmountCheck = AmountCheck("total-check", "A monthly total.", 0.8, None, fact_name=fact_name)
+    amount_check: AmountCheck = AmountCheck(create_check_name(), create_check_description(), 0.8, None, fact_name=fact_name)
     expected_reason_phrases: list[str] = [f"reported {expected_total} for {reference_category} {PERIOD}"]
     expected_cause_phrases: list[str] = []
 
@@ -220,7 +248,7 @@ def test_AmountCheck_WhenWorkflowPolicyPutsAReferenceLineInAnotherCategory_ThenF
     workflow_outcome: WorkflowOutcome = create_workflow_outcome(
         [create_line_outcome(kept_ledger_entry), create_line_outcome(moved_ledger_entry, category=workflow_category, policy_note=policy_note)]
     )
-    amount_check: AmountCheck = AmountCheck("total-check", "A monthly total.", 0.8, None, fact_name=fact_name)
+    amount_check: AmountCheck = AmountCheck(create_check_name(), create_check_description(), 0.8, None, fact_name=fact_name)
     expected_reason_phrases: list[str] = [f"Expected {expected_total}", f"reported {kept_ledger_entry.amount}"]
     expected_cause_phrases: list[str] = [
         f'line {moved_ledger_entry.line_number} "{moved_ledger_entry.source_text}": the workflow put it in {workflow_category} {PERIOD}',
@@ -230,7 +258,9 @@ def test_AmountCheck_WhenWorkflowPolicyPutsAReferenceLineInAnotherCategory_ThenF
 
     actual_check_grade: CheckGrade = grade_amount_check(amount_check, grading_reference, workflow_outcome)
 
-    assert_check_grade("A line moved by policy", actual_check_grade, CheckStatus.FAILED, expected_reason_phrases, expected_cause_phrases)
+    assert_check_grade(
+        "A line moved by policy", actual_check_grade, CheckStatus.FAILED, expected_reason_phrases, expected_cause_phrases, expected_cause_count=1
+    )
 
 
 def test_AmountCheck_WhenWorkflowCountsALineTheReferenceDoesNotCount_ThenTracesTheExtraLine() -> None:
@@ -244,7 +274,7 @@ def test_AmountCheck_WhenWorkflowCountsALineTheReferenceDoesNotCount_ThenTracesT
     workflow_outcome: WorkflowOutcome = create_workflow_outcome(
         [create_line_outcome(counted_ledger_entry), create_line_outcome(duplicate_ledger_entry)]
     )
-    amount_check: AmountCheck = AmountCheck("total-check", "A monthly total.", 0.8, None, fact_name=fact_name)
+    amount_check: AmountCheck = AmountCheck(create_check_name(), create_check_description(), 0.8, None, fact_name=fact_name)
     expected_reason_phrases: list[str] = [f"Expected {counted_ledger_entry.amount}"]
     expected_cause_phrases: list[str] = [
         f"line {duplicate_ledger_entry.line_number}",
@@ -253,7 +283,9 @@ def test_AmountCheck_WhenWorkflowCountsALineTheReferenceDoesNotCount_ThenTracesT
 
     actual_check_grade: CheckGrade = grade_amount_check(amount_check, grading_reference, workflow_outcome)
 
-    assert_check_grade("An uncounted duplicate", actual_check_grade, CheckStatus.FAILED, expected_reason_phrases, expected_cause_phrases)
+    assert_check_grade(
+        "An uncounted duplicate", actual_check_grade, CheckStatus.FAILED, expected_reason_phrases, expected_cause_phrases, expected_cause_count=1
+    )
 
 
 def test_FactValueCheck_WhenRefundIsIncludedAsANegativeAmount_ThenReadsItAsNetted() -> None:
@@ -263,7 +295,7 @@ def test_FactValueCheck_WhenRefundIsIncludedAsANegativeAmount_ThenReadsItAsNette
     grading_reference: GradingReference = create_grading_reference((refund_ledger_entry,), {fact_name: (expected_fact_value,)})
     workflow_outcome: WorkflowOutcome = create_workflow_outcome([create_line_outcome(refund_ledger_entry)])
     fact_value_check: FactValueCheck = FactValueCheck(
-        "refund-check", "Refund netted.", 0.8, None, fact_name, RefundTreatmentReader(refund_ledger_entry.line_number)
+        create_check_name(), create_check_description(), 0.8, None, fact_name, RefundTreatmentReader(refund_ledger_entry.line_number)
     )
     expected_reason_phrases: list[str] = [f"gives {expected_fact_value}", f"amount {refund_ledger_entry.amount}"]
     expected_cause_phrases: list[str] = []
@@ -282,7 +314,7 @@ def test_FactValueCheck_WhenRefundIsLeftUncategorized_ThenFailsNamingTheLineTrea
         [create_line_outcome(refund_ledger_entry, category=UNCATEGORIZED, treatment=uncategorized_credit)]
     )
     fact_value_check: FactValueCheck = FactValueCheck(
-        "refund-check", "Refund netted.", 0.8, None, fact_name, RefundTreatmentReader(refund_ledger_entry.line_number)
+        create_check_name(), create_check_description(), 0.8, None, fact_name, RefundTreatmentReader(refund_ledger_entry.line_number)
     )
     expected_reason_phrases: list[str] = ["gives excluded", f"line {refund_ledger_entry.line_number}", f"{uncategorized_credit} in {UNCATEGORIZED}"]
     expected_cause_phrases: list[str] = []
@@ -299,7 +331,7 @@ def test_FactValueCheck_WhenConfirmedDuplicateIsExcluded_ThenReadsTrue() -> None
     grading_reference: GradingReference = create_grading_reference((duplicate_ledger_entry,), {fact_name: ("true",)})
     workflow_outcome: WorkflowOutcome = create_workflow_outcome([create_line_outcome(duplicate_ledger_entry, treatment=excluded_duplicate)])
     fact_value_check: FactValueCheck = FactValueCheck(
-        "duplicate-check", "Duplicate excluded.", 0.8, None, fact_name, DuplicateExcludedReader(duplicate_ledger_entry.line_number)
+        create_check_name(), create_check_description(), 0.8, None, fact_name, DuplicateExcludedReader(duplicate_ledger_entry.line_number)
     )
     expected_reason_phrases: list[str] = ["gives true", excluded_duplicate]
     expected_cause_phrases: list[str] = []
@@ -313,13 +345,15 @@ def test_FactValueCheck_WhenDiningIsOverItsTarget_ThenReadsOver() -> None:
     reference_category: str = "Dining and coffee"
     fact_name: str = create_fact_name()
     target: Decimal = create_amount()
-    actual: Decimal = target + create_amount()
+    actual_spending: Decimal = target + create_amount()
     grading_reference: GradingReference = create_grading_reference((), {fact_name: ("over",)})
-    workflow_outcome: WorkflowOutcome = create_workflow_outcome([], budget_outcomes=[BudgetOutcome(reference_category, PERIOD, target, actual)])
-    fact_value_check: FactValueCheck = FactValueCheck(
-        "budget-check", "Over budget.", 0.8, None, fact_name, BudgetStatusReader(reference_category, PERIOD)
+    workflow_outcome: WorkflowOutcome = create_workflow_outcome(
+        [], budget_outcomes=[BudgetOutcome(reference_category, PERIOD, target, actual_spending)]
     )
-    expected_reason_phrases: list[str] = ["gives over", f"actual {actual} against target {target}"]
+    fact_value_check: FactValueCheck = FactValueCheck(
+        create_check_name(), create_check_description(), 0.8, None, fact_name, BudgetStatusReader(reference_category, PERIOD)
+    )
+    expected_reason_phrases: list[str] = ["gives over", f"actual {actual_spending} against target {target}"]
     expected_cause_phrases: list[str] = []
 
     actual_check_grade: CheckGrade = grade_fact_value_check(fact_value_check, grading_reference, workflow_outcome)
@@ -349,7 +383,7 @@ def test_FactValueCheck_WhenAnotherCategoryRisesMost_ThenTracesTheWrongTotalsBut
         ],
     )
     fact_value_check: FactValueCheck = FactValueCheck(
-        "increase-check", "Largest increase.", 0.8, None, fact_name, LargestIncreaseReader(PERIOD, NEXT_PERIOD)
+        create_check_name(), create_check_description(), 0.8, None, fact_name, LargestIncreaseReader(PERIOD, NEXT_PERIOD)
     )
     expected_reason_phrases: list[str] = [
         f"gives {workflow_category}",
@@ -380,7 +414,7 @@ def test_LedgerCategoryCheck_WhenATransferIsForcedIntoASpendingCategory_ThenFail
             create_line_outcome(forced_ledger_entry, category=forced_category),
         ]
     )
-    ledger_category_check: LedgerCategoryCheck = LedgerCategoryCheck("transfer-check", "Transfers.", 0.8, None, UNCATEGORIZED)
+    ledger_category_check: LedgerCategoryCheck = LedgerCategoryCheck(create_check_name(), create_check_description(), 0.8, None, UNCATEGORIZED)
     reference_line_numbers: list[int] = [kept_ledger_entry.line_number, forced_ledger_entry.line_number]
     expected_reason_phrases: list[str] = [f"{len(reference_line_numbers)} {UNCATEGORIZED} lines {reference_line_numbers}", "1 lines differ"]
     expected_cause_phrases: list[str] = [
@@ -393,6 +427,34 @@ def test_LedgerCategoryCheck_WhenATransferIsForcedIntoASpendingCategory_ThenFail
     assert_check_grade("A forced transfer", actual_check_grade, CheckStatus.FAILED, expected_reason_phrases, expected_cause_phrases)
 
 
+def test_LedgerCategoryCheck_WhenTheWorkflowExcludesTheDuplicateAndUsesAnAcceptedCategory_ThenPasses() -> None:
+    reference_category: str = "Travel"
+    alternative_category: str = "Transport"
+    counted_ledger_entry: LedgerEntry = create_ledger_entry(60, reference_category, create_amount())
+    duplicate_ledger_entry: LedgerEntry = create_ledger_entry(61, reference_category, counted_ledger_entry.amount, is_counted=False)
+    alternative_ledger_entry: LedgerEntry = replace(
+        create_ledger_entry(62, reference_category, create_amount()),
+        accepted_policy=AcceptedPolicy(f"policy {secrets.token_hex(4)}", (alternative_category,)),
+    )
+    reference_ledger: ReferenceLedger = ReferenceLedger((counted_ledger_entry, duplicate_ledger_entry, alternative_ledger_entry), {})
+    workflow_outcome: WorkflowOutcome = create_workflow_outcome(
+        [
+            create_line_outcome(counted_ledger_entry),
+            create_line_outcome(duplicate_ledger_entry, treatment=TransactionTreatment.EXCLUDED_DUPLICATE.value),
+            create_line_outcome(alternative_ledger_entry, category=alternative_category),
+        ]
+    )
+    ledger_category_check: LedgerCategoryCheck = LedgerCategoryCheck(create_check_name(), create_check_description(), 1.0, None, reference_category)
+    expected_reason_phrases: list[str] = ["0 lines differ"]
+    expected_cause_phrases: list[str] = []
+
+    actual_check_grade: CheckGrade = grade_ledger_category_check(ledger_category_check, reference_ledger, workflow_outcome)
+
+    assert_check_grade(
+        "An excluded duplicate and an accepted category", actual_check_grade, CheckStatus.PASSED, expected_reason_phrases, expected_cause_phrases
+    )
+
+
 def test_BudgetTargetsCheck_WhenWorkflowComparesAnUnstatedCategory_ThenFailsNamingTheInventedTarget() -> None:
     stated_category: str = "Dining and coffee"
     stated_target: Decimal = Decimal("260.00")
@@ -403,7 +465,7 @@ def test_BudgetTargetsCheck_WhenWorkflowComparesAnUnstatedCategory_ThenFailsNami
         BudgetOutcome(invented_category, PERIOD, invented_target, create_amount()),
     ]
     budget_targets_check: BudgetTargetsCheck = BudgetTargetsCheck(
-        "targets-check", "Only stated targets.", 0.8, None, {stated_category: stated_target}
+        create_check_name(), create_check_description(), 0.8, None, {stated_category: stated_target}
     )
     expected_reason_phrases: list[str] = [f"invented ['{invented_category} {invented_target}']", "missing []"]
     expected_cause_phrases: list[str] = []
@@ -415,7 +477,7 @@ def test_BudgetTargetsCheck_WhenWorkflowComparesAnUnstatedCategory_ThenFailsNami
 
 def test_JudgeCheck_WhenTheJudgeSessionFailed_ThenErrorsInsteadOfFailing() -> None:
     failure_description: str = f"the judge session failed {secrets.token_hex(4)}"
-    judge_check: JudgeCheck = JudgeCheck("judge-check", "Three findings.", 0.8, None, rubric_text=secrets.token_hex(8))
+    judge_check: JudgeCheck = JudgeCheck(create_check_name(), create_check_description(), 0.8, None, rubric_text=secrets.token_hex(8))
     expected_reason_phrases: list[str] = [failure_description]
     expected_cause_phrases: list[str] = []
 
@@ -475,9 +537,78 @@ def test_DescribeWorkflowFailure_WhenAnExceptionGroupCollectsSeveralFailures_The
     assert actual_description == expected_description, f"expected {expected_description!r}; actual {actual_description!r}"
 
 
+def test_LedgerLinesCheck_WhenEveryLineMatchesTheReference_ThenPassesWithoutCause() -> None:
+    ledger_entries: list[LedgerEntry] = [
+        create_ledger_entry(1, "Groceries", create_amount()),
+        create_ledger_entry(2, "Dining and coffee", create_amount()),
+    ]
+    ledger_lines_check: LedgerLinesCheck = LedgerLinesCheck(create_check_name(), create_check_description(), 1.0, None)
+    workflow_outcome: WorkflowOutcome = create_workflow_outcome([create_line_outcome(ledger_entry) for ledger_entry in ledger_entries])
+    expected_reason_phrases: list[str] = ["Compared the reference's 2 lines with the workflow's 2; 0 lines differ."]
+    expected_cause_phrases: list[str] = []
+
+    actual_check_grade: CheckGrade = grade_ledger_lines_check(ledger_lines_check, ReferenceLedger(tuple(ledger_entries), {}), workflow_outcome)
+
+    assert_check_grade("Every line matching", actual_check_grade, CheckStatus.PASSED, expected_reason_phrases, expected_cause_phrases)
+
+
+def test_LedgerLinesCheck_WhenLinesAreMisreadMiscategorizedMiscountedOrMissing_ThenFailsNamingEachLine() -> None:
+    reference_category: str = "Groceries"
+    workflow_category: str = "Shopping"
+    misread_ledger_entry: LedgerEntry = create_ledger_entry(1, reference_category, create_amount())
+    miscategorized_ledger_entry: LedgerEntry = create_ledger_entry(2, reference_category, create_amount())
+    duplicate_ledger_entry: LedgerEntry = create_ledger_entry(3, reference_category, create_amount(), is_counted=False)
+    missing_ledger_entry: LedgerEntry = create_ledger_entry(4, reference_category, create_amount())
+    misread_amount: Decimal = -misread_ledger_entry.amount
+    ledger_lines_check: LedgerLinesCheck = LedgerLinesCheck(create_check_name(), create_check_description(), 1.0, None)
+    reference_ledger: ReferenceLedger = ReferenceLedger(
+        (misread_ledger_entry, miscategorized_ledger_entry, duplicate_ledger_entry, missing_ledger_entry), {}
+    )
+    workflow_outcome: WorkflowOutcome = create_workflow_outcome(
+        [
+            replace(create_line_outcome(misread_ledger_entry), amount=misread_amount),
+            create_line_outcome(miscategorized_ledger_entry, category=workflow_category),
+            create_line_outcome(duplicate_ledger_entry),
+        ]
+    )
+    expected_reason_phrases: list[str] = ["Compared the reference's 4 lines with the workflow's 3; 4 lines differ."]
+    expected_cause_phrases: list[str] = [
+        (
+            f'line 1 "{misread_ledger_entry.source_text}": the workflow read the amount as {misread_amount}; '
+            f"the reference reads {misread_ledger_entry.amount}"
+        ),
+        (
+            f'line 2 "{miscategorized_ledger_entry.source_text}": the workflow put it in {workflow_category}; '
+            f"the reference puts it in {reference_category}"
+        ),
+        f'line 3 "{duplicate_ledger_entry.source_text}": the workflow counted it; the reference does not',
+        f'line 4 "{missing_ledger_entry.source_text}": the workflow did not report it',
+    ]
+
+    actual_check_grade: CheckGrade = grade_ledger_lines_check(ledger_lines_check, reference_ledger, workflow_outcome)
+
+    assert_check_grade("Four wrong lines", actual_check_grade, CheckStatus.FAILED, expected_reason_phrases, expected_cause_phrases)
+
+
+def test_LedgerLinesCheck_WhenALineIsInACategoryTheKeyAcceptsAsAnAlternative_ThenPasses() -> None:
+    alternative_category: str = "Transport"
+    ledger_entry: LedgerEntry = replace(
+        create_ledger_entry(1, "Travel", create_amount()),
+        accepted_policy=AcceptedPolicy(f"policy {secrets.token_hex(4)}", (alternative_category,)),
+    )
+    ledger_lines_check: LedgerLinesCheck = LedgerLinesCheck(create_check_name(), create_check_description(), 1.0, None)
+    workflow_outcome: WorkflowOutcome = create_workflow_outcome([create_line_outcome(ledger_entry, category=alternative_category)])
+    expected_reason_phrases: list[str] = ["0 lines differ."]
+    expected_cause_phrases: list[str] = []
+
+    actual_check_grade: CheckGrade = grade_ledger_lines_check(ledger_lines_check, ReferenceLedger((ledger_entry,), {}), workflow_outcome)
+
+    assert_check_grade("An accepted alternative category", actual_check_grade, CheckStatus.PASSED, expected_reason_phrases, expected_cause_phrases)
+
+
 def test_JudgeCheck_WhenTheJudgeRejectsTheFindings_ThenFailsQuotingTheJudge() -> None:
     judge_reason: str = f"Finding two contradicts the table {secrets.token_hex(4)}"
-    judge_check: JudgeCheck = JudgeCheck("judge-check", "Three findings.", 0.8, None, rubric_text=secrets.token_hex(8))
+    judge_check: JudgeCheck = JudgeCheck(create_check_name(), create_check_description(), 0.8, None, rubric_text=secrets.token_hex(8))
     expected_reason_phrases: list[str] = [f"The judge said: {judge_reason}"]
     expected_cause_phrases: list[str] = []
 
@@ -500,7 +631,7 @@ def test_WorkflowOutcome_WhenProjectedFromAResult_ThenUsesInputFileLineNumbersRe
     second_finding_text: str = f"finding {secrets.token_hex(4)}"
     third_finding_text: str = f"finding {secrets.token_hex(4)}"
     input_line_offset: int = first_expense_line_number - 1
-    parsed_expense_line: ParsedExpenseLine = ParsedExpenseLine(1, source_text, date(2026, 7, 13), "Target", amount, ())
+    parsed_expense_line: ParsedExpenseLine = ParsedExpenseLine(1, source_text, date(2026, 7, 13), f"Merchant {secrets.token_hex(4)}", amount, ())
     expense_categorization: ExpenseCategorization = ExpenseCategorization(
         1, source_text, ExpenseCategory.OTHER, ExpenseCategory.SHOPPING, policy_note, 0.9, ()
     )

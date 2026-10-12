@@ -1,9 +1,0 @@
-{
-  "duration_seconds": 0.13506709999637678,
-  "jev_request_count": 9,
-  "llm_step_events": [
-    "progress: Extracting uncertain expense lines",
-    "complete: No uncertain expense lines required extraction"
-  ],
-  "workflow_completed": false
-}

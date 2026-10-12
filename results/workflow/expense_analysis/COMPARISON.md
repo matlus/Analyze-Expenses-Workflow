@@ -1,78 +1,81 @@
-# Workflow eval: consistency across models, efforts and sweeps (2026-10-12)
+# Expense analysis: code-controlled workflow vs. prompt-controlled model
 
-The code-controlled workflow was run in two full sweeps over the same 7 configurations: two coding assistant subscriptions
-(Claude Code for Anthropic, Codex for OpenAI), five models, and two reasoning efforts. Each configuration ran 5 isolated
-times per sweep on the Part Three case (`june_august_2026`), so the two sweeps made 70 workflow runs in all. Jev
-(`jev-1.13`) categorizes every line, and the LLM steps use the configuration's model. 14 of the 16 Part Three checks are
-graded. Facts are read from the workflow's structured result, and only "three supported findings" uses a judge (Sonnet at
-low effort). This repo's reference ledger accepts the workflow's merchant-only mixed retailer policy (see
-`expense_reference_key.md`). GitHub Copilot is a supported subscription, but it is tested on another machine and is not
-part of these sweeps.
+## The task
 
-## Result
+The input is a personal expense log for June to August 2026 (198 lines, inconsistent formats, no categories) and a note
+with two monthly budget targets. A correct answer categorizes every line, leaves bank transfers and ATM withdrawals
+uncategorized, handles one refund and one duplicate, totals each category by month, compares the two budgets, finds the
+largest increase, and gives exactly three findings supported by the numbers.
 
-Every configuration passed its gate in both sweeps. 69 of the 70 runs completed, and **all 69 produced the same report,
-byte for byte** (`answer.md`, MD5 `49e4e9b95040dd9903d150e2daa08e33`). Every one of those 69 runs passed all 14 checks,
-including the judged findings check. The one run that did not complete crashed in a Jev call before any LLM step ran. It
-is described below.
+## The two approaches
 
-| LLM steps | model | effort | sweep 1 gate | sweep 1 checks | sweep 2 gate | sweep 2 checks | answer time, median (sweep 1 / 2) | total time, median (sweep 1 / 2) |
-|---|---|---|---|---|---|---|---|---|
-| Claude Code (Anthropic) | Opus 5.5 | medium | passed | 14 at 5/5 | passed | 14 at 5/5 | 10s / 9.9s | 15s / 14s |
-| Claude Code (Anthropic) | Sonnet 5.5 | medium | passed | 14 at 5/5 | passed | 14 at 5/5 | 9.7s / 9.5s | 14s / 13s |
-| Claude Code (Anthropic) | Haiku 5.5 | medium | passed | 14 at 5/5 | passed | 14 at 5/5 | 8.7s / 9.7s | 13s / 14s |
-| Claude Code (Anthropic) | Haiku 5.5 | low | passed | 14 at 5/5 | passed | 14 at 5/5 | 9.2s / 9.6s | 14s / 14s |
-| Codex (OpenAI) | GPT-6.1 Sol | medium | passed | 14 at 5/5 | passed | 14 at 5/5 | 16s / 16s | 21s / 20s |
-| Codex (OpenAI) | GPT-6 Luna | medium | passed | 14 at 5/5 | passed | 14 at 5/5 | 9.1s / 8.7s | 13s / 13s |
-| Codex (OpenAI) | GPT-6 Luna | low | passed | 14 at 5/5 | passed | 14 at 4/5, run 1 errored | 8.3s / 8.4s | 12s / 12s |
+**Prompt-controlled.** A coding assistant (Claude Code or Codex) gets the files and a detailed prompt, then decides how to
+do every step, runs its own Python code, and writes the report. These results use the stricter of the two prompts in the
+Skills and Evals workspace (`robust_tables_first.md`), which spells out each step, says not to force transfers into a
+category, and asks for exactly three findings checked against the tables.
 
-An errored run counts as not passed. 4/5 is 80%, which is the minimum for every check, so the gate still passes.
+**Code-controlled workflow.** A program runs fixed steps in a fixed order, and code checks each step's output before the
+next step uses it. Code reads the lines and does all the arithmetic. Jev, a System 1 model (it answers a multiple-choice
+question at once, without reasoning step by step first), puts each line in a category from a fixed list. A large language
+model (LLM) returns the IDs of three findings from a list of sentences that code wrote. Code requires certain findings and
+rejects any answer that leaves one out; in this case it required three, so code decided all three. Code writes the report.
 
-## What is consistent
+## How it was tested
 
-- **The report.** Every completed run, across both model families, five models, two efforts and two sweeps, produced the
-  identical report. That includes the line categories, monthly totals, budget comparisons, month-to-month changes and the
-  three findings. The choice of model does not change the answer.
-- **The work done.** Every completed run made exactly 198 Jev requests, one per line. No line needed LLM extraction, so the
-  only LLM call per run was choosing the three findings, and every model chose the same three:
-  1. August Dining & Coffee was $398.69 against a $260.00 target, $138.69 over.
-  2. Travel rose by $1,631.82 from July to August.
-  3. Shopping was below its target in all three months, with a stated caveat that merchant-only mixed retailer charges
-     are counted in Other.
-- **The judge.** The judge passed the findings in 69 of 69 runs. The previous runs (2026-10-11) had two judge rejections
-  on this same report. Both traced to the Shopping policy, which the reference now accepts.
+Both approaches were graded by an eval: the same task run many times, each answer checked against a hand-checked
+reference key. Each run is graded on the same checks, such as "July shopping is $756.72" and "all eight transfers are left
+uncategorized". The prompt must pass each check in 80% of runs; the workflow must pass in 100%, because code decides every
+step that has one right answer. Each of the workflow's seven configurations (a model plus a reasoning effort) ran 10
+times; the prompt results have 4 or 5 runs per model. The workflow also has a check the prompt
+eval cannot make, because its output shows every line: all 198 lines compared with the reference key. That check was
+added after these runs, and all 70 pass it when graded from their saved results. [What an eval is](../../../docs/articles/what-an-eval-is.md)
+explains the checks and how they are graded.
 
-## What varied
+## Results
 
-- **One run crashed.** Run 1 of sweep 2's GPT-6 Luna low (`…123833Z…`) failed after 9 Jev requests, in 0.1 seconds. No LLM
-  step had started, so the model is not the cause. A short Jev/OpenRouter error is the likely cause, but it cannot be
-  confirmed. The recorded failure is only `ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)`, because
-  `TransactionCategorizationProcessor` runs categorizations in an `asyncio.TaskGroup`, and the eval's failure description
-  follows `__cause__`/`__context__` but not the group's sub-exceptions. The underlying error was not recorded.
-- **Speed.** The answer took 8 to 10 seconds for six of the seven configurations. GPT-6.1 Sol through Codex was slower,
-  at about 16s. Grading took about 4 seconds everywhere. Two single runs were outliers: 1m 08s (GPT-6 Luna low, sweep 1)
-  and 40s (GPT-6 Luna medium, sweep 2). Both made the normal 198 Jev requests and produced the same report, so the delay
-  was latency, not extra work.
+A run is fully correct when every check was right.
 
-## Comparison with the prompt-based eval
+| Model (effort) | Prompt: fully correct runs | Prompt: checks wrong at least once | Workflow: fully correct runs |
+|---|---|---|---|
+| Claude Opus 5.5 (medium) | 6 of 8 | 1 (findings) | 10 of 10 |
+| Claude Sonnet 5.5 (medium) | 4 of 5 | 2 (a flight left out) | 10 of 10 |
+| Claude Haiku 5.5 (medium) | 1 of 5 | 5 | 10 of 10 |
+| GPT-6.1 Sol (medium) | 4 of 4 | 0 | 10 of 10 |
+| GPT-6 Luna (medium) | 0 of 5 | 7 | 10 of 10 |
+| Claude Haiku 5.5 (low) | not run | | 10 of 10 |
+| GPT-6 Luna (low) | not run | | 10 of 10 |
 
-Part Three in Skills and Evals grades the same checks against model-controlled orchestration. There, Opus 5.5, GPT-6.1
-Sol and GPT-6 Astra passed every check 5/5, Sonnet 5.5 passed with two checks at 4/5, and Haiku 5.5 and GPT-6 Luna failed.
-In this workflow, the smallest models and the lowest efforts produce the same answer as the largest ones, because code
-controls every computation and the LLM only chooses among code-computed findings. Note that Part Three's ledger does not
-accept the mixed retailer policy, so the two evals do not grade `shopping-july-total` the same way.
+All 70 workflow runs produced the same report, character for character. A typical run took 8 to 16 seconds.
 
-## Run folders
+## Findings
 
-| configuration | sweep 1 | sweep 2 |
-|---|---|---|
-| Claude Code Opus 5.5 medium | `20261012T121809Z-claude_code-claude-opus-5-5-medium-99eae3` | `20261012T122958Z-claude_code-claude-opus-5-5-medium-48b91a` |
-| Claude Code Sonnet 5.5 medium | `20261012T121930Z-claude_code-claude-sonnet-5-5-medium-09254c` | `20261012T123121Z-claude_code-claude-sonnet-5-5-medium-bf5cf5` |
-| Claude Code Haiku 5.5 medium | `20261012T122052Z-claude_code-claude-haiku-5-5-medium-32f656` | `20261012T123235Z-claude_code-claude-haiku-5-5-medium-7dfb06` |
-| Claude Code Haiku 5.5 low | `20261012T122204Z-claude_code-claude-haiku-5-5-low-57b07c` | `20261012T123402Z-claude_code-claude-haiku-5-5-low-b59980` |
-| Codex GPT-6.1 Sol medium | `20261012T122320Z-gpt_codex-gpt-6.1-sol-medium-f99773` | `20261012T123513Z-gpt_codex-gpt-6.1-sol-medium-d899df` |
-| Codex GPT-6 Luna medium | `20261012T122507Z-gpt_codex-gpt-6-luna-medium-f1b475` | `20261012T123652Z-gpt_codex-gpt-6-luna-medium-d59bc4` |
-| Codex GPT-6 Luna low | `20261012T122618Z-gpt_codex-gpt-6-luna-low-270b8c` | `20261012T123833Z-gpt_codex-gpt-6-luna-low-0fb069` |
+**The workflow's answer did not depend on the model.** The smallest model at the lowest effort gave the same report as the
+largest, because the model never touches the totals.
 
-`scorecard_comparison.md` is generated by `evals/workflow/compare_scorecards.py` and shows only the newest run of each
-configuration, which here is sweep 2. This file covers both sweeps and is written by hand.
+**The prompt's failures were ordinary mistakes that changed from run to run:** purchases left out (three IKEA charges, a
+Delta flight), wrong categories (pharmacy as Shopping, bowling as Dining), transfers forced into spending categories,
+categories merged ("Transport / travel"), and findings that broke the rules (more than three, or one contradicting the
+run's own table).
+
+**An instruction is not assurance.** The stricter prompt asked for every one of those things explicitly, and models still
+did otherwise. A better prompt raises the odds of a correct answer; it cannot guarantee one.
+
+**Verified, not trusted.** A single good run from Sonnet or Opus would have looked trustworthy. Only repeated, graded runs
+showed the failures. The workflow is verified twice: while it runs, code checks every model output before using it, and
+afterward the eval grades the whole answer against the reference key. The prompt-controlled approach has only the second
+check, after the answer is already written.
+
+**When the steps are known and the stakes are high, use a fixed workflow.** Give code the parts that have one right answer,
+give the model only the choices that need judgment, and keep an eval on both.
+
+## Limits
+
+The prompt results come from 4 or 5 runs per model. The two reference keys differ in one place: this workflow's key
+accepts merchant-only Amazon and Target charges as either Shopping or Other, and the prompt's key does not, which can
+affect the July shopping check.
+
+## Details
+
+[scorecard_comparison.md](scorecard_comparison.md) has the workflow's per-configuration table. Each run folder holds the
+report (`answer.md`), the grades (`grade.json`) and the structured result (`outcome.json`). The prompt results are in the
+Skills and Evals repository under `results/pwi/expense_analysis`.

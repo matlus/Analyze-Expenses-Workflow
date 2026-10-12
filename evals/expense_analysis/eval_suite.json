@@ -1,6 +1,6 @@
 {
   "eval_suite_name": "expense-analysis-workflow",
-  "source": "The Part Three prompt eval (github.com/matlus/Skills-and-Evals, evals/expense_analysis), with the same case files copied unchanged. Every one of its 16 checks is listed here under the same name and minimum pass rate: graded from the workflow's structured result where code can read the fact, by a judge where it is a judgment call, or marked not applicable with the reason.",
+  "source": "The Part Three prompt eval (github.com/matlus/Skills-and-Evals, evals/expense_analysis), with the same case files copied unchanged. Every one of its 16 checks is listed here under the same name, followed by one check the prompt eval cannot make: graded from the workflow's structured result where code can read the fact, by a judge where it is a judgment call, or marked not applicable with the reason. The prompt eval requires each check to pass in 80% of runs because a model's answer varies; this workflow requires 100%, because its code decides each step and the same input should give the same answer every run.",
   "cases": [
     {
       "case_name": "june-august-2026",
@@ -42,21 +42,21 @@
       "check_name": "dining-june-total",
       "grader": "amount",
       "fact_name": "dining_june_total",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "June dining & coffee total is $212.74."
     },
     {
       "check_name": "dining-july-total",
       "grader": "amount",
       "fact_name": "dining_july_total",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "July dining & coffee total is $165.14."
     },
     {
       "check_name": "dining-august-total",
       "grader": "amount",
       "fact_name": "dining_august_total",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "August dining & coffee total is $398.69."
     },
     {
@@ -64,7 +64,7 @@
       "grader": "fact_value",
       "fact_name": "dining_august_budget_status",
       "fact_reader": { "reader": "budget_status", "category": "Dining and coffee", "period": "2026-08" },
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "August dining is reported as over the $260 target."
     },
     {
@@ -72,14 +72,14 @@
       "grader": "fact_value",
       "fact_name": "refund_treatment",
       "fact_reader": { "reader": "refund_treatment", "line_number": 108 },
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "The -$68.00 REI refund reduces spending instead of adding to it."
     },
     {
       "check_name": "shopping-july-total",
       "grader": "amount",
       "fact_name": "shopping_july_total",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "July shopping is $756.72, which is only true when the refund is netted."
     },
     {
@@ -87,7 +87,7 @@
       "grader": "fact_value",
       "fact_name": "duplicate_flagged",
       "fact_reader": { "reader": "duplicate_excluded", "line_number": 112 },
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "The repeated Trader Joe's $54.12 entry on July 22 is excluded as a duplicate.",
       "adaptation": "The workflow does not guess duplicates: the caller confirms the line (as the case does), and the reconciliation step excludes it only if it repeats the preceding source line. This check verifies that contract, not a model's judgment."
     },
@@ -96,14 +96,14 @@
       "grader": "fact_value",
       "fact_name": "both_delta_charges_kept",
       "fact_reader": { "reader": "lines_counted", "line_numbers": [167, 168] },
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "Both Delta charges ($412.60 and $450.60) are counted; neither is mistaken for a duplicate."
     },
     {
       "check_name": "travel-august-total",
       "grader": "amount",
       "fact_name": "travel_august_total",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "August travel is $1,655.92 (or $1,631.82 if the 8/16 Uber stays in transport)."
     },
     {
@@ -111,7 +111,7 @@
       "grader": "fact_value",
       "fact_name": "uncategorized_entry_count",
       "fact_reader": { "reader": "uncategorized_count" },
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "All eight transfers and ATM withdrawals are left uncategorized."
     },
     {
@@ -119,13 +119,13 @@
       "grader": "fact_value",
       "fact_name": "largest_july_to_august_increase_category",
       "fact_reader": { "reader": "largest_increase", "from_period": "2026-07", "to_period": "2026-08" },
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "Travel is identified as the largest July-to-August increase."
     },
     {
       "check_name": "code-executed",
       "grader": "not_applicable",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "Totals were computed by running Python, not by mental arithmetic (read from the tool-call log).",
       "not_applicable_reason": "Python computes every total by construction (ExpenseCalculationProcessor); no model session runs tools whose log could be inspected."
     },
@@ -133,14 +133,14 @@
       "check_name": "ambiguous-entries-not-forced",
       "grader": "ledger_category",
       "reference_category": "Uncategorized",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "Transfers and ATM withdrawals are not forced into a spending category.",
       "adaptation": "The prompt eval needed a judge to read this from prose. The workflow reports each line's category and treatment, so code checks that every entry the reference leaves uncategorized is kept, uncategorized, as an unresolved outflow."
     },
     {
       "check_name": "tables-before-interpretation",
       "grader": "not_applicable",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "Computed tables appear before the interpretation.",
       "not_applicable_reason": "The report layout is fixed code (ComposerExpenseAnalysisReport renders every table before the findings); no model decides the order."
     },
@@ -148,16 +148,23 @@
       "check_name": "three-supported-findings",
       "grader": "judge",
       "rubric_file": "grading/rubrics/three_supported_findings.md",
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "Exactly three findings, each supported by the numbers."
     },
     {
       "check_name": "no-invented-budgets",
       "grader": "budget_targets",
       "budget_targets": { "Dining and coffee": "260.00", "Shopping": "1200.00" },
-      "minimum_pass_rate": 0.8,
+      "minimum_pass_rate": 1.0,
       "description": "Only the two stated budget targets are used.",
       "adaptation": "The workflow reads its two targets from configuration, which the case sets from budget_notes.txt; code checks that the budget comparisons use exactly those targets and no other category."
+    },
+    {
+      "check_name": "every-line-matches-reference",
+      "grader": "ledger_lines",
+      "minimum_pass_rate": 1.0,
+      "description": "Every line is read and categorized as the reference key reads it: its amount with its sign, its month, its category, and whether it is counted.",
+      "adaptation": "Not in the prompt eval: its written answer shows totals, not each line. The workflow reports every line it read, so code compares all of them with the reference ledger, accepting any alternative category the key allows."
     }
   ]
 }

@@ -61,7 +61,7 @@
   },
   "three-supported-findings": {
     "check_status": "passed",
-    "reason": "Exactly three findings, each supported by the numbers. The judge said: The answer gives exactly three findings. Dining was over budget in August only ($398.69 vs $260). Travel rose $0 to $1,631.82 (Uber counted as transport, which matches the reference). Shopping, with mixed retailers in Other, was under target every month ($572.48, $526.62, $712.98). All three agree with the answer's own tables and with the reference facts.",
+    "reason": "Exactly three findings, each supported by the numbers. The judge said: The answer gives exactly three findings: dining over budget in August only ($398.69 vs $260), Travel rising $0 to $1,631.82 (matches the Uber-as-transport variant), and Shopping under target in all three months (matches the Amazon/Target/Costco-in-Other policy). All numbers agree with its own tables and the reference facts.",
     "causes": []
   },
   "no-invented-budgets": {

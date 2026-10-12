@@ -1,5 +1,5 @@
 {
-  "duration_seconds": 8.489430200017523,
+  "duration_seconds": 9.550934900005814,
   "jev_request_count": 198,
   "llm_step_events": [
     "progress: Extracting uncertain expense lines",
