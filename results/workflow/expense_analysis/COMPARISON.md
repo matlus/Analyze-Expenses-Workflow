@@ -14,17 +14,39 @@ do every step, runs its own Python code, and writes the report. These results us
 Skills and Evals workspace (`robust_tables_first.md`), which spells out each step, says not to force transfers into a
 category, and asks for exactly three findings checked against the tables.
 
-**Code-controlled workflow.** A program runs a fixed sequence of steps. Code reads the lines, does all the arithmetic and
-lays out the report. Jev, a model service that answers multiple-choice questions, picks each line's category from a fixed
-list. A general model (an LLM) only chooses three findings from a list that code computed. It would also read any line
-that code cannot, but no line in this log needed that.
+**Code-controlled workflow.** A program runs fixed steps in a fixed order, and code checks each step's output before the
+next step uses it. Two kinds of model take part. Jev is a System 1 model: it answers a multiple-choice question at once,
+without first reasoning step by step as reasoning models do, and gives a probability for each choice. A large language
+model (LLM) is used only where Jev and code cannot do the job.
+
+1. Code reads each line's date, description and amount. If code cannot read a line, Jev tries; if Jev is not confident,
+   the LLM reads it, and code confirms the date and amount it returns appear in the line's own text. In this log, code
+   read every line itself.
+2. Jev puts each line in one category from a fixed list. Code rejects any category not on the list, then applies written
+   rules: transfers and ATM withdrawals stay uncategorized, and known merchants get their known category.
+3. Code removes the confirmed duplicate, subtracts the refund, and computes every total, budget comparison and change. It
+   stops if the totals do not add up.
+4. Code writes a list of candidate findings, each a complete sentence with its numbers, such as "August Dining & Coffee
+   was $398.69 against a $260.00 target". The LLM picks the three most important by their IDs. It writes no text and
+   computes no numbers. Code checks that the three picks are different and on the list, and asks again if they are not.
+5. Code lays out the report from these results, using the candidates' own sentences.
 
 ## How the eval works
 
 An eval runs the same task many times and grades each answer against a reference key: a hand-checked answer for every line
-and total. Each run starts fresh. There are 16 checks, such as "July shopping is $756.72". A second model, the judge,
-grades the three findings against a written rubric. Two checks apply only to a model writing its own answer (it ran
-Python; tables come first), so the workflow is graded on 14.
+and total. Each run starts fresh. The eval grades 16 checks:
+
+- **Totals (5):** Dining & Coffee in June, July and August; Shopping in July; Travel in August.
+- **Handling (5):** the refund is subtracted; the duplicate is flagged; both Delta flight charges are kept; all eight
+  transfers and ATM withdrawals are left uncategorized; none is forced into a spending category.
+- **Conclusions (4):** August Dining & Coffee is over budget; Travel had the largest increase; only the two stated budgets
+  are used; there are exactly three findings, each supported by the numbers.
+- **Method (2):** Python did the arithmetic; the tables come before the interpretation.
+
+In the workflow eval, code grades each check from the workflow's structured result, except the findings, which a second
+model (the judge) grades against a written rubric. The prompt eval has to read the same facts out of a written answer, and
+uses the judge for four checks. The two method checks apply only to a model writing its own answer; in the workflow, code
+does both every time, so the workflow is graded on the other 14.
 
 A check passes when it is right in enough runs: 80% for the prompt, because a model's answer varies, and 100% for the
 workflow, because code decides every step that has one right answer.
@@ -62,7 +84,9 @@ run's own table).
 did otherwise. A better prompt raises the odds of a correct answer; it cannot guarantee one.
 
 **Verified, not trusted.** A single good run from Sonnet or Opus would have looked trustworthy. Only repeated, graded runs
-showed the failures. In the workflow, tests verify the code that does the work, and the eval checks every run.
+showed the failures. The workflow is verified twice: while it runs, code checks every model output before using it, and
+afterward the eval grades the whole answer against the reference key. The prompt-controlled approach has only the second
+check, after the answer is already written.
 
 **When the steps are known and the stakes are high, use a fixed workflow.** Give code the parts that have one right answer,
 give the model only the choices that need judgment, and keep an eval on both.
