@@ -6,6 +6,10 @@ Teaching article: [Verified, Not Trusted: Expense Analysis, Part Two](https://ma
 walks through the Python controller, Jev decisions, LLM extraction fallback,
 source reconciliation, decimal calculations, and verified finding selection.
 
+Eval article: [Verified, Not Trusted: Expense Analysis, Part Four](https://matlus.com/writing/verified-not-trusted-expense-analysis-part-four/)
+explains reference keys, code graders, model judges and pass-rate gates through
+this workflow's expense-analysis results.
+
 This Python workspace analyzes a list of expense lines through the asynchronous
 `DomainFacade.analyze_expenses(list[str])` entry point. Its frozen result contains
 the transaction ledger, Jev category decisions, monthly totals, budget
