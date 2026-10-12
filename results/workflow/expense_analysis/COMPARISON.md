@@ -62,9 +62,7 @@ run's own table).
 did otherwise. A better prompt raises the odds of a correct answer; it cannot guarantee one.
 
 **Verified, not trusted.** A single good run from Sonnet or Opus would have looked trustworthy. Only repeated, graded runs
-showed the failures. In the workflow, tests verify the code that does the work, and the eval checks every run. It even
-caught an infrastructure fault: in one round of GPT-6 Luna (low), a run failed in a Jev request before any model ran,
-most likely a temporary connection error. That round was run again, and the new round is shown here.
+showed the failures. In the workflow, tests verify the code that does the work, and the eval checks every run.
 
 **When the steps are known and the stakes are high, use a fixed workflow.** Give code the parts that have one right answer,
 give the model only the choices that need judgment, and keep an eval on both.
