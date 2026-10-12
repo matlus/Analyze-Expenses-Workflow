@@ -1,0 +1,11 @@
+{
+  "duration_seconds": 13.081393899978139,
+  "jev_request_count": 198,
+  "llm_step_events": [
+    "progress: Extracting uncertain expense lines",
+    "complete: No uncertain expense lines required extraction",
+    "progress: Selecting evidence-based expense findings",
+    "complete: Three expense findings selected"
+  ],
+  "workflow_completed": true
+}
