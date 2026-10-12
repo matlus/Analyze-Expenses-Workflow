@@ -322,3 +322,14 @@ def test_UserNameScrub_WhenAnArtifactNamesTheUserAccountFolder_ThenReplacesEvery
     actual_artifact_text: str = scrub_user_name(artifact_text, user_name)
 
     assert actual_artifact_text == expected_artifact_text
+
+
+def test_UserNameScrub_WhenAFailureDescriptionNamingAPathIsWrittenAsJson_ThenRemovesTheUserName() -> None:
+    user_name: str = f"user{secrets.token_hex(4)}"
+    # str() of an OSError shows the path with repr(), which doubles each backslash, and JSON doubles them again.
+    file_not_found_error: FileNotFoundError = FileNotFoundError(2, "No such file or directory", f"C:\\Users\\{user_name}\\AppData\\x.json")
+    artifact_text: str = json.dumps({"reason": f"the workflow did not complete: {file_not_found_error}"})
+
+    actual_artifact_text: str = scrub_user_name(artifact_text, user_name)
+
+    assert user_name not in actual_artifact_text, f"expected the user name to be removed; actual {actual_artifact_text!r}"

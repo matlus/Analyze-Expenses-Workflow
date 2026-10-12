@@ -20,6 +20,7 @@ from expense_analysis_workflow_eval import (
     LedgerBucket,
     LedgerEntry,
     ModelStep,
+    ModelStepSelection,
     NotApplicableCheck,
     ReferenceLedger,
     ServiceLocatorEval,
@@ -33,6 +34,7 @@ from expense_analysis_workflow_eval import (
     load_eval_suite,
     parse_setting_assignments,
     read_judge_verdict,
+    select_model_steps,
 )
 
 PART_THREE_CHECK_NAMES: tuple[str, ...] = (
@@ -77,9 +79,12 @@ def create_jev_settings() -> dict[str, str]:
 
 
 def create_setting_override_request(
-    subscription: CodingAssistantSubscription | None, model: str | None, reasoning_effort: str | None, extra_setting_value_by_name: dict[str, str]
+    coding_assistant_subscription: CodingAssistantSubscription,
+    model: str | None,
+    reasoning_effort: str | None,
+    extra_setting_value_by_name: dict[str, str],
 ) -> SettingOverrideRequest:
-    return SettingOverrideRequest({}, subscription, model, reasoning_effort, extra_setting_value_by_name)
+    return SettingOverrideRequest({}, ModelStepSelection(coding_assistant_subscription, model, reasoning_effort), extra_setting_value_by_name)
 
 
 def test_SettingOverrides_WhenSubscriptionModelAndEffortAreGiven_ThenEveryLlmStepResolvesToThem() -> None:
@@ -133,9 +138,7 @@ def test_SettingOverrides_WhenCaseSettingsAreGiven_ThenTheServiceLocatorConfigur
             "DINING_COFFEE_MONTHLY_BUDGET": str(expected_dining_budget),
             "SHOPPING_MONTHLY_BUDGET": str(expected_shopping_budget),
         },
-        subscription=CodingAssistantSubscription.GPT_CODEX,
-        model=None,
-        reasoning_effort=None,
+        model_step_selection=ModelStepSelection(CodingAssistantSubscription.GPT_CODEX, model=None, reasoning_effort=None),
         extra_setting_value_by_name=create_jev_settings(),
     )
     service_locator_eval: ServiceLocatorEval = ServiceLocatorEval(build_setting_overrides(setting_override_request))
@@ -149,12 +152,12 @@ def test_SettingOverrides_WhenCaseSettingsAreGiven_ThenTheServiceLocatorConfigur
     ) == (expected_dining_budget, expected_shopping_budget, True)
 
 
-def test_SettingOverrides_WhenAModelIsGivenWithoutASubscription_ThenRejectsIt() -> None:
+def test_ModelStepSelection_WhenAModelIsGivenWithoutASubscription_ThenRejectsIt() -> None:
     expected_error_phrase: str = "needs the subscription that selects their family"
-    setting_override_request: SettingOverrideRequest = create_setting_override_request(None, f"gpt-{secrets.token_hex(4)}", None, {})
+    model: str = f"gpt-{secrets.token_hex(4)}"
 
     with pytest.raises(SettingOverrideException, match=expected_error_phrase):
-        build_setting_overrides(setting_override_request)
+        select_model_steps(None, model, None)
 
 
 def test_SettingAssignments_WhenAValueContainsAnEqualsSign_ThenKeepsTheWholeValueAndTrimsSpaces() -> None:
@@ -215,7 +218,7 @@ def test_EvalSuite_WhenALedgerLineDiffersFromTheInput_ThenReportsTheBrokenRefere
     first_expense_line_number: int = 4
     eval_case: EvalCase = EvalCase("case", (input_line,), first_expense_line_number, (), {})
     ledger_entry: LedgerEntry = LedgerEntry(
-        first_expense_line_number, ledger_line, "2026-06", Decimal("10.00"), "Shopping", (), None, is_counted=True, note=None
+        first_expense_line_number, ledger_line, "2026-06", Decimal("10.00"), "Shopping", None, is_counted=True, note=None
     )
     expected_problems: list[str] = [f"reference ledger line {first_expense_line_number} reads {ledger_line!r}; the input has {input_line!r}"]
 

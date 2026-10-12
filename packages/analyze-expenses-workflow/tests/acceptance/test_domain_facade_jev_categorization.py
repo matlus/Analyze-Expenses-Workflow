@@ -1,6 +1,5 @@
 import os
 import secrets
-from typing import cast
 
 import pytest
 from acceptance_support.asserter_jev import (
@@ -78,12 +77,10 @@ async def test_analyze_expenses_WhenJevServiceRejectsTheCredential_ThenReportsTh
     }
 
     async with create_domain_facade(test_mediator_jev, override_by_environment_variable_name) as domain_facade:
-        with pytest.RaisesGroup(JevRequestRejectedException) as raised_exception_group:
+        with pytest.raises(JevRequestRejectedException) as raised_exception:
             await domain_facade.analyze_expenses([expected_expense_line])
 
-    actual_jev_request_rejected_exception: JevRequestRejectedException = cast(
-        "JevRequestRejectedException", raised_exception_group.value.exceptions[0]
-    )
+    actual_jev_request_rejected_exception: JevRequestRejectedException = raised_exception.value
     assert_jev_gateway_failure(actual_jev_request_rejected_exception, expected_jev_gateway_failure)
     assert_jev_requests(test_mediator_jev.captured_jev_requests, expected_jev_request_method, expected_jev_request_path, expected_expense_line)
 
@@ -119,10 +116,10 @@ async def test_analyze_expenses_WhenJevServiceFailsWithAServerError_ThenReportsT
     }
 
     async with create_domain_facade(test_mediator_jev, override_by_environment_variable_name) as domain_facade:
-        with pytest.RaisesGroup(JevRequestFailedException) as raised_exception_group:
+        with pytest.raises(JevRequestFailedException) as raised_exception:
             await domain_facade.analyze_expenses([expected_expense_line])
 
-    actual_jev_request_failed_exception: JevRequestFailedException = cast("JevRequestFailedException", raised_exception_group.value.exceptions[0])
+    actual_jev_request_failed_exception: JevRequestFailedException = raised_exception.value
     assert_jev_gateway_failure(actual_jev_request_failed_exception, expected_jev_gateway_failure)
     assert_jev_requests(test_mediator_jev.captured_jev_requests, expected_jev_request_method, expected_jev_request_path, expected_expense_line)
 
@@ -153,7 +150,7 @@ async def test_close_WhenJevTransportCloseFailsOnce_ThenFacadeCanRetryCleanup() 
     }
     domain_facade: DomainFacade = create_domain_facade(test_mediator_jev, override_by_environment_variable_name)
 
-    with pytest.RaisesGroup(JevRequestRejectedException):
+    with pytest.raises(JevRequestRejectedException):
         await domain_facade.analyze_expenses([expected_expense_line])
 
     with pytest.raises(JevClientCleanupFailedException) as raised_exception:
@@ -193,7 +190,7 @@ async def test_close_WhenJevClientAndPendingTransportCloseFail_ThenFacadeRetries
     }
     domain_facade: DomainFacade = create_domain_facade(test_mediator_jev, override_by_environment_variable_name)
 
-    with pytest.RaisesGroup(JevRequestRejectedException):
+    with pytest.raises(JevRequestRejectedException):
         await domain_facade.analyze_expenses([expected_expense_line])
     with pytest.raises(JevClientCleanupFailedException):
         await domain_facade.close()

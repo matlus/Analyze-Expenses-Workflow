@@ -15,7 +15,6 @@ import pytest
 
 from analyze_expenses_workflow.domain_facades import DomainFacade, ExpenseAnalysisResult
 from analyze_expenses_workflow.managers.configuration_providers.configuration_provider import ConfigurationProvider
-from analyze_expenses_workflow.managers.configuration_providers.settings_models.coding_assistant_settings import CodingAssistantSubscription
 from expense_analysis_workflow_eval import (
     EVAL_SUITE_DIRECTORY,
     RESULTS_DIRECTORY,
@@ -58,6 +57,7 @@ from expense_analysis_workflow_eval import (
     report_progress,
     resolve_judge_settings,
     select_graded_checks,
+    select_model_steps,
     to_json_text,
     write_artifact,
 )
@@ -73,9 +73,11 @@ def test_ExpenseAnalysisWorkflow_WhenRunRepeatedlyInIsolation_ThenEveryGradedChe
     setting_value_by_name: dict[str, str] = build_setting_overrides(
         SettingOverrideRequest(
             case_setting_value_by_name=eval_suite.eval_case.setting_value_by_name,
-            subscription=CodingAssistantSubscription(subscription_value) if subscription_value is not None else None,
-            model=cast("str | None", pytestconfig.getoption("--workflow-model")),
-            reasoning_effort=cast("str | None", pytestconfig.getoption("--workflow-effort")),
+            model_step_selection=select_model_steps(
+                subscription_value,
+                cast("str | None", pytestconfig.getoption("--workflow-model")),
+                cast("str | None", pytestconfig.getoption("--workflow-effort")),
+            ),
             extra_setting_value_by_name=parse_setting_assignments(cast("list[str]", pytestconfig.getoption("--workflow-setting"))),
         )
     )
@@ -84,6 +86,7 @@ def test_ExpenseAnalysisWorkflow_WhenRunRepeatedlyInIsolation_ThenEveryGradedChe
         str(pytestconfig.getoption("--eval-judge-model")), str(pytestconfig.getoption("--eval-judge-effort"))
     )
     repetitions: int = int(str(pytestconfig.getoption("--eval-repetitions")))
+    input_line_offset: int = eval_suite.eval_case.first_expense_line_number - 1
     expense_lines: list[str] = list(eval_suite.eval_case.expense_lines)
     confirmed_duplicate_line_numbers: tuple[int, ...] = tuple(
         eval_suite.eval_case.to_workflow_line_number(line_number) for line_number in eval_suite.eval_case.confirmed_duplicate_line_numbers
@@ -130,7 +133,7 @@ def test_ExpenseAnalysisWorkflow_WhenRunRepeatedlyInIsolation_ThenEveryGradedChe
             case CompletedTrial():
                 answer: str = compose_answer(trial_attempt.expense_analysis_result)
                 workflow_outcome: WorkflowOutcome = project_workflow_outcome(
-                    trial_attempt.expense_analysis_result, eval_suite.eval_case, eval_suite.reference_category_by_workflow_category
+                    trial_attempt.expense_analysis_result, input_line_offset, eval_suite.reference_category_by_workflow_category
                 )
                 write_artifact(run_folder / "answer.md", answer)
                 write_artifact(run_folder / "outcome.json", to_json_text(asdict(workflow_outcome)))

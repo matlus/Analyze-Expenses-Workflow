@@ -1,0 +1,72 @@
+{
+  "dining-june-total": {
+    "check_status": "passed",
+    "reason": "June dining & coffee total is $212.74. Expected 212.74 (within 0.01); the workflow reported 212.74 for Dining and coffee 2026-06.",
+    "causes": []
+  },
+  "dining-july-total": {
+    "check_status": "passed",
+    "reason": "July dining & coffee total is $165.14. Expected 165.14 (within 0.01); the workflow reported 165.14 for Dining and coffee 2026-07.",
+    "causes": []
+  },
+  "dining-august-total": {
+    "check_status": "passed",
+    "reason": "August dining & coffee total is $398.69. Expected 398.69 (within 0.01); the workflow reported 398.69 for Dining and coffee 2026-08.",
+    "causes": []
+  },
+  "dining-august-over-budget": {
+    "check_status": "passed",
+    "reason": "August dining is reported as over the $260 target. Expected over (any case); the workflow's result gives over (Dining and coffee 2026-08: actual 398.69 against target 260.00).",
+    "causes": []
+  },
+  "refund-netted": {
+    "check_status": "passed",
+    "reason": "The -$68.00 REI refund reduces spending instead of adding to it. Expected netted_against_spending (any case); the workflow's result gives netted_against_spending (line 108 \"Return processed - REI (7/18/26) - -$68.00\": amount -68.00, included_spending in Shopping).",
+    "causes": []
+  },
+  "shopping-july-total": {
+    "check_status": "passed",
+    "reason": "July shopping is $756.72, which is only true when the refund is netted. Expected 756.72 or 526.62 (within 0.01); the workflow reported 526.62 for Shopping 2026-07.",
+    "causes": []
+  },
+  "duplicate-flagged": {
+    "check_status": "passed",
+    "reason": "The repeated Trader Joe's $54.12 entry on July 22 is excluded as a duplicate. Expected true (any case); the workflow's result gives true (line 112 \"Trader Joe's (Jul. 22) - $54.12\": amount 54.12, excluded_duplicate in Groceries).",
+    "causes": []
+  },
+  "both-delta-charges-kept": {
+    "check_status": "passed",
+    "reason": "Both Delta charges ($412.60 and $450.60) are counted; neither is mistaken for a duplicate. Expected true (any case); the workflow's result gives true (line 167 \"Delta Air Lines - $412.60 (Aug. 14)\": amount 412.60, included_spending in Travel; line 168 \"Delta Air Lines (8/14) - $450.60\": amount 450.60, included_spending in Travel).",
+    "causes": []
+  },
+  "travel-august-total": {
+    "check_status": "passed",
+    "reason": "August travel is $1,655.92 (or $1,631.82 if the 8/16 Uber stays in transport). Expected 1655.92 or 1631.82 (within 0.01); the workflow reported 1631.82 for Travel 2026-08.",
+    "causes": []
+  },
+  "uncategorized-entry-count": {
+    "check_status": "passed",
+    "reason": "All eight transfers and ATM withdrawals are left uncategorized. Expected 8 (any case); the workflow's result gives 8 (uncategorized lines [47, 51, 60, 91, 117, 125, 141, 161]).",
+    "causes": []
+  },
+  "largest-increase-is-travel": {
+    "check_status": "passed",
+    "reason": "Travel is identified as the largest July-to-August increase. Expected travel (any case); the workflow's result gives Travel (largest increases: Travel +1631.82, Other +299.91, Dining and coffee +233.55).",
+    "causes": []
+  },
+  "ambiguous-entries-not-forced": {
+    "check_status": "passed",
+    "reason": "Transfers and ATM withdrawals are not forced into a spending category. Expected exactly the reference's 8 Uncategorized lines [47, 51, 60, 91, 117, 125, 141, 161] in Uncategorized; 0 lines differ.",
+    "causes": []
+  },
+  "three-supported-findings": {
+    "check_status": "passed",
+    "reason": "Exactly three findings, each supported by the numbers. The judge said: The answer gives exactly three findings. Dining is over budget in August only, at $398.69 vs $260. Travel rises from $0 to $1,631.82, which matches the reference with the Uber counted as transport. Shopping is under target every month under the Other-policy for Amazon, Target and Costco, which matches the reference. All three agree with the answer's own tables.",
+    "causes": []
+  },
+  "no-invented-budgets": {
+    "check_status": "passed",
+    "reason": "Only the two stated budget targets are used. Expected targets ['Dining and coffee 260.00', 'Shopping 1200.00']; the workflow compared against ['Dining and coffee 260.00', 'Shopping 1200.00'] (invented [], missing []).",
+    "causes": []
+  }
+}

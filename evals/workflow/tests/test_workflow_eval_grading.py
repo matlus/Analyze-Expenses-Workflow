@@ -1,8 +1,12 @@
+import asyncio
 import secrets
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
+from analyze_expenses_workflow.domain_facades import JevRequestFailedException
 from analyze_expenses_workflow.models import (
     BudgetComparison,
     CalculationReconciliation,
@@ -29,7 +33,6 @@ from expense_analysis_workflow_eval import (
     CompletedJudgment,
     DuplicateExcludedReader,
     ErroredJudgment,
-    EvalCase,
     FactValueCheck,
     GradingReference,
     JudgeCheck,
@@ -37,6 +40,7 @@ from expense_analysis_workflow_eval import (
     LedgerBucket,
     LedgerCategoryCheck,
     LedgerEntry,
+    LineCategorization,
     LineOutcome,
     ReferenceLedger,
     RefundTreatmentReader,
@@ -75,8 +79,7 @@ def create_ledger_entry(line_number: int, category: str, amount: Decimal, *, per
         period=period,
         amount=amount,
         category=category,
-        alternative_categories=(),
-        policy_name=None,
+        accepted_policy=None,
         is_counted=is_counted,
         note=None if is_counted else "likely duplicate",
     )
@@ -91,10 +94,8 @@ def create_line_outcome(
         source_text=ledger_entry.source_text,
         amount=ledger_entry.amount,
         period=ledger_entry.period,
-        category=line_category,
         treatment=treatment,
-        model_category=ledger_entry.category,
-        policy_note=policy_note,
+        line_categorization=LineCategorization(category=line_category, model_category=ledger_entry.category, policy_note=policy_note),
     )
 
 
@@ -119,7 +120,7 @@ def create_workflow_outcome(
 
 
 def create_grading_reference(
-    ledger_entries: Sequence[LedgerEntry], expected_fact_values_by_fact_name: dict[str, tuple[str, ...]]
+    ledger_entries: Sequence[LedgerEntry], expected_fact_values_by_fact_name: Mapping[str, tuple[str, ...]]
 ) -> GradingReference:
     ledger_bucket_by_fact_name: dict[str, LedgerBucket] = {}
     return GradingReference(expected_fact_values_by_fact_name, ReferenceLedger(tuple(ledger_entries), ledger_bucket_by_fact_name), UNCATEGORIZED)
@@ -161,6 +162,29 @@ def assert_check_grade(
     if not expected_cause_phrases and actual_check_grade.causes:
         mismatches.append(f"Expected no traced cause, got {actual_cause_text!r}")
     assert not mismatches, f"{scenario}: the check grade has {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
+
+
+def assert_workflow_outcome(scenario: str, actual_workflow_outcome: WorkflowOutcome, expected_workflow_outcome: WorkflowOutcome) -> None:
+    compared_items_by_field_name: dict[str, tuple[Sequence[object], Sequence[object]]] = {
+        "line_outcomes": (expected_workflow_outcome.line_outcomes, actual_workflow_outcome.line_outcomes),
+        "bucket_totals": (expected_workflow_outcome.bucket_totals, actual_workflow_outcome.bucket_totals),
+        "budget_outcomes": (expected_workflow_outcome.budget_outcomes, actual_workflow_outcome.budget_outcomes),
+        "change_outcomes": (expected_workflow_outcome.change_outcomes, actual_workflow_outcome.change_outcomes),
+        "finding_texts": (expected_workflow_outcome.finding_texts, actual_workflow_outcome.finding_texts),
+    }
+    mismatches: list[str] = []
+    field_name: str
+    expected_items: Sequence[object]
+    actual_items: Sequence[object]
+    for field_name, (expected_items, actual_items) in compared_items_by_field_name.items():
+        if len(actual_items) != len(expected_items):
+            mismatches.append(f"Expected {len(expected_items)} {field_name}, got {len(actual_items)}: {actual_items!r}")
+        mismatches.extend(
+            f"{field_name} item {position}: expected {expected_item!r}, got {actual_item!r}"
+            for position, (expected_item, actual_item) in enumerate(zip(expected_items, actual_items, strict=False), start=1)
+            if actual_item != expected_item
+        )
+    assert not mismatches, f"{scenario}: the workflow outcome has {len(mismatches)} mismatches:\n" + "\n".join(mismatches)
 
 
 def test_AmountCheck_WhenWorkflowTotalMatchesAnAcceptedValue_ThenPassesWithoutCause() -> None:
@@ -395,7 +419,7 @@ def test_JudgeCheck_WhenTheJudgeSessionFailed_ThenErrorsInsteadOfFailing() -> No
     expected_reason_phrases: list[str] = [failure_description]
     expected_cause_phrases: list[str] = []
 
-    actual_check_grade: CheckGrade = grade_judge_check(judge_check, ErroredJudgment(failure_description))
+    actual_check_grade: CheckGrade = grade_judge_check(judge_check.description, ErroredJudgment(failure_description))
 
     assert_check_grade("A failed judge session", actual_check_grade, CheckStatus.ERRORED, expected_reason_phrases, expected_cause_phrases)
 
@@ -412,13 +436,52 @@ def test_DescribeWorkflowFailure_WhenAGatewayWrapsTheProviderError_ThenNamesEver
     assert actual_description == expected_description, f"expected {expected_description!r}; actual {actual_description!r}"
 
 
+async def test_DescribeWorkflowFailure_WhenATaskGroupCollectsAJevFailure_ThenNamesTheJevExceptionAndItsCause() -> None:
+    jev_request_message: str = f"Jev via OpenRouter categorization request failed {secrets.token_hex(4)}"
+    provider_message: str = f"provider unavailable {secrets.token_hex(4)}"
+
+    async def fail_jev_request() -> None:
+        raise JevRequestFailedException(jev_request_message, {"Operation": "categorization_request"}) from RuntimeError(provider_message)
+
+    with pytest.raises(ExceptionGroup) as raised_exception:
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(fail_jev_request())
+    workflow_failure: ExceptionGroup[Exception] = raised_exception.value
+    expected_description: str = (
+        "ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception); "
+        f"including JevRequestFailedException: {jev_request_message}; caused by RuntimeError: {provider_message}"
+    )
+
+    actual_description: str = describe_workflow_failure(workflow_failure)
+
+    assert actual_description == expected_description, f"expected {expected_description!r}; actual {actual_description!r}"
+
+
+def test_DescribeWorkflowFailure_WhenAnExceptionGroupCollectsSeveralFailures_ThenNamesEachFailureAndItsCause() -> None:
+    group_message: str = f"unhandled errors {secrets.token_hex(4)}"
+    first_message: str = f"first failure {secrets.token_hex(4)}"
+    provider_message: str = f"provider overloaded {secrets.token_hex(4)}"
+    second_message: str = f"second failure {secrets.token_hex(4)}"
+    first_failure: ValueError = ValueError(first_message)
+    first_failure.__cause__ = RuntimeError(provider_message)
+    workflow_failure: ExceptionGroup[Exception] = ExceptionGroup(group_message, [first_failure, TypeError(second_message)])
+    expected_description: str = (
+        f"ExceptionGroup: {group_message} (2 sub-exceptions); including ValueError: {first_message}; "
+        f"caused by RuntimeError: {provider_message}; including TypeError: {second_message}"
+    )
+
+    actual_description: str = describe_workflow_failure(workflow_failure)
+
+    assert actual_description == expected_description, f"expected {expected_description!r}; actual {actual_description!r}"
+
+
 def test_JudgeCheck_WhenTheJudgeRejectsTheFindings_ThenFailsQuotingTheJudge() -> None:
     judge_reason: str = f"Finding two contradicts the table {secrets.token_hex(4)}"
     judge_check: JudgeCheck = JudgeCheck("judge-check", "Three findings.", 0.8, None, rubric_text=secrets.token_hex(8))
     expected_reason_phrases: list[str] = [f"The judge said: {judge_reason}"]
     expected_cause_phrases: list[str] = []
 
-    actual_check_grade: CheckGrade = grade_judge_check(judge_check, CompletedJudgment(passed=False, reason=judge_reason))
+    actual_check_grade: CheckGrade = grade_judge_check(judge_check.description, CompletedJudgment(passed=False, reason=judge_reason))
 
     assert_check_grade("A rejected finding", actual_check_grade, CheckStatus.FAILED, expected_reason_phrases, expected_cause_phrases)
 
@@ -433,6 +496,10 @@ def test_WorkflowOutcome_WhenProjectedFromAResult_ThenUsesInputFileLineNumbersRe
     month: date = date(2026, 7, 1)
     previous_month: date = date(2026, 6, 1)
     target: Decimal = create_amount()
+    first_finding_text: str = f"finding {secrets.token_hex(4)}"
+    second_finding_text: str = f"finding {secrets.token_hex(4)}"
+    third_finding_text: str = f"finding {secrets.token_hex(4)}"
+    input_line_offset: int = first_expense_line_number - 1
     parsed_expense_line: ParsedExpenseLine = ParsedExpenseLine(1, source_text, date(2026, 7, 13), "Target", amount, ())
     expense_categorization: ExpenseCategorization = ExpenseCategorization(
         1, source_text, ExpenseCategory.OTHER, ExpenseCategory.SHOPPING, policy_note, 0.9, ()
@@ -448,10 +515,13 @@ def test_WorkflowOutcome_WhenProjectedFromAResult_ThenUsesInputFileLineNumbersRe
             month_category_deltas=(MonthCategoryDelta(previous_month, month, ExpenseCategory.OTHER, Decimal(0), amount, amount, (1,)),),
             reconciliation=CalculationReconciliation(1, (1,), (), (), (), amount, Decimal(0), amount, is_balanced=True),
         ),
-        findings=(ExpenseFinding("a", "first", (1,)), ExpenseFinding("b", "second", (1,)), ExpenseFinding("c", "third", (1,))),
+        findings=(
+            ExpenseFinding(secrets.token_hex(4), first_finding_text, (1,)),
+            ExpenseFinding(secrets.token_hex(4), second_finding_text, (1,)),
+            ExpenseFinding(secrets.token_hex(4), third_finding_text, (1,)),
+        ),
         method="",
     )
-    eval_case: EvalCase = EvalCase("case", (source_text,), first_expense_line_number, (), {})
     reference_category_by_workflow_category: dict[ExpenseCategory, str] = {
         ExpenseCategory.OTHER: other_category_name,
         ExpenseCategory.SHOPPING: shopping_category_name,
@@ -459,15 +529,22 @@ def test_WorkflowOutcome_WhenProjectedFromAResult_ThenUsesInputFileLineNumbersRe
     expected_workflow_outcome: WorkflowOutcome = WorkflowOutcome(
         line_outcomes=(
             LineOutcome(
-                first_expense_line_number, source_text, amount, PERIOD, other_category_name, INCLUDED_SPENDING, shopping_category_name, policy_note
+                first_expense_line_number,
+                source_text,
+                amount,
+                PERIOD,
+                INCLUDED_SPENDING,
+                LineCategorization(other_category_name, shopping_category_name, policy_note),
             ),
         ),
         bucket_totals=(BucketTotal(other_category_name, PERIOD, amount, (first_expense_line_number,)),),
         budget_outcomes=(BudgetOutcome(shopping_category_name, PERIOD, target, Decimal(0)),),
         change_outcomes=(ChangeOutcome(other_category_name, f"{previous_month:%Y-%m}", PERIOD, amount),),
-        finding_texts=("first", "second", "third"),
+        finding_texts=(first_finding_text, second_finding_text, third_finding_text),
     )
 
-    actual_workflow_outcome: WorkflowOutcome = project_workflow_outcome(expense_analysis_result, eval_case, reference_category_by_workflow_category)
+    actual_workflow_outcome: WorkflowOutcome = project_workflow_outcome(
+        expense_analysis_result, input_line_offset, reference_category_by_workflow_category
+    )
 
-    assert actual_workflow_outcome == expected_workflow_outcome
+    assert_workflow_outcome("A categorized line under a policy", actual_workflow_outcome, expected_workflow_outcome)
