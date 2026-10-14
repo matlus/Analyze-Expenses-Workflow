@@ -53,6 +53,18 @@ are read only under their family-qualified names, such as
 `EXPENSE_LINE_EXTRACTION_OPENAI_MODEL`; the unqualified `EXPENSE_LINE_EXTRACTION_MODEL`
 form is no longer read.
 
+`JEV_MODEL` selects the System One model. Besides Jev (`jev-1.13`, the default),
+it accepts `microsoft/microsoft-decision-1` and `openai/gpt-6-luna-decisions`,
+which OpenRouter serves through the same System One endpoint with the same
+request and response shape, so no code change is needed to switch. Settings,
+errors and log events still use the Jev name whichever model is configured.
+
+Both alternatives run the whole workflow, but on 14 October 2026 neither matched
+the reference ledger line for line. Microsoft-Decision-1 put date-first BP Gas
+lines in Utilities, inconsistently between runs. GPT-6 Luna Decisions put 24 of
+198 lines in Other, applying the "merchant-only" instruction to any bare merchant
+name. Both keep every reported total correct; only the line-by-line check fails.
+
 From the workspace root:
 
 ```powershell
