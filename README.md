@@ -53,17 +53,32 @@ are read only under their family-qualified names, such as
 `EXPENSE_LINE_EXTRACTION_OPENAI_MODEL`; the unqualified `EXPENSE_LINE_EXTRACTION_MODEL`
 form is no longer read.
 
-`JEV_MODEL` selects the System One model. Besides Jev (`jev-1.13`, the default),
-it accepts `microsoft/microsoft-decision-1` and `openai/gpt-6-luna-decisions`,
-which OpenRouter serves through the same System One endpoint with the same
-request and response shape, so no code change is needed to switch. Settings,
+### Choosing the System One model
+
+The categorization and line-extraction steps use one System One model, chosen by `JEV_MODEL` in `.env`. All three models
+below go through OpenRouter with the same key and endpoint, so switching is one line and no code change. Settings,
 errors and log events still use the Jev name whichever model is configured.
 
-Both alternatives run the whole workflow, but on 14 October 2026 neither matched
-the reference ledger line for line. Microsoft-Decision-1 put date-first BP Gas
-lines in Utilities, inconsistently between runs. GPT-6 Luna Decisions put 24 of
-198 lines in Other, applying the "merchant-only" instruction to any bare merchant
-name. Both keep every reported total correct; only the line-by-line check fails.
+Every model needs the same two settings:
+
+```dotenv
+OPEN_ROUTER_KEY=<your OpenRouter API key>
+OPEN_ROUTER_BASE_URL=https://openrouter.ai/api
+```
+
+Then set `JEV_MODEL` to one of these values:
+
+| Model | `JEV_MODEL` value | How it did on 14 October 2026 |
+|---|---|---|
+| TypeSafe Jev (default) | `jev-1.13` | Passes every eval check. |
+| Microsoft-Decision-1 | `microsoft/microsoft-decision-1` | Totals correct; fails the line-by-line check. It put date-first BP Gas lines in Utilities, and not the same way every run. |
+| OpenAI GPT-6 Luna Decisions | `openai/gpt-6-luna-decisions` | Totals correct; fails the line-by-line check. It put 24 of 198 lines in Other, reading the "merchant-only" instruction as covering any bare merchant name. |
+
+To try a model for one eval run without editing `.env`, pass it as a setting:
+
+```powershell
+uv run --all-packages --all-groups pytest evals/workflow -s --eval-repetitions 1 --workflow-setting JEV_MODEL=openai/gpt-6-luna-decisions
+```
 
 From the workspace root:
 
