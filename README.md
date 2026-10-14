@@ -53,6 +53,12 @@ are read only under their family-qualified names, such as
 `EXPENSE_LINE_EXTRACTION_OPENAI_MODEL`; the unqualified `EXPENSE_LINE_EXTRACTION_MODEL`
 form is no longer read.
 
+`JEV_MODEL` selects the System One model. It also accepts
+`microsoft/microsoft-decision-1`, which OpenRouter serves through the same
+System One endpoint with the same request and response shape, so no code change
+is needed to switch. Settings, errors and log events still use the Jev name
+whichever model is configured.
+
 From the workspace root:
 
 ```powershell
