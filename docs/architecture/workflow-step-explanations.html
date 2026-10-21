@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2212%22%20height%3D%2228%22%20rx%3D%223%22%20fill%3D%22%23197487%22/%3E%3Cpath%20d%3D%22M14%208h12M14%2016h12M14%2024h12%22%20stroke%3D%22%23197487%22%20stroke-width%3D%222%22/%3E%3Ccircle%20cx%3D%2226%22%20cy%3D%228%22%20r%3D%223%22%20fill%3D%22%23AA7215%22/%3E%3Ccircle%20cx%3D%2226%22%20cy%3D%2216%22%20r%3D%223%22%20fill%3D%22%237351A5%22/%3E%3Ccircle%20cx%3D%2226%22%20cy%3D%2224%22%20r%3D%223%22%20fill%3D%22%23197487%22/%3E%3C/svg%3E">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Code controls the flow — Interactive expense workflow</title>
+<meta name="description" content="Explore a five-stage code-controlled expense workflow and its detailed explanations. Standalone offline companion.">
+<style>
+:root{--ink:#073f5c;--muted:#506578;--code:#197487;--code-bg:#ECF7F8;--jev:#AA7215;--jev-bg:#FFF6DF;--llm:#7351A5;--llm-bg:#F3EFFC;--line:#d6e0e6;--paper:#fff;--canvas:#f6f8fa}
+*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--ink);font:16px/1.6 'Segoe UI',system-ui,sans-serif}button,summary{font:inherit}button{cursor:pointer;color:inherit}button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #075e9a;outline-offset:4px}a{color:var(--code);text-underline-offset:3px}button{touch-action:manipulation}main{max-width:1640px;margin:auto;padding:28px 28px 70px}.eyebrow{font-size:11px;font-weight:750;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}header{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:20px}h1{font-size:clamp(28px,3vw,44px);line-height:1.1;letter-spacing:-.025em;margin:7px 0 10px}header p{margin:0;color:var(--muted)}.legend{display:flex;gap:16px;white-space:nowrap;font-size:13px}.legend span{display:flex;align-items:center;gap:6px}.dot{width:10px;height:10px;border-radius:50%;background:var(--tone)}.code{--tone:var(--code);--wash:var(--code-bg)}.jev{--tone:var(--jev);--wash:var(--jev-bg)}.llm{--tone:var(--llm);--wash:var(--llm-bg)}.toolbar{display:flex;justify-content:space-between;gap:16px;align-items:center;border-top:1px solid var(--line);padding:14px 0 18px}.hint{font-size:13px;color:var(--muted);margin:0}.tools{display:flex;gap:8px;flex-shrink:0}.control{border:1px solid var(--line);background:#fff;border-radius:7px;padding:9px 13px;min-height:44px;font-size:13px;font-weight:600}.control:hover{background:var(--code-bg)}.control[aria-pressed=true]{border-color:var(--code);background:var(--code-bg)}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 355px;gap:22px;align-items:start}.diagram-shell{min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px 18px 14px}.diagram-scroll{min-width:0;max-width:100%;overflow-x:auto;padding:5px}.scroll-hint{display:none;font-size:12px;color:var(--muted)}.diagram{display:grid;grid-template-columns:minmax(270px,1fr) minmax(125px,.48fr) minmax(245px,.9fr);grid-template-rows:repeat(6,minmax(89px,auto));position:relative;gap:8px 14px;padding-top:62px;min-width:710px}.controller-bg{position:absolute;inset:0 auto 0 0;width:calc((100% - 28px) / 2.38);background:var(--code-bg);border:2px solid #62b7c3;border-radius:7px}.controller-title{position:absolute;left:0;right:0;text-align:center;padding:13px 5px}.controller-title strong{font-size:17px;display:block;line-height:1.3}.controller-title span{font-size:11px;color:var(--code)}.target{position:relative;z-index:1;transition:box-shadow .14s,border-color .14s;background:var(--wash);border:1px solid transparent;text-align:left}.stage{grid-column:1;display:flex;gap:13px;align-items:flex-start;background:transparent;padding:16px 12px;border-radius:5px;margin:0 5px;line-height:1.35}.number{border-radius:50%;background:var(--code);color:#fff;min-width:32px;height:32px;display:grid;place-items:center;font-weight:750;font-size:18px;position:relative}.stage:not([data-stage="5"]) .number:after{content:'↓';position:absolute;top:45px;left:12px;color:var(--code);font-size:20px}.stage[data-stage="2"] .number:after{top:139px}.stage-copy{display:flex;flex-direction:column;gap:6px}.stage-copy strong{font-size:15px;font-weight:700}.stage-copy>span{font-size:12px}.stage-copy .conditional{color:var(--code);font-weight:650;margin-top:5px}.stage-copy .skip{font-style:italic;margin-top:22px}.stage-copy .policy{margin-top:7px}.worker{grid-column:3;padding:10px 14px;border:1.5px solid color-mix(in srgb,var(--tone) 65%,white);border-radius:7px;display:flex;flex-direction:column;justify-content:center;align-self:center;min-height:81px;line-height:1.35;gap:4px}.role-tag{color:var(--tone);font-size:10px;letter-spacing:.09em;font-weight:800}.worker strong{font-size:14px}.worker>span:last-child{font-size:12px;color:var(--muted)}.call{grid-column:2;background:transparent;padding:12px 0;display:flex;flex-direction:column;justify-content:center;gap:7px;align-self:center;min-height:65px;border-radius:5px;text-align:center}.call-label{font-size:11px;line-height:1.3;color:var(--muted)}.shaft{height:2px;width:100%;background:#62b7c3;position:relative}.shaft:after{content:'';position:absolute;right:0;top:-4px;border-left:8px solid #62b7c3;border-top:5px solid transparent;border-bottom:5px solid transparent}.target.active{box-shadow:0 0 0 2px var(--tone);border-color:var(--tone)}.stage.related{background:#d9eef0}.worker.related{box-shadow:0 0 0 1px var(--tone)}.call.related .shaft{background:var(--tone);height:3px}.call.related .shaft:after{border-left-color:var(--tone)}.call.active .call-label{color:var(--tone);font-weight:700}.diagram-foot{font-size:13px;font-weight:650;text-align:center;margin:16px 0 2px}.return-note{font-size:12px;color:var(--muted);text-align:center;margin:0 0 10px}.panel{background:#fff;border:1px solid var(--line);border-top:3px solid var(--code);border-radius:10px;position:relative;display:flex;flex-direction:column;height:var(--diagram-height,760px);min-height:0;overflow:hidden;box-shadow:0 6px 24px #073f5c06}.panel-top{flex-shrink:0;padding:15px 20px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);gap:12px}.status{font-size:11px;color:var(--muted);font-weight:650}.pin{padding:5px 10px;font-size:12px;min-height:44px}.control:disabled{opacity:.45;cursor:not-allowed}.control:disabled:hover{background:white}.panel-content{padding:20px;flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable}.panel .tag{font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:750;color:var(--code)}.panel h2{font-size:23px;line-height:1.25;margin:8px 0 12px}.summary{font-size:15px;margin:0 0 20px}.facts{margin:0}.facts dt{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:750;color:var(--muted);margin-top:15px}.facts dd{font-size:14px;margin:4px 0 0;line-height:1.55}.jev-example{border-top:1px solid var(--line);margin-top:22px;padding-top:10px}.jev-example h3{font-size:18px}.jev-example h4{font-size:15px;margin:22px 0 8px}.jev-example table{font-size:13px}.deep{margin-top:22px;border-top:1px solid var(--line);padding-top:13px}.deep>summary{font-size:13px;font-weight:650;cursor:pointer;min-height:40px}.prose{color:#253f50;font-size:15px;line-height:1.7;overflow-wrap:anywhere}.prose h1{font-size:30px}.prose h2{font-size:24px;line-height:1.3;margin-top:30px;color:var(--ink)}.prose h3{font-size:17px;margin-top:24px;color:var(--ink)}.prose p{margin:10px 0 15px}.prose ul,.prose ol{padding-left:23px}.prose li{margin-bottom:7px}.prose blockquote{margin:18px 0;border-left:3px solid var(--code);padding:5px 15px;background:var(--code-bg)}.prose code{font-size:.87em;background:#eef2f5;border-radius:3px;padding:2px 4px}.prose table{border-collapse:collapse;font-size:14px;width:100%;margin:20px 0}.prose th,.prose td{padding:11px;border:1px solid var(--line);text-align:left;vertical-align:top}.prose th{background:var(--code-bg)}.prose hr{border:0;border-top:1px solid var(--line);margin:30px 0}.deep .prose h2{font-size:18px}.deep .prose h3{font-size:15px}.deep .prose{font-size:14px}.panel-nav{flex-shrink:0;margin-top:auto;padding:12px 20px;display:flex;gap:8px;border-top:1px solid var(--line);justify-content:space-between}.panel-nav button{flex:1}.notes{background:#fff;border:1px solid var(--line);border-radius:10px;margin-top:24px}.notes>summary{padding:18px 24px;font-weight:650;cursor:pointer}.notes .prose{max-width:900px;padding:0 28px 35px;margin:auto}.notes .table-wrap{overflow-x:auto}.bottom{font-size:12px;color:var(--muted);margin-top:18px;display:flex;justify-content:space-between;gap:12px}.presenting .workspace{grid-template-columns:1fr}.presenting .panel{display:none}.presenting .diagram{grid-template-columns:1fr .7fr 1fr}.presenting .controller-bg{width:calc((100% - 28px) / 2.7)}.presenting .stage-copy strong,.presenting .worker strong{font-size:18px}.presenting .stage-copy>span,.presenting .worker>span:last-child{font-size:14px}.presenting .call-label{font-size:13px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(min-width:1450px){.workspace{grid-template-columns:minmax(0,1fr) 395px}.stage-copy strong{font-size:17px}.worker strong{font-size:16px}.stage-copy>span,.worker>span:last-child{font-size:13px}.call-label{font-size:12px}}
+@media(max-width:1179px){.workspace{grid-template-columns:1fr}.panel{position:static}.diagram{grid-template-columns:1fr .55fr 1fr}.controller-bg{width:calc((100% - 28px) / 2.55)}header{align-items:flex-start}.legend{flex-wrap:wrap;justify-content:flex-end;max-width:240px}}
+@media(max-width:767px){main{padding:20px 12px 40px}header{display:block}h1{font-size:32px}.legend{justify-content:flex-start;max-width:none;margin-top:16px}.toolbar{align-items:flex-start;flex-direction:column;gap:10px}.tools{flex-wrap:wrap}.diagram-shell{padding:10px 6px}.scroll-hint{display:block;margin:0 9px 8px}.diagram{grid-template-columns:280px 125px 270px;gap:8px 12px;min-width:699px}.controller-bg{width:280px}.diagram-foot{font-size:12px}.bottom{display:block}.notes .prose{padding:0 18px 25px}.presenting .diagram{grid-template-columns:280px 125px 270px}.presenting .controller-bg{width:280px}.presenting .stage-copy strong,.presenting .worker strong{font-size:15px}.presenting .stage-copy>span,.presenting .worker>span:last-child{font-size:12px}}
+/* Adjustable reading panel: the arrow column yields before either box column. */
+.workspace{grid-template-columns:minmax(0,1fr) 22px var(--panel-width,355px);gap:0}
+.divider{align-self:stretch;position:relative;cursor:col-resize;touch-action:none;outline-offset:-4px;border-radius:6px;min-height:44px}
+.divider:before{content:'';position:absolute;top:0;bottom:0;left:10px;width:2px;background:var(--line);border-radius:2px}
+.divider:after{content:'';position:absolute;left:7px;top:calc(50% - 26px);width:8px;height:52px;border-radius:6px;background:#a8bcc6;border:2px solid var(--canvas)}
+.divider:hover:before,.divider:focus-visible:before,.resizing .divider:before{background:var(--code)}
+.divider:hover:after,.divider:focus-visible:after,.resizing .divider:after{background:var(--code)}
+.divider:focus-visible{outline:3px solid #075e9a}
+.resizing,.resizing *{cursor:col-resize!important;user-select:none!important}
+.resized-layout .diagram{grid-template-columns:var(--controller-width) minmax(24px,1fr) var(--worker-width);min-width:calc(var(--controller-width) + var(--worker-width) + 52px)}
+.resized-layout .controller-bg{width:var(--controller-width)}
+.diagram-shell.has-horizontal-scroll .diagram-foot{margin-top:calc(16px - var(--scrollbar-height,0px))}
+.resized-layout .call-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.resized-layout .return-note,.resized-layout .diagram-foot{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.presenting .workspace{grid-template-columns:1fr}.presenting .divider{display:none}
+.presenting.resized-layout .diagram{grid-template-columns:1fr .7fr 1fr;min-width:710px}
+.presenting.resized-layout .controller-bg{width:calc((100% - 28px) / 2.7)}
+@media(min-width:1450px){.workspace{grid-template-columns:minmax(0,1fr) 22px var(--panel-width,395px)}}
+@media(max-width:1179px){.workspace{grid-template-columns:1fr}.divider{display:none}.resized-layout .diagram{grid-template-columns:1fr .55fr 1fr;min-width:710px}.resized-layout .controller-bg{width:calc((100% - 28px) / 2.55)}}
+@media(max-width:767px){.resized-layout .diagram,.presenting.resized-layout .diagram{grid-template-columns:280px 125px 270px;min-width:699px}.resized-layout .controller-bg,.presenting.resized-layout .controller-bg{width:280px}}
+@media print{.divider{display:none}.resized-layout .diagram{grid-template-columns:1fr .5fr 1fr;min-width:0}.resized-layout .controller-bg{width:calc((100% - 28px) / 2.5)}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+@media print{body{background:#fff}main{padding:0}.toolbar,.panel,.bottom,.scroll-hint{display:none}.workspace{display:block}.diagram-shell{break-inside:avoid}.diagram{min-width:0;grid-template-columns:1fr .5fr 1fr}.controller-bg{width:calc((100% - 28px) / 2.5)}.notes{border:0}.notes>summary{display:none}.notes .prose{padding:0;max-width:none}.target.active,.target.related{box-shadow:none}.prose h2,.prose h3{break-after:avoid}.prose table{font-size:11px}a{color:inherit}.legend{font-size:11px}}
+</style></head><body><main>
+<header><div><div class="eyebrow">Expense analysis · Interactive companion</div><h1>Code controls the flow</h1><p>Follow the controller. Explore the work it delegates.</p></div><div class="legend" aria-label="Actor colors"><span class="code"><i class="dot" aria-hidden="true"></i>Code · orchestrates</span><span class="jev"><i class="dot" aria-hidden="true"></i>Jev · chooses</span><span class="llm"><i class="dot" aria-hidden="true"></i>LLM · interprets</span></div></header>
+<div class="toolbar"><p class="hint"><strong>Hover or focus</strong> to explore · <strong>Click or tap</strong> to pin · <strong>Esc</strong> to unpin</p><div class="tools"><button id="presentation" class="control" aria-pressed="false">Presentation mode</button><button id="show-notes" class="control" aria-controls="full-notes" aria-expanded="false">Read full notes</button></div></div>
+<div class="workspace"><section class="diagram-shell" aria-label="Five-stage code controller diagram"><p class="return-note">Every call returns to the controller. Return arrows are implied.</p><p class="scroll-hint">Swipe sideways to explore the worker calls. Tap any step, box or arrow for details.</p><div class="diagram-scroll" tabindex="0" aria-label="Scrollable workflow diagram"><div class="diagram"><div class="controller-bg"><div class="controller-title"><strong>CODE CONTROLLER</strong><span>Calls · verifies · chooses the next step</span></div></div><button class="stage target code" data-key="s1" data-stage="1" style="grid-row:1 / span 1" aria-pressed="false"><span class="number">1</span><span class="stage-copy"><strong>Parse expense lines</strong><span>Check returned fields</span></span></button><button class="call target code" data-key="a1" data-stage="1" style="grid-row:1" aria-label="Call the source parser" aria-pressed="false"><span class="call-label">call</span><span class="shaft" aria-hidden="true"></span></button><button class="worker target code" data-key="w1" data-stage="1" style="grid-row:1" aria-pressed="false"><span class="role-tag">CODE</span><strong>Parse source lines</strong><span>Dates, descriptions, amounts</span></button><button class="stage target code" data-key="s2" data-stage="2" style="grid-row:2 / span 2" aria-pressed="false"><span class="number">2</span><span class="stage-copy"><strong>Resolve uncertain fields</strong><span>Verify returned fields</span><span class="conditional">△ Uncertain?</span><span class="skip">Already complete? Skip this stage.</span></span></button><button class="call target jev" data-key="a2" data-stage="2" style="grid-row:2" aria-label="When there are multiple candidates" aria-pressed="false"><span class="call-label">multiple candidates</span><span class="shaft" aria-hidden="true"></span></button><button class="worker target jev" data-key="w2" data-stage="2" style="grid-row:2" aria-pressed="false"><span class="role-tag">JEV</span><strong>Resolve date / amount</strong><span>Choose from source candidates</span></button><button class="call target llm" data-key="a3" data-stage="2" style="grid-row:3" aria-label="When fields are still unresolved" aria-pressed="false"><span class="call-label">still unresolved</span><span class="shaft" aria-hidden="true"></span></button><button class="worker target llm" data-key="w3" data-stage="2" style="grid-row:3" aria-pressed="false"><span class="role-tag">LLM</span><strong>Extract unresolved fields</strong><span>Return source evidence</span></button><button class="stage target code" data-key="s3" data-stage="3" style="grid-row:4 / span 1" aria-pressed="false"><span class="number">3</span><span class="stage-copy"><strong>Categorize expenses</strong><span>Verify response; apply policy</span><span class="policy">Merchant and transfer rules</span></span></button><button class="call target jev" data-key="a4" data-stage="3" style="grid-row:4" aria-label="When transaction fields are complete" aria-pressed="false"><span class="call-label">complete expenses</span><span class="shaft" aria-hidden="true"></span></button><button class="worker target jev" data-key="w4" data-stage="3" style="grid-row:4" aria-pressed="false"><span class="role-tag">JEV</span><strong>Choose expense category</strong><span>From a fixed category list</span></button><button class="stage target code" data-key="s4" data-stage="4" style="grid-row:5 / span 1" aria-pressed="false"><span class="number">4</span><span class="stage-copy"><strong>Reconcile and calculate</strong><span>Check ledger and totals</span></span></button><button class="call target code" data-key="a5" data-stage="4" style="grid-row:5" aria-label="Pass records into reconciliation" aria-pressed="false"><span class="call-label">source records</span><span class="shaft" aria-hidden="true"></span></button><button class="worker target code" data-key="w5" data-stage="4" style="grid-row:5" aria-pressed="false"><span class="role-tag">CODE</span><strong>Build ledger and totals</strong><span>Every source line accounted for</span></button><button class="stage target code" data-key="s5" data-stage="5" style="grid-row:6 / span 1" aria-pressed="false"><span class="number">5</span><span class="stage-copy"><strong>Produce verified report</strong><span>Check selections; use code-written text</span></span></button><button class="call target llm" data-key="a6" data-stage="5" style="grid-row:6" aria-label="Send findings and required coverage" aria-pressed="false"><span class="call-label">findings + required coverage</span><span class="shaft" aria-hidden="true"></span></button><button class="worker target llm" data-key="w6" data-stage="5" style="grid-row:6" aria-pressed="false"><span class="role-tag">LLM</span><strong>Choose report highlights</strong><span>Choose 3 from code-built findings</span></button></div></div><p class="diagram-foot">Models propose. Code verifies. Code decides what runs next.</p></section>
+<div id="panel-divider" class="divider" role="separator" aria-orientation="vertical" aria-controls="details-panel" aria-label="Resize explanation panel" aria-valuemin="260" tabindex="0" title="Drag to resize details. Left widens, Right narrows; Home or double-click resets."></div>
+<aside class="panel" id="details-panel" aria-label="Selected workflow explanation"><div class="panel-top"><span id="status" class="status" role="status" aria-live="polite">Exploring · click to pin</span><button id="pin" class="control pin" aria-pressed="false">Pin details</button></div><div class="panel-content"><div id="tag" class="tag">STEP 1 · CODE</div><h2 id="detail-title">Parse expense lines</h2><p id="detail-summary" class="summary">Start with ordinary parsing rules. Preserve every source line and mark precisely what still needs interpretation.</p><dl class="facts"><dt>Input</dt><dd id="detail-input">Original expense lines.</dd><dt>Returned result</dt><dd id="detail-result">Structured records and unresolved issues.</dd><dt>Code checks &amp; next action</dt><dd id="detail-check">Keep source evidence and decide what needs semantic help.</dd></dl><div class="prose jev-example" id="jev-example" hidden></div><details class="deep" id="deep"><summary>Read the complete explanation for this step</summary><div class="prose" id="stage-notes"><h2>Step 1 — Parse expense lines</h2>
+<h3>What this step is doing</h3>
+<p><strong>Turn each source line into a structured record, without asking a model to interpret it first.</strong></p>
+<p>The input is a list of expense lines. For each line, code tries to read the transaction date, description, and signed amount. It keeps the original text and its line number alongside those fields.</p>
+<p>For example, a line containing one recognizable date, a merchant description, and one transaction amount can often be parsed using ordinary rules. There is no reason to ask a model to repeat work code can already do.</p>
+<h3>What code checks</h3>
+<p>The parser looks for supported date and amount formats. It checks that a date is valid and distinguishes a transaction amount from an amount marked as a balance. It uses decimal arithmetic for money and handles explicit refund wording so a refund is represented as a negative amount when supported by the source.</p>
+<p>A missing year is not automatically filled with the current year. The parser can use a year supported by the supplied data when its year-inference rules allow it; otherwise the year remains unresolved. This avoids silently assigning an expense to the wrong period.</p>
+<p>The description is taken from the remaining source text after recognized date and amount evidence is removed and the text is cleaned up.</p>
+<h3>What happens when parsing is uncertain</h3>
+<p>Suppose a line says:</p>
+<blockquote>
+<p>Cafe charge $18.50; balance $2,400.00</p>
+</blockquote>
+<p>There are two amount occurrences. Code can recognize the numbers, but recognizing a number is not the same as establishing which number represents the transaction. The parser records the ambiguity rather than picking one arbitrarily.</p>
+<p>Other problems include a missing amount, multiple dates, an invalid date, an unresolved year, or a missing description. These are recorded as issues on the line. Fields that cannot be established remain unknown; fields already established are retained.</p>
+<h3>What comes back to the controller</h3>
+<p>A structured record for <strong>every source line</strong>, containing:</p>
+<ul>
+<li>Its original text and line number.</li>
+<li>Any date, description, and amount already established.</li>
+<li>A list of unresolved issues.</li>
+</ul>
+<p>Nothing disappears simply because parsing was unsuccessful. The controller now has enough information to decide whether semantic help is needed.</p>
+<p><strong>Why this step exists:</strong> use predictable rules for ordinary cases, preserve the evidence, and identify the precise work a model needs to do.</p>
+<hr />
+</div></details></div><div class="panel-nav"><button id="prev" class="control" aria-label="Previous controller step">← Previous step</button><button id="next" class="control" aria-label="Next controller step">Next step →</button></div></aside></div>
+<details class="notes" id="full-notes"><summary>Full companion notes · all five steps, uncertainty rules and source references</summary><article class="prose"><h1>Expense analysis: the five steps explained</h1>
+<p>Companion notes for the “Code controls the flow” diagram. These are speaking notes and reader explanations, not five dense slides.</p>
+<h2>How to read the diagram</h2>
+<p>Start at the top of the code controller and follow the numbered steps downward. A horizontal arrow means the controller calls a worker to do a particular job. The worker returns to the controller; the diagram leaves out return arrows to keep it readable.</p>
+<p>The controller decides which work is needed, checks the returned result, and decides what runs next. Some checks happen in the called processors rather than directly in the top-level controller method. They are still checks performed by application code—not promises delegated to the model.</p>
+<p>The colors show who does the work:</p>
+<ul>
+<li><strong>Teal — code:</strong> parsing rules, validation, business policy, bookkeeping, calculations, and rendering.</li>
+<li><strong>Amber — Jev:</strong> choosing between options supplied by code.</li>
+<li><strong>Violet — LLM:</strong> extracting unresolved fields or choosing report highlights.</li>
+</ul>
+<p>“Code verifies” means code checks specific properties it can establish. It does not mean code can prove every semantic judgment correct. This distinction matters throughout the workflow: a supported, well-formed answer can still be the wrong interpretation.</p>
+<p>The short examples below are illustrative, not claims about a particular recorded model response. The explanations follow repository revision <code>e13c09b533f7b85e394f247ac2b15f2a70e6e57d</code>.</p>
+<hr />
+<h2>Step 1 — Parse expense lines</h2>
+<h3>What this step is doing</h3>
+<p><strong>Turn each source line into a structured record, without asking a model to interpret it first.</strong></p>
+<p>The input is a list of expense lines. For each line, code tries to read the transaction date, description, and signed amount. It keeps the original text and its line number alongside those fields.</p>
+<p>For example, a line containing one recognizable date, a merchant description, and one transaction amount can often be parsed using ordinary rules. There is no reason to ask a model to repeat work code can already do.</p>
+<h3>What code checks</h3>
+<p>The parser looks for supported date and amount formats. It checks that a date is valid and distinguishes a transaction amount from an amount marked as a balance. It uses decimal arithmetic for money and handles explicit refund wording so a refund is represented as a negative amount when supported by the source.</p>
+<p>A missing year is not automatically filled with the current year. The parser can use a year supported by the supplied data when its year-inference rules allow it; otherwise the year remains unresolved. This avoids silently assigning an expense to the wrong period.</p>
+<p>The description is taken from the remaining source text after recognized date and amount evidence is removed and the text is cleaned up.</p>
+<h3>What happens when parsing is uncertain</h3>
+<p>Suppose a line says:</p>
+<blockquote>
+<p>Cafe charge $18.50; balance $2,400.00</p>
+</blockquote>
+<p>There are two amount occurrences. Code can recognize the numbers, but recognizing a number is not the same as establishing which number represents the transaction. The parser records the ambiguity rather than picking one arbitrarily.</p>
+<p>Other problems include a missing amount, multiple dates, an invalid date, an unresolved year, or a missing description. These are recorded as issues on the line. Fields that cannot be established remain unknown; fields already established are retained.</p>
+<h3>What comes back to the controller</h3>
+<p>A structured record for <strong>every source line</strong>, containing:</p>
+<ul>
+<li>Its original text and line number.</li>
+<li>Any date, description, and amount already established.</li>
+<li>A list of unresolved issues.</li>
+</ul>
+<p>Nothing disappears simply because parsing was unsuccessful. The controller now has enough information to decide whether semantic help is needed.</p>
+<p><strong>Why this step exists:</strong> use predictable rules for ordinary cases, preserve the evidence, and identify the precise work a model needs to do.</p>
+<hr />
+<h2>Step 2 — Resolve uncertain fields</h2>
+<h3>What this step is doing</h3>
+<p><strong>Recover missing or ambiguous transaction fields, using semantic interpretation only where parsing left a problem.</strong></p>
+<p>A line with no remaining issues does not need model extraction. For an uncertain line, there are two kinds of help: Jev can choose among source candidates, and the LLM can attempt structured extraction if issues remain.</p>
+<h3>First: Jev chooses among source candidates</h3>
+<p>In this workflow, Jev is used through a choice interface. Code provides the source text, the question, and the allowed options. Jev returns a selected option, a confidence value, and probabilities for the options.</p>
+<p>For an ambiguous amount, the question is essentially:</p>
+<blockquote>
+<p>Which source amount is the signed transaction amount, rather than a balance or original price?</p>
+</blockquote>
+<p>For an ambiguous date:</p>
+<blockquote>
+<p>Which source date is the transaction date, rather than a reference or posting date?</p>
+</blockquote>
+<p>Code extracts the candidate occurrences from that one source line. These are <strong>not candidate expenses from the entire input</strong>. They are possible values for one field within one expense line.</p>
+<p>The options also include <strong>“none”</strong>. This lets Jev indicate that none of the supplied values is the required transaction field rather than forcing a choice.</p>
+<h3>Jev example — Choose the transaction amount</h3>
+<p>The question and choice structure follow the current code. The expense line and returned scores below are illustrative, not a recorded Jev response.</p>
+<h4>The problem code has identified</h4>
+<p>Suppose a source line contains:</p>
+<blockquote>
+<p><strong>2026-10-01 Cafe charge $18.50; balance $2,400.00</strong></p>
+</blockquote>
+<p>Code can recognize the date and both amounts. The question is not “Which numbers appear?” but <strong>“Which amount represents the transaction?”</strong></p>
+<p>Code prepares a bounded choice for Jev rather than asking it to generate an amount.</p>
+<h4>Sent to Jev</h4>
+<p><strong>1. Question/instructions</strong></p>
+<blockquote>
+<p>Which candidate is the signed transaction amount affecting this account, rather than a balance or original price?</p>
+</blockquote>
+<p><strong>2. Data</strong></p>
+<p>The complete original line, so Jev can interpret the amounts in context:</p>
+<blockquote>
+<p>2026-10-01 Cafe charge $18.50; balance $2,400.00</p>
+</blockquote>
+<p><strong>3. Choices</strong></p>
+<p>Code builds these options from the amount occurrences it found:</p>
+<table>
+<thead>
+<tr>
+  <th>Choice</th>
+  <th>Meaning supplied to Jev</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>candidate_0</code></td>
+  <td>The source occurrence 1: <strong>$18.50</strong></td>
+</tr>
+<tr>
+  <td><code>candidate_1</code></td>
+  <td>The source occurrence 2: <strong>$2,400.00</strong></td>
+</tr>
+<tr>
+  <td><code>none</code></td>
+  <td>None of the candidate values is the transaction field.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>This is a multiple-choice request, not a yes/no request.</strong> Jev must choose from the supplied options. It is not being asked to invent a new value. The <code>none</code> option lets it decline all the candidates.</p>
+<h4>What Jev could return</h4>
+<p>An illustrative result might be:</p>
+<table>
+<thead>
+<tr>
+  <th>Returned information</th>
+  <th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Selected choice</td>
+  <td><code>candidate_0</code></td>
+</tr>
+<tr>
+  <td>Probability for <code>candidate_0</code></td>
+  <td>0.94</td>
+</tr>
+<tr>
+  <td>Probability for <code>candidate_1</code></td>
+  <td>0.04</td>
+</tr>
+<tr>
+  <td>Probability for <code>none</code></td>
+  <td>0.02</td>
+</tr>
+<tr>
+  <td>Separate confidence value</td>
+  <td>0.92</td>
+</tr>
+</tbody>
+</table>
+<p>In plain language: <strong>“Of the supplied options, I choose the $18.50 occurrence.”</strong></p>
+<h4>What code does next</h4>
+<p>Code does not accept the choice merely because Jev selected it.</p>
+<ul>
+<li>It checks the <strong>selected option’s probability</strong> against the configured minimum—<strong>0.80 by default</strong>. The separate confidence value is not this gate.</li>
+<li>It parses the selected source occurrence itself and checks that it is acceptable, including rejecting an occurrence identified as a balance.</li>
+<li>If those checks pass, it fills the amount field with <strong>18.50</strong> and clears that amount ambiguity.</li>
+</ul>
+<p>If the selected probability were <strong>0.62</strong>, Jev chose <code>none</code>, or code rejected the selected occurrence, the amount would remain unresolved. <strong>Remaining issues can then go to LLM extraction.</strong></p>
+<p>The teaching point is: <strong>code supplies the evidence and allowed answers; Jev makes the semantic choice; code decides whether to accept it.</strong></p>
+<h3>What a probability does—and does not—mean</h3>
+<p>A probability is a model-provided score used by the application to decide whether to accept a choice. It is not proof that the selected value is correct, and a score of 0.90 is not automatically evidence that nine out of ten comparable choices will be right. That would require calibration against suitable evaluation data.</p>
+<p>For this extraction step, code compares the probability attached to the <strong>selected option</strong> with a configured minimum. The default in the source is <strong>0.80</strong>. This gate uses the selected option’s probability, not simply the separate confidence field.</p>
+<p>For an illustrative choice:</p>
+<ul>
+<li>Selected transaction amount has probability 0.93: it passes the probability gate, but code must still check the selected source value.</li>
+<li>Selected amount has probability 0.62: code does not accept it as the resolved field.</li>
+<li>Jev selects “none”: the field stays unresolved, regardless of that option’s probability.</li>
+</ul>
+<p>Code then parses the selected source occurrence itself. For an amount, it also rejects an occurrence identified as a balance and applies the source-supported sign/refund rules. For a date, the selected source value must parse as a valid date with an allowed year.</p>
+<p>A high probability cannot override those checks.</p>
+<h3>When the controller calls the LLM</h3>
+<p>After the Jev pass, any line with issues remaining goes to structured LLM extraction. This includes:</p>
+<ul>
+<li>A candidate choice that did not meet the probability threshold.</li>
+<li>A “none” choice or a candidate that code could not accept.</li>
+<li>Missing fields or other problems that were not eligible for Jev’s multiple-candidate choice.</li>
+<li>Certain temporary Jev failures that leave the original parse intact.</li>
+</ul>
+<p>Jev is not a compulsory model call for every line. Its role here is specifically to resolve eligible multiple-date and multiple-amount ambiguities before the broader extraction fallback.</p>
+<h3>What the LLM is asked to return</h3>
+<p>The LLM receives the uncertain source lines, the fields already known, and the outstanding issues. It must return structured JSON, not an explanation in prose.</p>
+<p>For each newly supplied field, it must provide the matching source evidence. It must preserve the source identity and must not change a field already established by code. If a field cannot be established, it can remain unknown.</p>
+<h3>How code checks the LLM response</h3>
+<p>Code checks the response schema, expected line numbers and order, unchanged source text, preservation of known values, and supporting evidence for new values. Dates and amounts must agree with their source evidence. If identical amount text occurs more than once, the evidence can identify the particular occurrence. An occurrence identified as a balance is not accepted as the transaction amount.</p>
+<p>These checks prevent invented amounts, altered source records, and unsupported field substitutions. They still cannot prove that every source-supported semantic interpretation is correct.</p>
+<h3>What happens if this still does not work</h3>
+<p>Extraction has at most <strong>two semantic attempts</strong>. On validation failures, code can request a corrected response. Lines that have already been resolved are retained while pending lines are retried.</p>
+<p>After the allowed attempts, unresolved lines remain in the result with their issues and an extraction-failure marker. Certain request failures also preserve the unresolved records. Other unrecoverable errors propagate rather than being turned into apparently successful data.</p>
+<p><strong>What comes back:</strong> the original source records, updated only with accepted fields, plus any remaining issues.</p>
+<p><strong>Why this step exists:</strong> let models interpret the difficult parts while keeping their answers tied to the source and subject to application acceptance rules.</p>
+<hr />
+<h2>Step 3 — Categorize expenses</h2>
+<h3>What this step is doing</h3>
+<p><strong>Choose the kind of expense, now that the transaction fields are available.</strong></p>
+<p>This is a different question from Step 2. Extraction asks, “What date and amount does the line contain?” Categorization asks, “What kind of spending does it describe?”</p>
+<p>Only lines with a date, amount, and description are categorized. Incomplete lines keep their place in the input but receive no categorization at this stage.</p>
+<h3>How Jev is used here</h3>
+<p>Code supplies Jev with the transaction text and a fixed category catalog. Each category has a criterion describing when it should apply.</p>
+<p>Jev must choose from that list rather than invent a new category. Its response includes the proposed category, confidence, and category probabilities. Code checks the structured response, the expected option names, and whether the names belong to the known category catalog.</p>
+<p>This is a good fit for a bounded semantic task: a merchant or transaction description often needs interpretation, but the application already knows the allowed answers.</p>
+<h3>Jev example — Choose expense category</h3>
+<p>The question follows the current code. The transaction and returned scores below are illustrative, not a recorded Jev response.</p>
+<h4>The problem we need Jev to resolve</h4>
+<p>Suppose the source line is:</p>
+<blockquote>
+<p><strong>2026-10-01 Riverside Cafe — lunch and coffee — $18.50</strong></p>
+</blockquote>
+<p>Code has established the date, description, and amount. Now we need a different answer: <strong>“What kind of spending is this?”</strong></p>
+<h4>Sent to Jev</h4>
+<p><strong>1. Question/instructions</strong></p>
+<blockquote>
+<p>Select the expense category using only evidence in this transaction. Choose Other for a merchant-only mixed retailer charge when the purchased item is not stated. Choose Uncategorized for a transfer or cash withdrawal with no stated spending purpose.</p>
+</blockquote>
+<p><strong>2. Data</strong></p>
+<p>The complete original transaction line:</p>
+<blockquote>
+<p>2026-10-01 Riverside Cafe — lunch and coffee — $18.50</p>
+</blockquote>
+<p><strong>3. Choices</strong></p>
+<p>Code supplies the fixed category catalog. Each option includes a criterion explaining when it applies—not just a category name.</p>
+<p>Here are five of the <strong>20 actual options</strong>:</p>
+<table>
+<thead>
+<tr>
+  <th>Choice</th>
+  <th>Meaning supplied to Jev</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>dining_coffee</code></td>
+  <td>Prepared meals, takeout, cafes, coffee, and drinks at restaurants or bars.</td>
+</tr>
+<tr>
+  <td><code>groceries</code></td>
+  <td>Food and beverages bought for consumption at home when the purchase is identifiable as groceries.</td>
+</tr>
+<tr>
+  <td><code>shopping</code></td>
+  <td>Identifiable retail goods such as clothing, electronics, books, sporting goods, and home goods.</td>
+</tr>
+<tr>
+  <td><code>other</code></td>
+  <td>Known spending with an unknown purchase type, including merchant-only Target, Amazon, and Costco charges.</td>
+</tr>
+<tr>
+  <td><code>uncategorized</code></td>
+  <td>The line does not establish whether or why money was spent; includes bank transfers and cash withdrawals without a stated purchase.</td>
+</tr>
+</tbody>
+</table>
+<p>The request includes the other 15 categories too. <strong>This is another multiple-choice request—not a yes/no question.</strong> Jev must choose an allowed category rather than invent one.</p>
+<h4>What Jev could return</h4>
+<p>An illustrative result might be:</p>
+<table>
+<thead>
+<tr>
+  <th>Returned information</th>
+  <th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Selected category</td>
+  <td><code>dining_coffee</code></td>
+</tr>
+<tr>
+  <td>Probability for <code>dining_coffee</code></td>
+  <td>0.95</td>
+</tr>
+<tr>
+  <td>Probabilities for the other 19 categories</td>
+  <td>Recorded individually; collectively 0.05 in this example</td>
+</tr>
+<tr>
+  <td>Separate confidence value</td>
+  <td>0.93</td>
+</tr>
+</tbody>
+</table>
+<p>In plain language: <strong>“The transaction describes lunch and coffee at a cafe, so I choose Dining &amp; Coffee.”</strong></p>
+<h4>What code does next</h4>
+<p>Code validates the returned structure and category names, then applies its explicit business policies.</p>
+<p>For this example, no policy override applies, so <strong>Dining &amp; Coffee remains the final category</strong>. Code retains the proposal, final category, confidence, and probabilities.</p>
+<p>Those policies also protect against unsupported precision. For example, a line containing only <strong>“Amazon — $45.00”</strong> does not reveal what was bought. Code uses <strong>Other</strong> for that merchant-only mixed-retailer charge, even if Jev proposes Shopping.</p>
+<p><strong>Unlike Step 2, this stage has no probability threshold that triggers LLM fallback.</strong> Low confidence is recorded, but a valid proposal remains the final category unless code policy overrides it.</p>
+<p>The distinction between the two Jev calls is simple: <strong>Step 2 chooses a field value from the source; Step 3 chooses a category from the application’s catalog.</strong></p>
+<h3>What code does with the proposal</h3>
+<p>Code applies explicit business rules after Jev proposes a category:</p>
+<ul>
+<li><strong>Known expense merchant:</strong> use the category in the merchant catalog.</li>
+<li><strong>Merchant-only mixed retailer:</strong> use <code>Other</code> when the source does not establish the item type.</li>
+<li><strong>Transfer or cash withdrawal with no stated spending purpose:</strong> use <code>Uncategorized</code> rather than inventing a purpose for the money movement.</li>
+<li><strong>No applicable override:</strong> retain Jev’s proposed category.</li>
+</ul>
+<p>For example, a merchant-only mixed-retailer charge does not establish whether the purchase was clothing, groceries, or something else. A valid category response is not evidence of the purchased item. Code therefore applies the mixed-retailer rule rather than letting a plausible guess become precise spending data.</p>
+<p>The result retains both the model’s proposal and the final category, along with the probabilities, confidence, and any policy note. An override does not erase the history of the decision.</p>
+<h3>What happens when confidence or probabilities are low</h3>
+<p><strong>In the current implementation, categorization has no low-confidence threshold branch and no LLM fallback.</strong></p>
+<p>Confidence and probabilities are recorded, but they do not automatically trigger another model call or send the transaction to <code>Uncategorized</code>. The explicit policies above are based on transaction evidence, not confidence.</p>
+<p>If the response is valid and no policy overrides it, Jev’s proposed category remains the final category even when its confidence is low. That is an important limit to describe honestly. Adding a confidence gate, a review queue, or an LLM fallback here would be a change to the workflow—not an existing feature.</p>
+<p>A malformed response or failed category operation raises an error; it is not silently converted into a successful category.</p>
+<p><strong>What comes back:</strong> one aligned categorization slot per source record, preserving the proposed and final decisions.</p>
+<p><strong>Why this step exists:</strong> use semantic judgment for the category choice, but keep the category vocabulary, evidence rules, and policy authority in code.</p>
+<hr />
+<h2>Step 4 — Reconcile and calculate</h2>
+<h3>What this step is doing</h3>
+<p><strong>Account for every source line, decide how it affects the ledger, and calculate the results in code.</strong></p>
+<p>A list of plausible categories is not yet an expense analysis. The application must establish what was included, excluded, unresolved, or impossible to parse—and explain the totals.</p>
+<h3>Give every line a treatment</h3>
+<p>Code checks that each categorization is aligned with the correct source line. It then creates a ledger entry for every line and assigns a treatment:</p>
+<ul>
+<li>Included classified spending.</li>
+<li>Excluded confirmed duplicate.</li>
+<li>Unparsed because required transaction fields remain missing.</li>
+<li>Uncategorized outflow.</li>
+<li>Uncategorized credit.</li>
+</ul>
+<p>An unresolved line remains visible. A transfer without a spending purpose is not mixed into a guessed spending category. Uncategorized outflows are reported separately from classified spending.</p>
+<h3>Do not silently remove apparent duplicates</h3>
+<p>Two equal-looking lines might be two real transactions. The model is not given authority to delete one.</p>
+<p>The caller can supply confirmed duplicate line numbers. Code accepts an exclusion only when the confirmation matches an earlier adjacent source line with matching source text and parsed fields. An invalid confirmation fails validation.</p>
+<p>This is narrower than general duplicate detection: the caller supplies the confirmation, and code checks the required match.</p>
+<h3>Calculate money and comparisons</h3>
+<p>Code sums included amounts by month and category using decimal arithmetic. Refunds remain negative and reduce the relevant totals.</p>
+<p>It calculates:</p>
+<ul>
+<li>Monthly category totals.</li>
+<li>Classified spending and separately reported unresolved outflows.</li>
+<li>Observed outflow, defined here as classified spending plus unresolved outflow.</li>
+<li>Budget variance: <strong>actual minus target</strong>.</li>
+<li>Change between adjacent observed months: <strong>current minus previous</strong>.</li>
+</ul>
+<p>The totals and comparisons retain their contributing source-line references. A zero in a category is not automatically presented as full knowledge of spending: for example, mixed-retailer charges placed in <code>Other</code> can make Shopping coverage incomplete, and code records that limitation.</p>
+<h3>Verify the ledger and totals</h3>
+<p>Reconciliation checks account for the source-line partitions and confirm that the ledger-derived amounts agree with the calculated category and monthly totals. Failed reconciliation is not treated as a clean result.</p>
+<p>This verifies bookkeeping and arithmetic. It does <strong>not</strong> independently prove that every upstream semantic category was correct. A consistently miscategorized expense can still add up correctly; that is why evidence, policy, and evaluations matter in addition to arithmetic checks.</p>
+<p><strong>What comes back:</strong> a source-linked ledger, totals, budget comparisons, month changes, coverage notes, and reconciliation checks.</p>
+<p><strong>Why this step exists:</strong> do not ask a model to perform or quietly repair the accounting. Make every line’s treatment and every calculated value inspectable.</p>
+<hr />
+<h2>Step 5 — Produce verified report</h2>
+<h3>What this step is doing</h3>
+<p><strong>Choose report highlights from code-built findings, validate the selection, and use the original text.</strong></p>
+<p>The model is not asked to rewrite the analysis into prose. Code has already calculated the numbers and constructed candidate finding sentences from those results.</p>
+<h3>Code builds the findings first</h3>
+<p>Candidate findings can describe budget breaches, changes between months, coverage limitations, and reconciliation information. Each candidate contains:</p>
+<ul>
+<li>A unique evidence ID.</li>
+<li>The exact sentence to use.</li>
+<li>Supporting source-line references.</li>
+</ul>
+<p>For example, code can create a sentence describing a category’s actual spending, target, and amount over target. The numbers and formatting come from code, not model arithmetic.</p>
+<p>Code also determines required findings where applicable—for example, the relevant Dining &amp; Coffee budget breach, the largest category change, and a Shopping coverage limitation. These requirements constrain what the model may omit.</p>
+<h3>What the LLM does</h3>
+<p>The LLM receives the candidate findings and required coverage. It chooses <strong>three</strong> findings by returning their IDs in JSON.</p>
+<p>A simple way to explain this is:</p>
+<blockquote>
+<p>Code prepares the available report highlights. The model chooses which three to show, within code’s coverage rules.</p>
+</blockquote>
+<p>The selection is a judgment task, not a writing task. Its freedom may be quite narrow when code requires all three selections.</p>
+<h3>What code verifies</h3>
+<p>Code checks that the response has the required structure and that:</p>
+<ol>
+<li>There are exactly three selections.</li>
+<li>The selections are distinct.</li>
+<li>Every selected ID was supplied by code.</li>
+<li>All required IDs are present.</li>
+</ol>
+<p>An invalid selection can receive one corrective retry: <strong>two semantic attempts in total</strong>. If the model still fails, the operation raises an error rather than returning an unvalidated set of findings.</p>
+<h3>How the final text is produced</h3>
+<p>Once the selection is accepted, code looks up the corresponding original sentences and source references. Those sentences are used unchanged. The LLM cannot introduce a new amount or soften a coverage warning by rewriting it, because its response contains IDs rather than free-form report text.</p>
+<p>The final result carries the structured analysis and selected findings for code-based presentation. This diagram groups candidate construction, selection, validation, and report output into one high-level stage; it is not claiming that the LLM renders the whole report.</p>
+<p><strong>What comes back:</strong> three accepted findings with code-written text and supporting source references, alongside the structured expense analysis.</p>
+<p><strong>Why this step exists:</strong> use the model’s judgment to choose highlights without handing it control of the financial facts or their wording.</p>
+<hr />
+<h2>The uncertainty rules at a glance</h2>
+<table>
+<thead>
+<tr>
+  <th>Situation</th>
+  <th>Current behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Parsing establishes all required fields without issues</td>
+  <td>No model extraction is needed.</td>
+</tr>
+<tr>
+  <td>Multiple source dates or amounts</td>
+  <td>Offer eligible source candidates to Jev.</td>
+</tr>
+<tr>
+  <td>Selected Jev extraction probability below the configured minimum</td>
+  <td>Leave the field unresolved; the line can proceed to LLM extraction. Default minimum: 0.80.</td>
+</tr>
+<tr>
+  <td>Jev chooses “none,” or code rejects the selected field</td>
+  <td>Keep it unresolved and use extraction fallback if issues remain.</td>
+</tr>
+<tr>
+  <td>LLM field output fails schema or evidence checks</td>
+  <td>Retry within the two-attempt limit; preserve unresolved lines if they cannot be recovered.</td>
+</tr>
+<tr>
+  <td>Jev category confidence is low</td>
+  <td>Record it. There is no confidence-triggered category fallback in this implementation.</td>
+</tr>
+<tr>
+  <td>Category conflicts with merchant/transfer policy</td>
+  <td>Code applies the policy and retains the proposal and policy note.</td>
+</tr>
+<tr>
+  <td>Line still lacks required transaction fields</td>
+  <td>Keep it in the ledger as unparsed, without inventing a complete transaction.</td>
+</tr>
+<tr>
+  <td>Duplicate exclusion is not caller-confirmed and validated</td>
+  <td>Do not silently exclude the line.</td>
+</tr>
+<tr>
+  <td>Report selections are unsupported, repeated, or omit required findings</td>
+  <td>Request correction within the two-attempt limit; fail if still invalid.</td>
+</tr>
+</tbody>
+</table>
+<h2>What “verified, not trusted” means here</h2>
+<p>The application verifies the properties it can check: source identity, supported field values, response structure, allowed choices, business rules, line accounting, arithmetic, required finding coverage, and unchanged report text.</p>
+<p>Model interpretations can still be wrong within those boundaries. Evaluations are needed to measure those errors; source references and explicit unresolved outcomes help people inspect the exceptions. This walkthrough is a code review, not a new live-model evaluation or proof that all classifications are correct.</p>
+<p>The purpose is to reduce the work a reviewer has to reconstruct—not merely to say there is a human in the loop. The system should do the repeatable checks first and give the reviewer evidence and visible limitations.</p>
+<p><strong>Instruction is not assurance.</strong> The prompt describes the desired behavior; application checks enforce the parts the system can establish.</p>
+<h2>Source references</h2>
+<p>Source links are pinned to the reviewed revision:</p>
+<ul>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/manager_expense_analysis.py">Top-level controller</a></li>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/expense_line_parsing_processor.py">Parsing</a></li>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/expense_line_jev_extraction_processor.py">Jev field resolution</a></li>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/llm_processors/expense_line_extraction_llm_processor.py">LLM extraction and evidence checks</a></li>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/transaction_categorization_processor.py">Categorization and policy</a></li>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/expense_reconciliation_processor.py">Ledger reconciliation</a></li>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/processors/expense_calculation_processor.py">Calculations and checks</a></li>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/llm_processors/expense_findings_llm_processor.py">Findings construction, selection, and validation</a></li>
+<li><a href="https://github.com/matlus/Analyze-Expenses-Workflow/blob/e13c09b533f7b85e394f247ac2b15f2a70e6e57d/packages/analyze-expenses-workflow/src/analyze_expenses_workflow/managers/configuration_providers/settings_models/jev_settings.py">Jev settings and default extraction threshold</a></li>
+</ul>
+</article></details>
+<div class="bottom"><span>Verified, not trusted. Instruction is not assurance.</span><span>Self-contained · works offline · source-linked explanations</span></div>
+<noscript><p>Interactive selection requires JavaScript. All explanations remain available in the full companion notes above.</p></noscript>
+</main>
+<script>
+const CONTENT={"s1": {"stage": 1, "role": "code", "title": "Parse expense lines", "summary": "Start with ordinary parsing rules. Preserve every source line and mark precisely what still needs interpretation.", "input": "Raw expense lines, including original text and line numbers.", "result": "Dates, descriptions and signed amounts where rules can establish them; visible issues elsewhere.", "check": "Validate formats and source evidence. Retain incomplete lines rather than inventing values or dropping them."}, "s2": {"stage": 2, "role": "code", "title": "Resolve uncertain fields", "summary": "Use semantic help only for fields that parsing could not establish. Jev handles eligible choices; the LLM handles remaining extraction issues.", "input": "Partially parsed lines and their unresolved issues.", "result": "Only accepted new fields, plus any remaining issues.", "check": "For Jev, gate the selected option’s probability (0.80 by default) and validate the source value. For LLM output, check schema, identity, known fields and evidence."}, "s3": {"stage": 3, "role": "code", "title": "Categorize expenses", "summary": "Ask Jev what kind of expense a complete transaction describes, then apply explicit merchant and transfer policies in code.", "input": "Lines with a date, amount and description; a fixed category catalog.", "result": "The proposed category, final category, confidence, probabilities and any policy note.", "check": "Validate the response and allowed category names. Confidence is recorded, but there is no confidence-triggered LLM fallback for categorization."}, "s4": {"stage": 4, "role": "code", "title": "Reconcile and calculate", "summary": "Account for every source line before calculating totals. Arithmetic and bookkeeping stay in code.", "input": "Source-linked records, category decisions and caller-confirmed duplicate exclusions where supplied.", "result": "A ledger, monthly and category totals, budget variance, month changes and coverage notes.", "check": "Check alignment, validated duplicate exclusions, line partitions and ledger-to-total reconciliation. Correct arithmetic is not proof of correct semantic categorization."}, "s5": {"stage": 5, "role": "code", "title": "Produce verified report", "summary": "Code builds the finding sentences. The LLM chooses three highlights; code validates the selection and uses the original text.", "input": "Code-built candidate findings, their source references and required coverage.", "result": "Three accepted, distinct highlights using unchanged code-written sentences.", "check": "Require exactly three supplied IDs and all required findings. Retry an invalid selection once, then fail if it remains invalid. The LLM does not write report prose."}, "w1": {"stage": 1, "role": "code", "title": "Parse source lines", "summary": "The parser reads supported date and amount formats and derives the description from the remaining source text.", "input": "Each original expense line.", "result": "A structured record retaining source identity, parsed fields and unresolved issues.", "check": "Check valid dates, supported years, amount signs and balance markers. Missing or ambiguous fields stay unresolved."}, "w2": {"stage": 2, "role": "jev", "title": "Resolve date / amount", "summary": "Jev chooses among candidate occurrences extracted from one source line—not among expenses in the whole list.", "input": "A field question, the source text, candidate dates or amounts and a “none” option.", "result": "A selected option, confidence and option probabilities.", "check": "The selected option’s probability must meet the configured minimum (0.80 default). Code must also accept the source value; “none” or rejected choices stay unresolved."}, "w3": {"stage": 2, "role": "llm", "title": "Extract unresolved fields", "summary": "The LLM attempts structured extraction where issues remain, including missing fields that were not eligible for Jev’s multiple-candidate choice.", "input": "Uncertain lines, already-known fields and outstanding issues.", "result": "Structured JSON with source evidence for newly supplied fields.", "check": "Verify schema, line identity/order, preserved known values and matching evidence. Up to two semantic attempts; unresolved lines stay visible if recovery fails."}, "w4": {"stage": 3, "role": "jev", "title": "Choose expense category", "summary": "Jev answers a bounded semantic question: which allowed category best fits this transaction?", "input": "Complete transaction text and a fixed catalog with category criteria.", "result": "A proposed category, confidence and probabilities.", "check": "Code checks structure and catalog names, then applies merchant, mixed-retailer and transfer rules. Low confidence is recorded; it does not call an LLM fallback."}, "w5": {"stage": 4, "role": "code", "title": "Build ledger and totals", "summary": "Code assigns a treatment to every line and computes source-linked financial results.", "input": "Parsed records, final categories and validated duplicate confirmations.", "result": "Ledger entries, totals, comparisons, coverage notes and reconciliation checks.", "check": "Retain unparsed and uncategorized lines. Use decimal money arithmetic, negative refunds and explicit definitions. Failed reconciliation is not a clean result."}, "w6": {"stage": 5, "role": "llm", "title": "Choose report highlights", "summary": "The LLM selects three findings prepared by code. It cannot invent numbers or rewrite their sentences.", "input": "Candidate finding sentences with IDs, evidence references and required coverage.", "result": "JSON identifying three chosen findings—not prose.", "check": "Code checks count, uniqueness, known IDs and required coverage; accepted IDs map back to unchanged source sentences."}, "a1": {"stage": 1, "role": "code", "title": "Call the source parser", "summary": "Every source line enters the parsing stage; no model call is needed for this initial work.", "input": "Original source lines.", "result": "Structured records with known fields and issues.", "check": "The call returns to the controller. Code decides which lines, if any, need the next extraction stage."}, "a2": {"stage": 2, "role": "jev", "title": "When there are multiple candidates", "summary": "This call is conditional: use Jev for eligible multiple-date or multiple-amount ambiguity within a line.", "input": "Source text and allowed candidate occurrences, including “none”.", "result": "A proposed field choice and its option probabilities.", "check": "Accept only if the selected probability meets the configured threshold and code validates the value. Otherwise leave the field unresolved."}, "a3": {"stage": 2, "role": "llm", "title": "When fields are still unresolved", "summary": "After the Jev pass, lines with remaining issues go to structured LLM extraction. Already complete lines skip this stage.", "input": "Pending lines, known fields and issues.", "result": "New field values with supporting source evidence, or fields left unknown.", "check": "A low selected-option probability can lead here, but so can missing fields or other unresolved problems. Code validates all returned evidence."}, "a4": {"stage": 3, "role": "jev", "title": "When transaction fields are complete", "summary": "Only lines with a date, amount and description receive a categorization call.", "input": "Complete transaction text and the allowed category catalog.", "result": "Category proposal, confidence and probabilities.", "check": "Apply code policy after validation. There is no confidence threshold that routes this category call to an LLM."}, "a5": {"stage": 4, "role": "code", "title": "Pass records into reconciliation", "summary": "This handoff includes the source records, including unresolved ones—not just successfully classified spending.", "input": "Records, categorization decisions and caller-confirmed duplicate information where supplied.", "result": "An accounted-for ledger and code-calculated results.", "check": "Give every line a treatment and check partitions and totals. Do not silently discard incomplete or apparent duplicate lines."}, "a6": {"stage": 5, "role": "llm", "title": "Send findings and required coverage", "summary": "Code supplies an already-built set of report findings and specifies what the selection must cover.", "input": "Candidate finding IDs, exact sentences, evidence references and required IDs.", "result": "Three selected finding IDs.", "check": "Validate the selection, then use code-written sentences unchanged. No report prose or financial arithmetic is delegated to the LLM."}};
+const SECTIONS={"1": "<h2>Step 1 — Parse expense lines<\/h2>\n<h3>What this step is doing<\/h3>\n<p><strong>Turn each source line into a structured record, without asking a model to interpret it first.<\/strong><\/p>\n<p>The input is a list of expense lines. For each line, code tries to read the transaction date, description, and signed amount. It keeps the original text and its line number alongside those fields.<\/p>\n<p>For example, a line containing one recognizable date, a merchant description, and one transaction amount can often be parsed using ordinary rules. There is no reason to ask a model to repeat work code can already do.<\/p>\n<h3>What code checks<\/h3>\n<p>The parser looks for supported date and amount formats. It checks that a date is valid and distinguishes a transaction amount from an amount marked as a balance. It uses decimal arithmetic for money and handles explicit refund wording so a refund is represented as a negative amount when supported by the source.<\/p>\n<p>A missing year is not automatically filled with the current year. The parser can use a year supported by the supplied data when its year-inference rules allow it; otherwise the year remains unresolved. This avoids silently assigning an expense to the wrong period.<\/p>\n<p>The description is taken from the remaining source text after recognized date and amount evidence is removed and the text is cleaned up.<\/p>\n<h3>What happens when parsing is uncertain<\/h3>\n<p>Suppose a line says:<\/p>\n<blockquote>\n<p>Cafe charge $18.50; balance $2,400.00<\/p>\n<\/blockquote>\n<p>There are two amount occurrences. Code can recognize the numbers, but recognizing a number is not the same as establishing which number represents the transaction. The parser records the ambiguity rather than picking one arbitrarily.<\/p>\n<p>Other problems include a missing amount, multiple dates, an invalid date, an unresolved year, or a missing description. These are recorded as issues on the line. Fields that cannot be established remain unknown; fields already established are retained.<\/p>\n<h3>What comes back to the controller<\/h3>\n<p>A structured record for <strong>every source line<\/strong>, containing:<\/p>\n<ul>\n<li>Its original text and line number.<\/li>\n<li>Any date, description, and amount already established.<\/li>\n<li>A list of unresolved issues.<\/li>\n<\/ul>\n<p>Nothing disappears simply because parsing was unsuccessful. The controller now has enough information to decide whether semantic help is needed.<\/p>\n<p><strong>Why this step exists:<\/strong> use predictable rules for ordinary cases, preserve the evidence, and identify the precise work a model needs to do.<\/p>\n<hr />\n", "2": "<h2>Step 2 — Resolve uncertain fields<\/h2>\n<h3>What this step is doing<\/h3>\n<p><strong>Recover missing or ambiguous transaction fields, using semantic interpretation only where parsing left a problem.<\/strong><\/p>\n<p>A line with no remaining issues does not need model extraction. For an uncertain line, there are two kinds of help: Jev can choose among source candidates, and the LLM can attempt structured extraction if issues remain.<\/p>\n<h3>First: Jev chooses among source candidates<\/h3>\n<p>In this workflow, Jev is used through a choice interface. Code provides the source text, the question, and the allowed options. Jev returns a selected option, a confidence value, and probabilities for the options.<\/p>\n<p>For an ambiguous amount, the question is essentially:<\/p>\n<blockquote>\n<p>Which source amount is the signed transaction amount, rather than a balance or original price?<\/p>\n<\/blockquote>\n<p>For an ambiguous date:<\/p>\n<blockquote>\n<p>Which source date is the transaction date, rather than a reference or posting date?<\/p>\n<\/blockquote>\n<p>Code extracts the candidate occurrences from that one source line. These are <strong>not candidate expenses from the entire input<\/strong>. They are possible values for one field within one expense line.<\/p>\n<p>The options also include <strong>“none”<\/strong>. This lets Jev indicate that none of the supplied values is the required transaction field rather than forcing a choice.<\/p>\n<h3>Jev example — Choose the transaction amount<\/h3>\n<p>The question and choice structure follow the current code. The expense line and returned scores below are illustrative, not a recorded Jev response.<\/p>\n<h4>The problem code has identified<\/h4>\n<p>Suppose a source line contains:<\/p>\n<blockquote>\n<p><strong>2026-10-01 Cafe charge $18.50; balance $2,400.00<\/strong><\/p>\n<\/blockquote>\n<p>Code can recognize the date and both amounts. The question is not “Which numbers appear?” but <strong>“Which amount represents the transaction?”<\/strong><\/p>\n<p>Code prepares a bounded choice for Jev rather than asking it to generate an amount.<\/p>\n<h4>Sent to Jev<\/h4>\n<p><strong>1. Question/instructions<\/strong><\/p>\n<blockquote>\n<p>Which candidate is the signed transaction amount affecting this account, rather than a balance or original price?<\/p>\n<\/blockquote>\n<p><strong>2. Data<\/strong><\/p>\n<p>The complete original line, so Jev can interpret the amounts in context:<\/p>\n<blockquote>\n<p>2026-10-01 Cafe charge $18.50; balance $2,400.00<\/p>\n<\/blockquote>\n<p><strong>3. Choices<\/strong><\/p>\n<p>Code builds these options from the amount occurrences it found:<\/p>\n<table>\n<thead>\n<tr>\n  <th>Choice<\/th>\n  <th>Meaning supplied to Jev<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<tr>\n  <td><code>candidate_0<\/code><\/td>\n  <td>The source occurrence 1: <strong>$18.50<\/strong><\/td>\n<\/tr>\n<tr>\n  <td><code>candidate_1<\/code><\/td>\n  <td>The source occurrence 2: <strong>$2,400.00<\/strong><\/td>\n<\/tr>\n<tr>\n  <td><code>none<\/code><\/td>\n  <td>None of the candidate values is the transaction field.<\/td>\n<\/tr>\n<\/tbody>\n<\/table>\n<p><strong>This is a multiple-choice request, not a yes/no request.<\/strong> Jev must choose from the supplied options. It is not being asked to invent a new value. The <code>none<\/code> option lets it decline all the candidates.<\/p>\n<h4>What Jev could return<\/h4>\n<p>An illustrative result might be:<\/p>\n<table>\n<thead>\n<tr>\n  <th>Returned information<\/th>\n  <th>Example<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<tr>\n  <td>Selected choice<\/td>\n  <td><code>candidate_0<\/code><\/td>\n<\/tr>\n<tr>\n  <td>Probability for <code>candidate_0<\/code><\/td>\n  <td>0.94<\/td>\n<\/tr>\n<tr>\n  <td>Probability for <code>candidate_1<\/code><\/td>\n  <td>0.04<\/td>\n<\/tr>\n<tr>\n  <td>Probability for <code>none<\/code><\/td>\n  <td>0.02<\/td>\n<\/tr>\n<tr>\n  <td>Separate confidence value<\/td>\n  <td>0.92<\/td>\n<\/tr>\n<\/tbody>\n<\/table>\n<p>In plain language: <strong>“Of the supplied options, I choose the $18.50 occurrence.”<\/strong><\/p>\n<h4>What code does next<\/h4>\n<p>Code does not accept the choice merely because Jev selected it.<\/p>\n<ul>\n<li>It checks the <strong>selected option’s probability<\/strong> against the configured minimum—<strong>0.80 by default<\/strong>. The separate confidence value is not this gate.<\/li>\n<li>It parses the selected source occurrence itself and checks that it is acceptable, including rejecting an occurrence identified as a balance.<\/li>\n<li>If those checks pass, it fills the amount field with <strong>18.50<\/strong> and clears that amount ambiguity.<\/li>\n<\/ul>\n<p>If the selected probability were <strong>0.62<\/strong>, Jev chose <code>none<\/code>, or code rejected the selected occurrence, the amount would remain unresolved. <strong>Remaining issues can then go to LLM extraction.<\/strong><\/p>\n<p>The teaching point is: <strong>code supplies the evidence and allowed answers; Jev makes the semantic choice; code decides whether to accept it.<\/strong><\/p>\n<h3>What a probability does—and does not—mean<\/h3>\n<p>A probability is a model-provided score used by the application to decide whether to accept a choice. It is not proof that the selected value is correct, and a score of 0.90 is not automatically evidence that nine out of ten comparable choices will be right. That would require calibration against suitable evaluation data.<\/p>\n<p>For this extraction step, code compares the probability attached to the <strong>selected option<\/strong> with a configured minimum. The default in the source is <strong>0.80<\/strong>. This gate uses the selected option’s probability, not simply the separate confidence field.<\/p>\n<p>For an illustrative choice:<\/p>\n<ul>\n<li>Selected transaction amount has probability 0.93: it passes the probability gate, but code must still check the selected source value.<\/li>\n<li>Selected amount has probability 0.62: code does not accept it as the resolved field.<\/li>\n<li>Jev selects “none”: the field stays unresolved, regardless of that option’s probability.<\/li>\n<\/ul>\n<p>Code then parses the selected source occurrence itself. For an amount, it also rejects an occurrence identified as a balance and applies the source-supported sign/refund rules. For a date, the selected source value must parse as a valid date with an allowed year.<\/p>\n<p>A high probability cannot override those checks.<\/p>\n<h3>When the controller calls the LLM<\/h3>\n<p>After the Jev pass, any line with issues remaining goes to structured LLM extraction. This includes:<\/p>\n<ul>\n<li>A candidate choice that did not meet the probability threshold.<\/li>\n<li>A “none” choice or a candidate that code could not accept.<\/li>\n<li>Missing fields or other problems that were not eligible for Jev’s multiple-candidate choice.<\/li>\n<li>Certain temporary Jev failures that leave the original parse intact.<\/li>\n<\/ul>\n<p>Jev is not a compulsory model call for every line. Its role here is specifically to resolve eligible multiple-date and multiple-amount ambiguities before the broader extraction fallback.<\/p>\n<h3>What the LLM is asked to return<\/h3>\n<p>The LLM receives the uncertain source lines, the fields already known, and the outstanding issues. It must return structured JSON, not an explanation in prose.<\/p>\n<p>For each newly supplied field, it must provide the matching source evidence. It must preserve the source identity and must not change a field already established by code. If a field cannot be established, it can remain unknown.<\/p>\n<h3>How code checks the LLM response<\/h3>\n<p>Code checks the response schema, expected line numbers and order, unchanged source text, preservation of known values, and supporting evidence for new values. Dates and amounts must agree with their source evidence. If identical amount text occurs more than once, the evidence can identify the particular occurrence. An occurrence identified as a balance is not accepted as the transaction amount.<\/p>\n<p>These checks prevent invented amounts, altered source records, and unsupported field substitutions. They still cannot prove that every source-supported semantic interpretation is correct.<\/p>\n<h3>What happens if this still does not work<\/h3>\n<p>Extraction has at most <strong>two semantic attempts<\/strong>. On validation failures, code can request a corrected response. Lines that have already been resolved are retained while pending lines are retried.<\/p>\n<p>After the allowed attempts, unresolved lines remain in the result with their issues and an extraction-failure marker. Certain request failures also preserve the unresolved records. Other unrecoverable errors propagate rather than being turned into apparently successful data.<\/p>\n<p><strong>What comes back:<\/strong> the original source records, updated only with accepted fields, plus any remaining issues.<\/p>\n<p><strong>Why this step exists:<\/strong> let models interpret the difficult parts while keeping their answers tied to the source and subject to application acceptance rules.<\/p>\n<hr />\n", "3": "<h2>Step 3 — Categorize expenses<\/h2>\n<h3>What this step is doing<\/h3>\n<p><strong>Choose the kind of expense, now that the transaction fields are available.<\/strong><\/p>\n<p>This is a different question from Step 2. Extraction asks, “What date and amount does the line contain?” Categorization asks, “What kind of spending does it describe?”<\/p>\n<p>Only lines with a date, amount, and description are categorized. Incomplete lines keep their place in the input but receive no categorization at this stage.<\/p>\n<h3>How Jev is used here<\/h3>\n<p>Code supplies Jev with the transaction text and a fixed category catalog. Each category has a criterion describing when it should apply.<\/p>\n<p>Jev must choose from that list rather than invent a new category. Its response includes the proposed category, confidence, and category probabilities. Code checks the structured response, the expected option names, and whether the names belong to the known category catalog.<\/p>\n<p>This is a good fit for a bounded semantic task: a merchant or transaction description often needs interpretation, but the application already knows the allowed answers.<\/p>\n<h3>Jev example — Choose expense category<\/h3>\n<p>The question follows the current code. The transaction and returned scores below are illustrative, not a recorded Jev response.<\/p>\n<h4>The problem we need Jev to resolve<\/h4>\n<p>Suppose the source line is:<\/p>\n<blockquote>\n<p><strong>2026-10-01 Riverside Cafe — lunch and coffee — $18.50<\/strong><\/p>\n<\/blockquote>\n<p>Code has established the date, description, and amount. Now we need a different answer: <strong>“What kind of spending is this?”<\/strong><\/p>\n<h4>Sent to Jev<\/h4>\n<p><strong>1. Question/instructions<\/strong><\/p>\n<blockquote>\n<p>Select the expense category using only evidence in this transaction. Choose Other for a merchant-only mixed retailer charge when the purchased item is not stated. Choose Uncategorized for a transfer or cash withdrawal with no stated spending purpose.<\/p>\n<\/blockquote>\n<p><strong>2. Data<\/strong><\/p>\n<p>The complete original transaction line:<\/p>\n<blockquote>\n<p>2026-10-01 Riverside Cafe — lunch and coffee — $18.50<\/p>\n<\/blockquote>\n<p><strong>3. Choices<\/strong><\/p>\n<p>Code supplies the fixed category catalog. Each option includes a criterion explaining when it applies—not just a category name.<\/p>\n<p>Here are five of the <strong>20 actual options<\/strong>:<\/p>\n<table>\n<thead>\n<tr>\n  <th>Choice<\/th>\n  <th>Meaning supplied to Jev<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<tr>\n  <td><code>dining_coffee<\/code><\/td>\n  <td>Prepared meals, takeout, cafes, coffee, and drinks at restaurants or bars.<\/td>\n<\/tr>\n<tr>\n  <td><code>groceries<\/code><\/td>\n  <td>Food and beverages bought for consumption at home when the purchase is identifiable as groceries.<\/td>\n<\/tr>\n<tr>\n  <td><code>shopping<\/code><\/td>\n  <td>Identifiable retail goods such as clothing, electronics, books, sporting goods, and home goods.<\/td>\n<\/tr>\n<tr>\n  <td><code>other<\/code><\/td>\n  <td>Known spending with an unknown purchase type, including merchant-only Target, Amazon, and Costco charges.<\/td>\n<\/tr>\n<tr>\n  <td><code>uncategorized<\/code><\/td>\n  <td>The line does not establish whether or why money was spent; includes bank transfers and cash withdrawals without a stated purchase.<\/td>\n<\/tr>\n<\/tbody>\n<\/table>\n<p>The request includes the other 15 categories too. <strong>This is another multiple-choice request—not a yes/no question.<\/strong> Jev must choose an allowed category rather than invent one.<\/p>\n<h4>What Jev could return<\/h4>\n<p>An illustrative result might be:<\/p>\n<table>\n<thead>\n<tr>\n  <th>Returned information<\/th>\n  <th>Example<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<tr>\n  <td>Selected category<\/td>\n  <td><code>dining_coffee<\/code><\/td>\n<\/tr>\n<tr>\n  <td>Probability for <code>dining_coffee<\/code><\/td>\n  <td>0.95<\/td>\n<\/tr>\n<tr>\n  <td>Probabilities for the other 19 categories<\/td>\n  <td>Recorded individually; collectively 0.05 in this example<\/td>\n<\/tr>\n<tr>\n  <td>Separate confidence value<\/td>\n  <td>0.93<\/td>\n<\/tr>\n<\/tbody>\n<\/table>\n<p>In plain language: <strong>“The transaction describes lunch and coffee at a cafe, so I choose Dining &amp; Coffee.”<\/strong><\/p>\n<h4>What code does next<\/h4>\n<p>Code validates the returned structure and category names, then applies its explicit business policies.<\/p>\n<p>For this example, no policy override applies, so <strong>Dining &amp; Coffee remains the final category<\/strong>. Code retains the proposal, final category, confidence, and probabilities.<\/p>\n<p>Those policies also protect against unsupported precision. For example, a line containing only <strong>“Amazon — $45.00”<\/strong> does not reveal what was bought. Code uses <strong>Other<\/strong> for that merchant-only mixed-retailer charge, even if Jev proposes Shopping.<\/p>\n<p><strong>Unlike Step 2, this stage has no probability threshold that triggers LLM fallback.<\/strong> Low confidence is recorded, but a valid proposal remains the final category unless code policy overrides it.<\/p>\n<p>The distinction between the two Jev calls is simple: <strong>Step 2 chooses a field value from the source; Step 3 chooses a category from the application’s catalog.<\/strong><\/p>\n<h3>What code does with the proposal<\/h3>\n<p>Code applies explicit business rules after Jev proposes a category:<\/p>\n<ul>\n<li><strong>Known expense merchant:<\/strong> use the category in the merchant catalog.<\/li>\n<li><strong>Merchant-only mixed retailer:<\/strong> use <code>Other<\/code> when the source does not establish the item type.<\/li>\n<li><strong>Transfer or cash withdrawal with no stated spending purpose:<\/strong> use <code>Uncategorized<\/code> rather than inventing a purpose for the money movement.<\/li>\n<li><strong>No applicable override:<\/strong> retain Jev’s proposed category.<\/li>\n<\/ul>\n<p>For example, a merchant-only mixed-retailer charge does not establish whether the purchase was clothing, groceries, or something else. A valid category response is not evidence of the purchased item. Code therefore applies the mixed-retailer rule rather than letting a plausible guess become precise spending data.<\/p>\n<p>The result retains both the model’s proposal and the final category, along with the probabilities, confidence, and any policy note. An override does not erase the history of the decision.<\/p>\n<h3>What happens when confidence or probabilities are low<\/h3>\n<p><strong>In the current implementation, categorization has no low-confidence threshold branch and no LLM fallback.<\/strong><\/p>\n<p>Confidence and probabilities are recorded, but they do not automatically trigger another model call or send the transaction to <code>Uncategorized<\/code>. The explicit policies above are based on transaction evidence, not confidence.<\/p>\n<p>If the response is valid and no policy overrides it, Jev’s proposed category remains the final category even when its confidence is low. That is an important limit to describe honestly. Adding a confidence gate, a review queue, or an LLM fallback here would be a change to the workflow—not an existing feature.<\/p>\n<p>A malformed response or failed category operation raises an error; it is not silently converted into a successful category.<\/p>\n<p><strong>What comes back:<\/strong> one aligned categorization slot per source record, preserving the proposed and final decisions.<\/p>\n<p><strong>Why this step exists:<\/strong> use semantic judgment for the category choice, but keep the category vocabulary, evidence rules, and policy authority in code.<\/p>\n<hr />\n", "4": "<h2>Step 4 — Reconcile and calculate<\/h2>\n<h3>What this step is doing<\/h3>\n<p><strong>Account for every source line, decide how it affects the ledger, and calculate the results in code.<\/strong><\/p>\n<p>A list of plausible categories is not yet an expense analysis. The application must establish what was included, excluded, unresolved, or impossible to parse—and explain the totals.<\/p>\n<h3>Give every line a treatment<\/h3>\n<p>Code checks that each categorization is aligned with the correct source line. It then creates a ledger entry for every line and assigns a treatment:<\/p>\n<ul>\n<li>Included classified spending.<\/li>\n<li>Excluded confirmed duplicate.<\/li>\n<li>Unparsed because required transaction fields remain missing.<\/li>\n<li>Uncategorized outflow.<\/li>\n<li>Uncategorized credit.<\/li>\n<\/ul>\n<p>An unresolved line remains visible. A transfer without a spending purpose is not mixed into a guessed spending category. Uncategorized outflows are reported separately from classified spending.<\/p>\n<h3>Do not silently remove apparent duplicates<\/h3>\n<p>Two equal-looking lines might be two real transactions. The model is not given authority to delete one.<\/p>\n<p>The caller can supply confirmed duplicate line numbers. Code accepts an exclusion only when the confirmation matches an earlier adjacent source line with matching source text and parsed fields. An invalid confirmation fails validation.<\/p>\n<p>This is narrower than general duplicate detection: the caller supplies the confirmation, and code checks the required match.<\/p>\n<h3>Calculate money and comparisons<\/h3>\n<p>Code sums included amounts by month and category using decimal arithmetic. Refunds remain negative and reduce the relevant totals.<\/p>\n<p>It calculates:<\/p>\n<ul>\n<li>Monthly category totals.<\/li>\n<li>Classified spending and separately reported unresolved outflows.<\/li>\n<li>Observed outflow, defined here as classified spending plus unresolved outflow.<\/li>\n<li>Budget variance: <strong>actual minus target<\/strong>.<\/li>\n<li>Change between adjacent observed months: <strong>current minus previous<\/strong>.<\/li>\n<\/ul>\n<p>The totals and comparisons retain their contributing source-line references. A zero in a category is not automatically presented as full knowledge of spending: for example, mixed-retailer charges placed in <code>Other<\/code> can make Shopping coverage incomplete, and code records that limitation.<\/p>\n<h3>Verify the ledger and totals<\/h3>\n<p>Reconciliation checks account for the source-line partitions and confirm that the ledger-derived amounts agree with the calculated category and monthly totals. Failed reconciliation is not treated as a clean result.<\/p>\n<p>This verifies bookkeeping and arithmetic. It does <strong>not<\/strong> independently prove that every upstream semantic category was correct. A consistently miscategorized expense can still add up correctly; that is why evidence, policy, and evaluations matter in addition to arithmetic checks.<\/p>\n<p><strong>What comes back:<\/strong> a source-linked ledger, totals, budget comparisons, month changes, coverage notes, and reconciliation checks.<\/p>\n<p><strong>Why this step exists:<\/strong> do not ask a model to perform or quietly repair the accounting. Make every line’s treatment and every calculated value inspectable.<\/p>\n<hr />\n", "5": "<h2>Step 5 — Produce verified report<\/h2>\n<h3>What this step is doing<\/h3>\n<p><strong>Choose report highlights from code-built findings, validate the selection, and use the original text.<\/strong><\/p>\n<p>The model is not asked to rewrite the analysis into prose. Code has already calculated the numbers and constructed candidate finding sentences from those results.<\/p>\n<h3>Code builds the findings first<\/h3>\n<p>Candidate findings can describe budget breaches, changes between months, coverage limitations, and reconciliation information. Each candidate contains:<\/p>\n<ul>\n<li>A unique evidence ID.<\/li>\n<li>The exact sentence to use.<\/li>\n<li>Supporting source-line references.<\/li>\n<\/ul>\n<p>For example, code can create a sentence describing a category’s actual spending, target, and amount over target. The numbers and formatting come from code, not model arithmetic.<\/p>\n<p>Code also determines required findings where applicable—for example, the relevant Dining &amp; Coffee budget breach, the largest category change, and a Shopping coverage limitation. These requirements constrain what the model may omit.<\/p>\n<h3>What the LLM does<\/h3>\n<p>The LLM receives the candidate findings and required coverage. It chooses <strong>three<\/strong> findings by returning their IDs in JSON.<\/p>\n<p>A simple way to explain this is:<\/p>\n<blockquote>\n<p>Code prepares the available report highlights. The model chooses which three to show, within code’s coverage rules.<\/p>\n<\/blockquote>\n<p>The selection is a judgment task, not a writing task. Its freedom may be quite narrow when code requires all three selections.<\/p>\n<h3>What code verifies<\/h3>\n<p>Code checks that the response has the required structure and that:<\/p>\n<ol>\n<li>There are exactly three selections.<\/li>\n<li>The selections are distinct.<\/li>\n<li>Every selected ID was supplied by code.<\/li>\n<li>All required IDs are present.<\/li>\n<\/ol>\n<p>An invalid selection can receive one corrective retry: <strong>two semantic attempts in total<\/strong>. If the model still fails, the operation raises an error rather than returning an unvalidated set of findings.<\/p>\n<h3>How the final text is produced<\/h3>\n<p>Once the selection is accepted, code looks up the corresponding original sentences and source references. Those sentences are used unchanged. The LLM cannot introduce a new amount or soften a coverage warning by rewriting it, because its response contains IDs rather than free-form report text.<\/p>\n<p>The final result carries the structured analysis and selected findings for code-based presentation. This diagram groups candidate construction, selection, validation, and report output into one high-level stage; it is not claiming that the LLM renders the whole report.<\/p>\n<p><strong>What comes back:<\/strong> three accepted findings with code-written text and supporting source references, alongside the structured expense analysis.<\/p>\n<p><strong>Why this step exists:<\/strong> use the model’s judgment to choose highlights without handing it control of the financial facts or their wording.<\/p>\n<hr />\n"};
+const EXAMPLES={"2": "<h3>Jev example — Choose the transaction amount<\/h3>\n<p>The question and choice structure follow the current code. The expense line and returned scores below are illustrative, not a recorded Jev response.<\/p>\n<h4>The problem code has identified<\/h4>\n<p>Suppose a source line contains:<\/p>\n<blockquote>\n<p><strong>2026-10-01 Cafe charge $18.50; balance $2,400.00<\/strong><\/p>\n<\/blockquote>\n<p>Code can recognize the date and both amounts. The question is not “Which numbers appear?” but <strong>“Which amount represents the transaction?”<\/strong><\/p>\n<p>Code prepares a bounded choice for Jev rather than asking it to generate an amount.<\/p>\n<h4>Sent to Jev<\/h4>\n<p><strong>1. Question/instructions<\/strong><\/p>\n<blockquote>\n<p>Which candidate is the signed transaction amount affecting this account, rather than a balance or original price?<\/p>\n<\/blockquote>\n<p><strong>2. Data<\/strong><\/p>\n<p>The complete original line, so Jev can interpret the amounts in context:<\/p>\n<blockquote>\n<p>2026-10-01 Cafe charge $18.50; balance $2,400.00<\/p>\n<\/blockquote>\n<p><strong>3. Choices<\/strong><\/p>\n<p>Code builds these options from the amount occurrences it found:<\/p>\n<table>\n<thead>\n<tr>\n  <th>Choice<\/th>\n  <th>Meaning supplied to Jev<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<tr>\n  <td><code>candidate_0<\/code><\/td>\n  <td>The source occurrence 1: <strong>$18.50<\/strong><\/td>\n<\/tr>\n<tr>\n  <td><code>candidate_1<\/code><\/td>\n  <td>The source occurrence 2: <strong>$2,400.00<\/strong><\/td>\n<\/tr>\n<tr>\n  <td><code>none<\/code><\/td>\n  <td>None of the candidate values is the transaction field.<\/td>\n<\/tr>\n<\/tbody>\n<\/table>\n<p><strong>This is a multiple-choice request, not a yes/no request.<\/strong> Jev must choose from the supplied options. It is not being asked to invent a new value. The <code>none<\/code> option lets it decline all the candidates.<\/p>\n<h4>What Jev could return<\/h4>\n<p>An illustrative result might be:<\/p>\n<table>\n<thead>\n<tr>\n  <th>Returned information<\/th>\n  <th>Example<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<tr>\n  <td>Selected choice<\/td>\n  <td><code>candidate_0<\/code><\/td>\n<\/tr>\n<tr>\n  <td>Probability for <code>candidate_0<\/code><\/td>\n  <td>0.94<\/td>\n<\/tr>\n<tr>\n  <td>Probability for <code>candidate_1<\/code><\/td>\n  <td>0.04<\/td>\n<\/tr>\n<tr>\n  <td>Probability for <code>none<\/code><\/td>\n  <td>0.02<\/td>\n<\/tr>\n<tr>\n  <td>Separate confidence value<\/td>\n  <td>0.92<\/td>\n<\/tr>\n<\/tbody>\n<\/table>\n<p>In plain language: <strong>“Of the supplied options, I choose the $18.50 occurrence.”<\/strong><\/p>\n<h4>What code does next<\/h4>\n<p>Code does not accept the choice merely because Jev selected it.<\/p>\n<ul>\n<li>It checks the <strong>selected option’s probability<\/strong> against the configured minimum—<strong>0.80 by default<\/strong>. The separate confidence value is not this gate.<\/li>\n<li>It parses the selected source occurrence itself and checks that it is acceptable, including rejecting an occurrence identified as a balance.<\/li>\n<li>If those checks pass, it fills the amount field with <strong>18.50<\/strong> and clears that amount ambiguity.<\/li>\n<\/ul>\n<p>If the selected probability were <strong>0.62<\/strong>, Jev chose <code>none<\/code>, or code rejected the selected occurrence, the amount would remain unresolved. <strong>Remaining issues can then go to LLM extraction.<\/strong><\/p>\n<p>The teaching point is: <strong>code supplies the evidence and allowed answers; Jev makes the semantic choice; code decides whether to accept it.<\/strong><\/p>\n", "3": "<h3>Jev example — Choose expense category<\/h3>\n<p>The question follows the current code. The transaction and returned scores below are illustrative, not a recorded Jev response.<\/p>\n<h4>The problem we need Jev to resolve<\/h4>\n<p>Suppose the source line is:<\/p>\n<blockquote>\n<p><strong>2026-10-01 Riverside Cafe — lunch and coffee — $18.50<\/strong><\/p>\n<\/blockquote>\n<p>Code has established the date, description, and amount. Now we need a different answer: <strong>“What kind of spending is this?”<\/strong><\/p>\n<h4>Sent to Jev<\/h4>\n<p><strong>1. Question/instructions<\/strong><\/p>\n<blockquote>\n<p>Select the expense category using only evidence in this transaction. Choose Other for a merchant-only mixed retailer charge when the purchased item is not stated. Choose Uncategorized for a transfer or cash withdrawal with no stated spending purpose.<\/p>\n<\/blockquote>\n<p><strong>2. Data<\/strong><\/p>\n<p>The complete original transaction line:<\/p>\n<blockquote>\n<p>2026-10-01 Riverside Cafe — lunch and coffee — $18.50<\/p>\n<\/blockquote>\n<p><strong>3. Choices<\/strong><\/p>\n<p>Code supplies the fixed category catalog. Each option includes a criterion explaining when it applies—not just a category name.<\/p>\n<p>Here are five of the <strong>20 actual options<\/strong>:<\/p>\n<table>\n<thead>\n<tr>\n  <th>Choice<\/th>\n  <th>Meaning supplied to Jev<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<tr>\n  <td><code>dining_coffee<\/code><\/td>\n  <td>Prepared meals, takeout, cafes, coffee, and drinks at restaurants or bars.<\/td>\n<\/tr>\n<tr>\n  <td><code>groceries<\/code><\/td>\n  <td>Food and beverages bought for consumption at home when the purchase is identifiable as groceries.<\/td>\n<\/tr>\n<tr>\n  <td><code>shopping<\/code><\/td>\n  <td>Identifiable retail goods such as clothing, electronics, books, sporting goods, and home goods.<\/td>\n<\/tr>\n<tr>\n  <td><code>other<\/code><\/td>\n  <td>Known spending with an unknown purchase type, including merchant-only Target, Amazon, and Costco charges.<\/td>\n<\/tr>\n<tr>\n  <td><code>uncategorized<\/code><\/td>\n  <td>The line does not establish whether or why money was spent; includes bank transfers and cash withdrawals without a stated purchase.<\/td>\n<\/tr>\n<\/tbody>\n<\/table>\n<p>The request includes the other 15 categories too. <strong>This is another multiple-choice request—not a yes/no question.<\/strong> Jev must choose an allowed category rather than invent one.<\/p>\n<h4>What Jev could return<\/h4>\n<p>An illustrative result might be:<\/p>\n<table>\n<thead>\n<tr>\n  <th>Returned information<\/th>\n  <th>Example<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<tr>\n  <td>Selected category<\/td>\n  <td><code>dining_coffee<\/code><\/td>\n<\/tr>\n<tr>\n  <td>Probability for <code>dining_coffee<\/code><\/td>\n  <td>0.95<\/td>\n<\/tr>\n<tr>\n  <td>Probabilities for the other 19 categories<\/td>\n  <td>Recorded individually; collectively 0.05 in this example<\/td>\n<\/tr>\n<tr>\n  <td>Separate confidence value<\/td>\n  <td>0.93<\/td>\n<\/tr>\n<\/tbody>\n<\/table>\n<p>In plain language: <strong>“The transaction describes lunch and coffee at a cafe, so I choose Dining &amp; Coffee.”<\/strong><\/p>\n<h4>What code does next<\/h4>\n<p>Code validates the returned structure and category names, then applies its explicit business policies.<\/p>\n<p>For this example, no policy override applies, so <strong>Dining &amp; Coffee remains the final category<\/strong>. Code retains the proposal, final category, confidence, and probabilities.<\/p>\n<p>Those policies also protect against unsupported precision. For example, a line containing only <strong>“Amazon — $45.00”<\/strong> does not reveal what was bought. Code uses <strong>Other<\/strong> for that merchant-only mixed-retailer charge, even if Jev proposes Shopping.<\/p>\n<p><strong>Unlike Step 2, this stage has no probability threshold that triggers LLM fallback.<\/strong> Low confidence is recorded, but a valid proposal remains the final category unless code policy overrides it.<\/p>\n<p>The distinction between the two Jev calls is simple: <strong>Step 2 chooses a field value from the source; Step 3 chooses a category from the application’s catalog.<\/strong><\/p>\n"};
+let current='s1',pinned=false;
+const targets=[...document.querySelectorAll('.target')];
+const panel=document.querySelector('.panel');
+const diagramShell=document.querySelector('.diagram-shell');
+function matchPanelHeight(){
+ const scroller=document.querySelector('.diagram-scroll');
+ const overflow=scroller.scrollWidth>scroller.clientWidth;
+ diagramShell.classList.toggle('has-horizontal-scroll',overflow);
+ diagramShell.style.setProperty('--scrollbar-height',(scroller.offsetHeight-scroller.clientHeight)+'px');
+ panel.style.setProperty('--diagram-height',diagramShell.getBoundingClientRect().height+'px');
+}
+new ResizeObserver(matchPanelHeight).observe(diagramShell);
+matchPanelHeight();
+const workspace=document.querySelector('.workspace');
+const divider=document.getElementById('panel-divider');
+let resizeDrag=null;
+function desktopResize(){return innerWidth>=1180&&!document.body.classList.contains('presenting')}
+function panelLimits(){return {min:260,max:Math.max(260,workspace.clientWidth-78)}}
+function syncDivider(){
+ const limits=panelLimits(),width=Math.round(panel.getBoundingClientRect().width);
+ divider.setAttribute('aria-valuenow',width);
+ divider.setAttribute('aria-valuemax',Math.round(limits.max));
+ divider.setAttribute('aria-valuetext',width+' pixels wide');
+}
+function freezeBoxWidths(){
+ if(document.body.classList.contains('resized-layout'))return;
+ const columns=getComputedStyle(document.querySelector('.diagram')).gridTemplateColumns.split(' ');
+ workspace.style.setProperty('--controller-width',columns[0]);
+ workspace.style.setProperty('--worker-width',columns[2]);
+ document.body.classList.add('resized-layout');
+}
+function setPanelWidth(width){
+ if(!desktopResize())return;
+ freezeBoxWidths();
+ const limits=panelLimits();
+ workspace.style.setProperty('--panel-width',Math.min(limits.max,Math.max(limits.min,width))+'px');
+ matchPanelHeight();syncDivider();
+}
+function resetPanelWidth(){
+ workspace.style.removeProperty('--panel-width');
+ document.body.classList.remove('resized-layout');
+ matchPanelHeight();syncDivider();
+}
+divider.addEventListener('pointerdown',e=>{
+ if(!desktopResize()||e.button!==0)return;
+ e.preventDefault();divider.focus();
+ resizeDrag={pointer:e.pointerId,x:e.clientX,width:panel.getBoundingClientRect().width};
+ divider.setPointerCapture(e.pointerId);document.body.classList.add('resizing');
+});
+divider.addEventListener('pointermove',e=>{
+ if(resizeDrag&&resizeDrag.pointer===e.pointerId)setPanelWidth(resizeDrag.width+resizeDrag.x-e.clientX);
+});
+function stopResize(){resizeDrag=null;document.body.classList.remove('resizing')}
+divider.addEventListener('pointerup',stopResize);
+divider.addEventListener('pointercancel',stopResize);
+divider.addEventListener('lostpointercapture',stopResize);
+divider.addEventListener('dblclick',resetPanelWidth);
+divider.addEventListener('keydown',e=>{
+ if(e.key==='Home'){e.preventDefault();resetPanelWidth()}
+ else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+  e.preventDefault();setPanelWidth(panel.getBoundingClientRect().width+(e.key==='ArrowLeft'?1:-1)*(e.shiftKey?80:20));
+ }
+});
+addEventListener('resize',()=>{
+ if(desktopResize()&&workspace.style.getPropertyValue('--panel-width'))setPanelWidth(parseFloat(workspace.style.getPropertyValue('--panel-width')));
+ else syncDivider();
+});
+new ResizeObserver(syncDivider).observe(panel);
+syncDivider();
+function render(key){
+ const item=CONTENT[key]; if(!item)return; const changed=current!==key; current=key;
+ document.getElementById('tag').textContent=`STEP ${item.stage} · ${item.role.toUpperCase()} · ${key[0]==='a'?'CALL':key[0]==='w'?'WORKER':'CONTROLLER'}`;
+ document.getElementById('detail-title').textContent=item.title;
+ for(const field of ['summary','input','result','check'])document.getElementById('detail-'+field).textContent=item[field];
+ document.getElementById('stage-notes').innerHTML=SECTIONS[item.stage];
+ const example=document.getElementById('jev-example');
+ const showExample=['s2','w2','a2','s3','w4','a4'].includes(key);
+ example.hidden=!showExample;
+ example.innerHTML=showExample?EXAMPLES[item.stage]:'';
+ if(changed)document.querySelector('.panel-content').scrollTop=0;
+ document.querySelectorAll('#stage-notes a').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer'});
+ panel.style.borderTopColor=getComputedStyle(document.documentElement).getPropertyValue('--'+item.role);
+ document.getElementById('tag').style.color=getComputedStyle(document.documentElement).getPropertyValue('--'+item.role);
+ targets.forEach(t=>{t.classList.toggle('active',t.dataset.key===key);t.classList.toggle('related',Number(t.dataset.stage)===item.stage);t.setAttribute('aria-pressed',String(pinned&&t.dataset.key===key))});
+ document.getElementById('prev').disabled=item.stage===1;
+ document.getElementById('next').disabled=item.stage===5;
+}
+function syncPin(){document.getElementById('status').textContent=pinned?'Pinned · click another target to change':'Exploring · click to pin';document.getElementById('pin').textContent=pinned?'Unpin details':'Pin details';document.getElementById('pin').setAttribute('aria-pressed',String(pinned));targets.forEach(t=>t.setAttribute('aria-pressed',String(pinned&&t.dataset.key===current)))}
+function choose(key,pin=false){if(pin){pinned=true;render(key);syncPin()}else if(!pinned)render(key)}
+targets.forEach(t=>{t.addEventListener('pointerenter',e=>{if(e.pointerType!=='touch')choose(t.dataset.key)});t.addEventListener('focus',()=>choose(t.dataset.key));t.addEventListener('click',()=>{choose(t.dataset.key,true);if(matchMedia('(max-width:767px)').matches&&!document.body.classList.contains('presenting'))panel.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'})})});
+document.getElementById('pin').addEventListener('click',()=>{pinned=!pinned;syncPin()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){pinned=false;syncPin()}});
+for(const [id,delta] of [['prev',-1],['next',1]])document.getElementById(id).addEventListener('click',()=>{const s=CONTENT[current].stage+delta;if(s>=1&&s<=5)choose('s'+s,true)});
+document.getElementById('presentation').addEventListener('click',e=>{const on=document.body.classList.toggle('presenting');e.currentTarget.setAttribute('aria-pressed',String(on));e.currentTarget.textContent=on?'Show explanations':'Presentation mode'});
+const full=document.getElementById('full-notes');document.getElementById('show-notes').addEventListener('click',()=>{full.open=!full.open;if(full.open)full.scrollIntoView({block:'start',behavior:'auto'})});full.addEventListener('toggle',()=>{document.getElementById('show-notes').setAttribute('aria-expanded',String(full.open));document.getElementById('show-notes').textContent=full.open?'Close full notes':'Read full notes'});
+let wasOpen;addEventListener('beforeprint',()=>{wasOpen=full.open;full.open=true});addEventListener('afterprint',()=>{full.open=wasOpen});
+document.querySelectorAll('.prose table').forEach(table=>{const wrap=document.createElement('div');wrap.className='table-wrap';table.before(wrap);wrap.append(table)});
+document.querySelectorAll('.prose a').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer'});
+render('s1');syncPin();
+</script></body></html>
